@@ -5,6 +5,17 @@ config HMI_FW_VERSION
 config HMI_APP
     bool
     default y
+
+config HMI_QUIET_CONSOLE
+    bool "Silence RT-Thread console in production"
+    depends on HMI_APP
+    default n
+
+config HMI_SERIAL_DIAGNOSTICS
+    bool "Enable HMI serial diagnostics"
+    depends on HMI_APP
+    default n
+
 config HMI_NETWORK
     bool "Enable D133 toolbox TCP OTA server"
     default n
@@ -15,5 +26,6 @@ config HMI_UI
 config HMI_SD_OTA
     bool "Enable SD OTA shell entry"
     default n
+
 
 

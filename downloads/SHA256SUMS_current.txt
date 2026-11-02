@@ -1,2 +1,2 @@
-4cafb6f7433399e880c66912bfbbae8e31b9e4d927fc9f6e43f97ce78a680d14  d13x_d133cbv-hmi-nor_v1.0.20.img
+d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c  d13x_d133cbv-hmi-nor_v1.0.21.img
 

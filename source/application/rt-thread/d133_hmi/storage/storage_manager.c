@@ -1,5 +1,6 @@
 #include "storage_manager.h"
 #include "sd_manager.h"
+#include "hmi_serial_log.h"
 #include <rtthread.h>
 #include <string.h>
 static rt_mq_t jobs,results;
@@ -19,7 +20,7 @@ static void worker(void *arg)
         case ST_WRITE:r.error=q.length<=sizeof(q.data)?file_manager_write(q.path,q.data,q.length):-1;break;
         case ST_CAPACITY:r.error=file_manager_capacity(q.path,&r.total,&r.free_bytes);break;
         default:r.error=-1;break;}
-        rt_kprintf("[storage] op=%d result=%d %s\n",q.op,r.error,q.path);
+        hmi_serial_log("[storage] op=%d result=%d %s\n",q.op,r.error,q.path);
         /* 结果队列背压仅等待工作线程，LVGL 始终非阻塞轮询。 */
         while(rt_mq_send(results,&r,sizeof(r))!=RT_EOK)rt_thread_mdelay(20);
     }
@@ -46,5 +47,6 @@ int storage_manager_submit(const storage_request_t *q)
     return rt_mq_send(jobs,q,sizeof(*q));
 }
 int storage_manager_poll(storage_result_t *r){return r&&results?rt_mq_recv(results,r,sizeof(*r),0):-1;}
+
 
 

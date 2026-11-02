@@ -1,4 +1,5 @@
 #include "ui_manager.h"
+#include "hmi_serial_log.h"
 #include "app_manager.h"
 #include "lvgl.h"
 #include <rtthread.h>
@@ -82,11 +83,11 @@ static void boot_display_timing(lv_event_t *event)
 
     if (code == LV_EVENT_RENDER_READY && !first_render_logged) {
         first_render_logged = 1;
-        rt_kprintf("[boot_time] lvgl_render_ready=%u ms\n",
+        hmi_serial_log("[boot_time] lvgl_render_ready=%u ms\n",
                    app_manager_boot_elapsed_ms());
     } else if (code == LV_EVENT_FLUSH_FINISH && !first_flush_logged) {
         first_flush_logged = 1;
-        rt_kprintf("[boot_time] display_flush_return=%u ms\n",
+        hmi_serial_log("[boot_time] display_flush_return=%u ms\n",
                    app_manager_boot_elapsed_ms());
     }
 }
@@ -921,7 +922,7 @@ void hmi_ui_init(void)
     lv_obj_t *header_band;
     lv_obj_t *header_accent;
 
-    rt_kprintf("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
+    hmi_serial_log("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
     /* 字体由只读资源分区提供；加载失败时不启动健康心跳，保留 A/B 回滚保护。 */
     hmi_font = lv_freetype_font_create(HMI_FONT_PATH,
         LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 18, LV_FREETYPE_FONT_STYLE_NORMAL);
@@ -929,16 +930,16 @@ void hmi_ui_init(void)
         lv_obj_t *error = lv_label_create(root);
         lv_label_set_text(error, "Chinese font load failed; check /rodata/hmi/fonts.");
         lv_obj_set_pos(error, 20, 30);
-        rt_kprintf("[hmi] Chinese font load failed; health confirmation blocked\n");
+        hmi_serial_log("[hmi] Chinese font load failed; health confirmation blocked\n");
         return;
     }
     /* 两种界面字号复用同一个字体实例，避免重复创建 FreeType 字体对象。 */
     hmi_font_small = hmi_font;
-    rt_kprintf("[boot_time] chinese_font_ready=%u ms\n",app_manager_boot_elapsed_ms());
+    hmi_serial_log("[boot_time] chinese_font_ready=%u ms\n",app_manager_boot_elapsed_ms());
     lv_obj_set_style_text_font(root, body_font(), LV_PART_MAIN);
     if (!app_manager_ready()) {
         label(root, "应用服务初始化失败，请检查串口日志。", 20, 30, 900);
-        rt_kprintf("[hmi] application services are not ready; health confirmation blocked\n");
+        hmi_serial_log("[hmi] application services are not ready; health confirmation blocked\n");
         return;
     }
     lv_obj_set_style_bg_color(root, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
@@ -1009,5 +1010,6 @@ void hmi_ui_init(void)
         lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,
                                 LV_EVENT_FLUSH_FINISH, NULL);
     }
-    rt_kprintf("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
+    hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
 }
+

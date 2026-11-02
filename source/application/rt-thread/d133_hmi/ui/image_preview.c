@@ -1,4 +1,5 @@
 #include "image_preview.h"
+#include "hmi_serial_log.h"
 #include "file_manager.h"
 #include <rtthread.h>
 #include <aic_core.h>
@@ -197,7 +198,7 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
     preview_image.data = pixels;
     preview_image.reserved = decoded;
     aicos_dcache_clean_range((unsigned long *)pixels, (int64_t)destination_size);
-    rt_kprintf("[image_preview] MPP color format %u normalized to RGB565: %u x %u\n",
+    hmi_serial_log("[image_preview] MPP color format %u normalized to RGB565: %u x %u\n",
                (unsigned)source_header.cf, source_header.w, source_header.h);
     return IMAGE_PREVIEW_ERR_NONE;
 }
@@ -218,7 +219,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
     decode_started = rt_tick_get_millisecond();
     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
-        rt_kprintf("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
+        hmi_serial_log("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
                    (unsigned)(rt_tick_get_millisecond() - decode_started),
                    preview_source_path);
         return IMAGE_PREVIEW_ERR_DECODE;
@@ -230,7 +231,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
          decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB888 &&
          decoder_dsc.header.cf != LV_COLOR_FORMAT_ARGB8888 &&
          decoder_dsc.header.cf != LV_COLOR_FORMAT_XRGB8888)) {
-        rt_kprintf("[image_preview] 解码器输出格式无效：%s\n", preview_source_path);
+        hmi_serial_log("[image_preview] 解码器输出格式无效：%s\n", preview_source_path);
         lv_image_decoder_close(&decoder_dsc);
         decoder_opened = 0;
         memset(&decoder_dsc, 0, sizeof(decoder_dsc));
@@ -241,7 +242,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
     normalize_started = rt_tick_get_millisecond();
     result = normalize_decoded_frame_to_rgb565(decoder_dsc.decoded);
     normalize_ms = rt_tick_get_millisecond() - normalize_started;
-    rt_kprintf("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
+    hmi_serial_log("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
                decode_ms, normalize_ms, decoder_dsc.header.w, decoder_dsc.header.h,
                (unsigned)decoder_dsc.header.cf);
     if (result != IMAGE_PREVIEW_ERR_NONE) {
@@ -268,7 +269,7 @@ static int load_image(const char *path)
         return IMAGE_PREVIEW_ERR_FORMAT;
     if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
         (uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
-        rt_kprintf("[image_preview] 文件不可读或大小无效：%s\n", path);
+        hmi_serial_log("[image_preview] 文件不可读或大小无效：%s\n", path);
         return IMAGE_PREVIEW_ERR_SIZE;
     }
 
@@ -291,12 +292,12 @@ static int load_image(const char *path)
 
     info_started = rt_tick_get_millisecond();
     if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
-        rt_kprintf("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
+        hmi_serial_log("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
         return IMAGE_PREVIEW_ERR_DECODE;
     }
     info_ms = rt_tick_get_millisecond() - info_started;
     if (!dimensions_supported(&header)) {
-        rt_kprintf("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
+        hmi_serial_log("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
                    path, header.w, header.h);
         return IMAGE_PREVIEW_ERR_SIZE;
     }
@@ -306,7 +307,7 @@ static int load_image(const char *path)
     /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
     decode_started = rt_tick_get_millisecond();
     result = decode_mpp_image(&header);
-    rt_kprintf("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
+    hmi_serial_log("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
                (unsigned)(rt_tick_get_millisecond() - started), info_ms,
                (unsigned)(rt_tick_get_millisecond() - decode_started), result);
     return result;
@@ -470,3 +471,4 @@ void image_preview_cancel(void)
         rt_mutex_release(&state_lock);
     }
 }
+

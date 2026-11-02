@@ -1,0 +1,15 @@
+Import('AIC_ROOT')
+Import('PRJ_KERNEL')
+from building import *
+
+cwd = GetCurrentDir()
+CPPPATH = [cwd]
+src = []
+
+# 仅在用户显式启用 SDK 示例时构建依赖 FinSH 命令表的 MbedTLS 测试。
+if GetDepend(['LPKG_USING_MBEDTLS', 'LPKG_USING_MBEDTLS_EXAMPLE', 'RT_USING_FINSH']):
+    src += Glob('*.c')
+
+group = DefineGroup('test-mbedtls', src, depend=[''], CPPPATH=CPPPATH)
+Return('group')
+

@@ -1,0 +1,15 @@
+Import('AIC_ROOT')
+Import('PRJ_KERNEL')
+from building import *
+
+cwd = GetCurrentDir()
+CPPPATH = [cwd]
+src = []
+
+# SRP 测试程序只在显式启用 MbedTLS 示例时加入固件。
+if GetDepend(['LPKG_USING_MBEDTLS', 'LPKG_USING_MBEDTLS_EXAMPLE']):
+    src += Glob('*.c')
+
+group = DefineGroup('test-mbedtls-csrp', src, depend=[''], CPPPATH=CPPPATH)
+Return('group')
+

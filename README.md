@@ -4,16 +4,16 @@
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.20 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.21 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
 
-启动优化取消了配套 Bootloader 的预启动黑屏显示；OS 保留 LVDS 预热。Info 日志降为 Warning，并关闭当前 HMI 未使用的 CAN、音频、TSEN、GPAI 外设。HMI 复用一个中文字体实例，并增加首帧时间标记。1 秒目标尚未实机测量；标记不能代表从上电开始的完整时间。详见 [启动优化与实测](docs/启动优化与实测.md)。
+启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.21 正式配置改为静默 RT 控制台、关闭 FinSH Shell、RT UART0 驱动和 ULOG 输出，应用串口诊断调用在正式配置编译为空。空输出设备在 RT-Thread 板级驱动初始化前绑定，因此 RT-Thread、驱动、HMI 串口数据静默；BootROM/SPL 输出保持。独立诊断 profile 保留 UART 和逐项计时。v1.0.20 热复位实测 1.632 秒，v1.0.21 尚未上板测量；1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
 
 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
-.\scripts\build.ps1 -Target OS -LogName stage_wifi_buzzer_v1.0.20_factory_build.log
-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_wifi_buzzer_v1.0.20_ota_build.log
+.\scripts\build.ps1 -Target OS -LogName stage_quiet_startup_v1.0.21_factory_build.log
+.\scripts\build.ps1 -Target OtaCandidate -LogName stage_quiet_startup_v1.0.21_ota_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
 
@@ -25,11 +25,12 @@
 - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
 - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
 - [故障排查](docs/故障排查.md)
+- [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
 - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.20.img`，大小 4,561,408 字节，SHA-256 `4cafb6f7433399e880c66912bfbbae8e31b9e4d927fc9f6e43f97ce78a680d14`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。当前未生成 v1.0.20 日常 OTA 包；v1.0.18 OTA 和 v1.0.19 诊断 OTA 均是旧版本，不能从 v1.0.19 回退升级。v1.0.20 工厂镜像加入 PWM 蜂鸣和工具箱设备消息；板载 RTL8723DS 暂未启用，原因及所需驱动依赖见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。镜像已完成 SDK 编译，但尚未实机验证。
+当前工厂镜像为 [v1.0.21 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.21.img)，大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此版本未生成日常 OTA 包。v1.0.21 保留 BootROM/SPL 串口输出，静默 RT-Thread/HMI/驱动/Shell 输出；板载 RTL8723DS 暂未启用，依赖说明见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。OS ITB 从 v1.0.20 的 1,392,640 字节降到 1,081,344 字节；按原日志吞吐估算读取数据减少约 6–7 ms，实际启动速度仍需同条件实机测量。
 
 ## 仓库内容
 
@@ -53,7 +54,7 @@
 
 首页采用 5×3 应用网格，仅显示六个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
 
-用户提供的 v1.0.16 上电复位日志报告 `Startup time: 1.625 sec`；v1.0.18 外部引脚热复位日志报告 1.630 秒，SPL 读取 1,380,780 字节耗时 28,658 μs。两种复位条件不同，不能直接比较版本启动收益。最新 HMI 标记为控件 129 ms、flush 219 ms、render 222 ms，均从 app_manager 起算；该日志没有图片打开阶段数据。v1.0.18 延迟创建输入键盘、关闭显式启用的未使用驱动测试命令、缩短图片结果轮询并批量读取 BMP 行数据。v1.0.20 未修改 CPU/总线或 QSPI/NOR 读取时钟。
+用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.21 生产配置关闭 RT UART0、FinSH/MSH 和 ULOG 输出，并在 RT-Thread 驱动初始化前绑定静默控制台；BootROM/SPL 串口输出不变。OS ITB 减少 311,296 字节，按原吞吐估计 NOR 读取可少约 6–7 ms；新镜像尚未上板测量。QSPI/NOR 时钟保持不变。
 
 板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
 

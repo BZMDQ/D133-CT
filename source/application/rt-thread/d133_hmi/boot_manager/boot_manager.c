@@ -1,4 +1,5 @@
 #include "boot_manager.h"
+#include "hmi_serial_log.h"
 #include "system_manager.h"
 #include "ota_package.h"
 #include <stdio.h>
@@ -19,7 +20,7 @@ int boot_manager_confirm(void)
     int r=aic_ota_status_update();
     if(!r){rt_mutex_take(&lock,RT_WAITING_FOREVER);state.pending=0;state.confirmed=1;rt_mutex_release(&lock);
         char record[128];snprintf(record,sizeof(record),"confirmed version=%s target=%c",HMI_VERSION,state.current);system_manager_record_upgrade(record);system_manager_log("新系统健康检查通过，启动槽位已确认");}
-    rt_kprintf("[boot] health confirmation=%d\n",r);return r;
+    hmi_serial_log("[boot] health confirmation=%d\n",r);return r;
 }
 static void monitor(void *arg)
 {
@@ -53,6 +54,7 @@ int boot_manager_init(void)
     }
     t=rt_thread_create("hmi_health",monitor,0,3072,20,10);return t?rt_thread_startup(t):-1;
 }
+
 
 
 

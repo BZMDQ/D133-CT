@@ -20,6 +20,10 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.18.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sig
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.json

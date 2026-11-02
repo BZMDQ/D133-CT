@@ -10,6 +10,7 @@ unsigned int app_manager_boot_elapsed_ms(void)
 #include "storage_manager.h"
 #include "system_manager.h"
 #include "device_event_manager.h"
+#include "hmi_serial_log.h"
 #include "boot_manager.h"
 #include "ota_manager.h"
 #ifdef HMI_NETWORK
@@ -25,7 +26,7 @@ int app_manager_init(void)
     if(network_manager_init())return -3;
 #endif
     ready=1;system_manager_log("应用服务初始化完成");
-    rt_kprintf("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
+    hmi_serial_log("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
     return 0;
 }
 

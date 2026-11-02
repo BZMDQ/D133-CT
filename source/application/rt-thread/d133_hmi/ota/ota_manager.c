@@ -3,6 +3,7 @@
 #include "ota_signature.h"
 #include "boot_manager.h"
 #include "system_manager.h"
+#include "hmi_serial_log.h"
 #include <rtthread.h>
 #include <stdbool.h>
 #include <mbedtls/sha256.h>
@@ -47,8 +48,8 @@ static void worker(void *unused)
         if(aic_upgrade_end()){error=-27;goto fail;}
         snprintf(record,sizeof(record),"committed version=%s target=%c",version,boot.current=='A'?'B':'A');
         if(system_manager_record_upgrade(record))system_manager_log("警告：ENV 已提交，但升级状态文件写入失败");
-        boot_manager_refresh();update(OTA_READY,100,0);rt_kprintf("[ota] verified inactive slots ready; reboot required\n");continue;
-fail:if(f)fclose(f);if(initialized)ota_deinit();if(hash_initialized)mbedtls_sha256_free(&stream_hash);update(OTA_FAILED,0,error);char failure_record[128];snprintf(failure_record,sizeof(failure_record),"failed error=%d version=%s",error,j.version[0]?j.version:"unknown");system_manager_record_upgrade(failure_record);{char log_text[128];snprintf(log_text,sizeof(log_text),"升级失败，错误码：%d，版本：%s",error,j.version[0]?j.version:"未知");system_manager_log(log_text);}rt_kprintf("[ota] failed=%d; current slot retained\n",error);
+        boot_manager_refresh();update(OTA_READY,100,0);hmi_serial_log("[ota] verified inactive slots ready; reboot required\n");continue;
+fail:if(f)fclose(f);if(initialized)ota_deinit();if(hash_initialized)mbedtls_sha256_free(&stream_hash);update(OTA_FAILED,0,error);char failure_record[128];snprintf(failure_record,sizeof(failure_record),"failed error=%d version=%s",error,j.version[0]?j.version:"unknown");system_manager_record_upgrade(failure_record);{char log_text[128];snprintf(log_text,sizeof(log_text),"升级失败，错误码：%d，版本：%s",error,j.version[0]?j.version:"未知");system_manager_log(log_text);}hmi_serial_log("[ota] failed=%d; current slot retained\n",error);
     }
 }
 int ota_manager_init(void){rt_thread_t t;verifier=ota_signature_verify;rt_mutex_init(&mutex,"otastate",RT_IPC_FLAG_PRIO);queue=rt_mq_create("otajob",sizeof(job_t),1,RT_IPC_FLAG_FIFO);if(!queue)return -1;t=rt_thread_create("hmi_ota",worker,0,8192,21,10);return t?rt_thread_startup(t):-1;}
@@ -58,6 +59,7 @@ int ota_manager_request(const char *path,const unsigned char *sha,const char *ve
     rt_mutex_take(&mutex,RT_WAITING_FOREVER);if(status.state!=OTA_IDLE&&status.state!=OTA_FAILED){rt_mutex_release(&mutex);return -3;}status.state=OTA_CHECK;status.remote=remote;status.error=0;status.percent=0;if(version)snprintf(status.version,32,"%s",version);else status.version[0]=0;rt_mutex_release(&mutex);
     snprintf(j.path,sizeof(j.path),"%s",path);if(version)snprintf(j.version,32,"%s",version);if(sha){memcpy(j.sha,sha,32);j.has_sha=1;}j.remote=remote;r=rt_mq_send(queue,&j,sizeof(j));if(r)update(OTA_FAILED,0,r);return r;
 }
+
 
 
 

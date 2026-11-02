@@ -20,6 +20,9 @@ extern void aic_board_sysclk_init(void);
 #if RT_DEBUG_INIT
 #include <aic_time.h>
 #endif
+#ifdef HMI_QUIET_CONSOLE
+#include "quiet_console.h"
+#endif
 
 extern size_t __heap_start;
 extern size_t __heap_end;
@@ -176,6 +179,11 @@ void rt_hw_board_init(void)
 #endif
 #endif
 
+#ifdef HMI_QUIET_CONSOLE
+    /* 在板级驱动初始化前切到空输出设备，避免 RT-Thread 日志占用 UART。 */
+    (void)hmi_quiet_console_register();
+#endif
+
 #if RT_DEBUG_INIT
     init_start_us = aic_get_time_us();
 #endif
@@ -314,3 +322,4 @@ void show_board_version(void)
     aic_show_ram_size();
     printf("Board: %s\n\n", PRJ_BOARD);
 }
+

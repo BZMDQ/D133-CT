@@ -1,4 +1,5 @@
 #include "system_manager.h"
+#include "hmi_serial_log.h"
 #include <rtthread.h>
 #include <string.h>
 #include <stdio.h>
@@ -27,7 +28,7 @@ void system_manager_log(const char *s)
     char line[512];snprintf(line,sizeof(line),"%.510s",s);unsigned n=strlen(line);
     rt_mutex_take(&lock,RT_WAITING_FOREVER);if(strlen(logbuf)+n+2>=sizeof(logbuf))logbuf[0]=0;strcat(logbuf,line);strcat(logbuf,"\n");rt_mutex_release(&lock);
     if(messages)rt_mq_send(messages,line,sizeof(line));
-    rt_kprintf("[hmi] %s\n",line);
+    hmi_serial_log("[hmi] %s\n",line);
 }
 void system_manager_logs(char *out,unsigned n){if(!n)return;rt_mutex_take(&lock,RT_WAITING_FOREVER);rt_strncpy(out,logbuf,n-1);out[n-1]=0;rt_mutex_release(&lock);}
 /* 只供 OTA/健康线程调用，必须在返回前落盘。ENV 仍是启动状态的权威来源。 */
@@ -39,4 +40,5 @@ int system_manager_upgrade_state(char *out,unsigned cap)
 {
     FILE *f;if(!out||!cap)return -1;out[0]=0;f=fopen("/data/upgrade.state","rb");if(!f)return -1;size_t n=fread(out,1,cap-1,f);out[n]=0;int r=ferror(f)?-1:0;fclose(f);return r;
 }
+
 

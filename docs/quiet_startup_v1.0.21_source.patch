@@ -1,0 +1,979 @@
+diff --git a/.gitignore b/.gitignore
+index df13478..ca4e39c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -20,6 +20,10 @@ downloads/*
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.18.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img.sha256
++!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
++!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
+ !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sig
+ !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.json
+@@ -37,4 +41,3 @@ downloads/*
+ !downloads/研发工具箱_0.8.37_Manual_Overlay.zip
+ !downloads/研发工具箱_0.8.37_Manual_Overlay.zip.sha256
+ !downloads/研发工具箱_0.8.37_更新说明.md
+-
+diff --git a/README.md b/README.md
+index 2df9ce9..5b90597 100644
+--- a/README.md
++++ b/README.md
+@@ -4,16 +4,16 @@
+ 
+ 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
+ 
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.20 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.21 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+ 
+-启动优化取消了配套 Bootloader 的预启动黑屏显示；OS 保留 LVDS 预热。Info 日志降为 Warning，并关闭当前 HMI 未使用的 CAN、音频、TSEN、GPAI 外设。HMI 复用一个中文字体实例，并增加首帧时间标记。1 秒目标尚未实机测量；标记不能代表从上电开始的完整时间。详见 [启动优化与实测](docs/启动优化与实测.md)。
++启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.21 正式配置改为静默 RT 控制台、关闭 FinSH Shell、RT UART0 驱动和 ULOG 输出，应用串口诊断调用在正式配置编译为空。空输出设备在 RT-Thread 板级驱动初始化前绑定，因此 RT-Thread、驱动、HMI 串口数据静默；BootROM/SPL 输出保持。独立诊断 profile 保留 UART 和逐项计时。v1.0.20 热复位实测 1.632 秒，v1.0.21 尚未上板测量；1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
+ 
+ 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
+ 
+ ```powershell
+ .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
+-.\scripts\build.ps1 -Target OS -LogName stage_wifi_buzzer_v1.0.20_factory_build.log
+-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_wifi_buzzer_v1.0.20_ota_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_quiet_startup_v1.0.21_factory_build.log
++.\scripts\build.ps1 -Target OtaCandidate -LogName stage_quiet_startup_v1.0.21_ota_build.log
+ .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
+ ```
+ 
+@@ -25,11 +25,12 @@
+ - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
+ - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
+ - [故障排查](docs/故障排查.md)
++- [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
+ - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
+ - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
+ - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
+ 
+-当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.20.img`，大小 4,561,408 字节，SHA-256 `4cafb6f7433399e880c66912bfbbae8e31b9e4d927fc9f6e43f97ce78a680d14`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。当前未生成 v1.0.20 日常 OTA 包；v1.0.18 OTA 和 v1.0.19 诊断 OTA 均是旧版本，不能从 v1.0.19 回退升级。v1.0.20 工厂镜像加入 PWM 蜂鸣和工具箱设备消息；板载 RTL8723DS 暂未启用，原因及所需驱动依赖见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。镜像已完成 SDK 编译，但尚未实机验证。
++当前工厂镜像为 [v1.0.21 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.21.img)，大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此版本未生成日常 OTA 包。v1.0.21 保留 BootROM/SPL 串口输出，静默 RT-Thread/HMI/驱动/Shell 输出；板载 RTL8723DS 暂未启用，依赖说明见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。OS ITB 从 v1.0.20 的 1,392,640 字节降到 1,081,344 字节；按原日志吞吐估算读取数据减少约 6–7 ms，实际启动速度仍需同条件实机测量。
+ 
+ ## 仓库内容
+ 
+@@ -53,7 +54,6 @@
+ 
+ 首页采用 5×3 应用网格，仅显示六个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+ 
+-用户提供的 v1.0.16 上电复位日志报告 `Startup time: 1.625 sec`；v1.0.18 外部引脚热复位日志报告 1.630 秒，SPL 读取 1,380,780 字节耗时 28,658 μs。两种复位条件不同，不能直接比较版本启动收益。最新 HMI 标记为控件 129 ms、flush 219 ms、render 222 ms，均从 app_manager 起算；该日志没有图片打开阶段数据。v1.0.18 延迟创建输入键盘、关闭显式启用的未使用驱动测试命令、缩短图片结果轮询并批量读取 BMP 行数据。v1.0.20 未修改 CPU/总线或 QSPI/NOR 读取时钟。
++用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.21 生产配置关闭 RT UART0、FinSH/MSH 和 ULOG 输出，并在 RT-Thread 驱动初始化前绑定静默控制台；BootROM/SPL 串口输出不变。OS ITB 减少 311,296 字节，按原吞吐估计 NOR 读取可少约 6–7 ms；新镜像尚未上板测量。QSPI/NOR 时钟保持不变。
+ 
+ 板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
+-
+diff --git a/docs/stage_quiet_startup_v1.0.21_factory_build.log b/docs/stage_quiet_startup_v1.0.21_factory_build.log
+new file mode 100644
+index 0000000..49f2b79
+--- /dev/null
++++ b/docs/stage_quiet_startup_v1.0.21_factory_build.log
+@@ -0,0 +1,72 @@
++scons: Reading SConscript files ...
++Newlib version:3.2.0
++scons: done reading SConscript files.
++scons: Building targets ...
++
++scons: warning: you do not seem to have the pywin32 extensions installed;
++	parallel (-j) builds may not work reliably with open Python files.
++File "<string>", line 1, in <module>
++scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
++  CC target\d13x\d133cbv-hmi-nor\quiet_console.c
++LINK output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++-rw-r--r-- 1 11520364 Nov  2 14:57 output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++
++riscv64-unknown-elf-objcopy -O binary output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.bin
++riscv64-unknown-elf-size output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++   text	   data	    bss	    dec	    hex	filename
++1064516	  12700	 472392	1549608	 17a528	output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --clean rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --src D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\application\rt-thread\d133_hmi\assets/ --dst rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/linked_size.py -m D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.map
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makefatfs.py --fullpart --volab default --cluster 8 --sector 512 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir rodata --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/rodata.fatfs --reserved 50
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makelittlefs.py --pagesize 256 --blocksize 4096 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir data/ --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs --reserved 50
++Info: inputdir data/ is not exist, use a empty one.
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/tools/scripts/mklittlefs.exe -c D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty -b 4096 -p 256 -s 1048576 D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs
++Backup raw image: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs.raw
++Trim trailing 0xFF: 1048576 -> 8192
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_private_resource.py -v -l D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.json,D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/partition.json -o D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin
++Generated D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin: 1992 bytes
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/elf_parse.py output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ riscv64-unknown-elf-
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_image.py -v -c D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/image_cfg.json -d D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/usbupg-psram-init.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_ext.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/loader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/bootloader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_os.itb ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/env.bin ...
++	Image header is generated.
++	Meta data for image components:
++		Meta for image.updater.psram       offset in file 0x1a00     size in file 0x5b10 (23312)
++		Meta for image.updater.spl         offset in file 0x7a00     size in file 0x4b610 (308752)
++		Meta for image.info                offset in file 0x0        size in file 0x800 (2048)
++		Meta for image.target.spl          offset in file 0x53200    size in file 0x4b610 (308752)
++		Meta for image.target.env          offset in file 0x9ea00    size in file 0x1000 (4096)
++		Meta for image.target.env_r        offset in file 0x9fa00    size in file 0x1000 (4096)
++		Meta for image.target.os           offset in file 0xa0a00    size in file 0x108000 (1081344)
++		Meta for image.target.rodata       offset in file 0x1a8a00   size in file 0x263000 (2502656)
++		Meta for image.target.data         offset in file 0x40ba00   size in file 0x2000 (8192)
++	Packing file data:
++		usbupg-psram-init.aic
++		bootloader.aic
++		bootloader.aic
++		env.bin
++		env.bin
++		d13x_os.itb
++		rodata.fatfs
++		data.lfs
++	Image file is generated: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_d133cbv-hmi-nor_v1.0.21.img
++
++
++make CPIO image begin...
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mkcpio.py Windows D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\target/d13x/d133cbv-hmi-nor/pack/ D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++ota_info.bin
++d13x_os.itb
++rodata.fatfs
++7002 blocks
++Successfully updated size to ota.cpio
++make CPIO image done...
++
++Luban-Lite is built successfully
++
++scons: done building targets.
+diff --git "a/docs/\345\220\257\345\212\250\344\274\230\345\214\226\344\270\216\345\256\236\346\265\213.md" "b/docs/\345\220\257\345\212\250\344\274\230\345\214\226\344\270\216\345\256\236\346\265\213.md"
+index 9ef5831..e7d5b2b 100644
+--- "a/docs/\345\220\257\345\212\250\344\274\230\345\214\226\344\270\216\345\256\236\346\265\213.md"
++++ "b/docs/\345\220\257\345\212\250\344\274\230\345\214\226\344\270\216\345\256\236\346\265\213.md"
+@@ -18,6 +18,22 @@ v1.0.16 的对照记录是 Power-On-Reset，Startup time 1.625 秒；复位条
+ 
+ 这份热复位日志与 v1.0.16 的上电复位日志不是同一复位条件，1.630 秒与 1.625 秒不能作为版本回归对比。它也没有图片打开过程，因此没有 `[image_preview]` 阶段耗时。SPL 读取减少约 17 KiB，在相同读取吞吐下只对应不到 1 ms 的理论差值；主要时间仍在显示 framebuffer 初始化前，且 HMI首帧标记另从 app_manager 起算。
+ 
++## v1.0.20 实机启动日志（2026-11-02）
++
++用户提供的日志显示 `Image version: 1.0.20`，复位条件为外部引脚热复位，整机 `Startup time` 为 **1.632 秒**。SPL 读取 1,389,240 字节耗时 28,834 μs，约 47,050 KB/s；LVDS framebuffer 在 1.375 秒分配，SDMC1 在 1.563 秒初始化。HMI 标记为服务就绪 10 ms、UI 入口 30 ms、字体 46 ms、控件 127 ms、flush 218 ms、render 221 ms。
++
++此前 v1.0.18 同为外部引脚热复位，日志为 1.630 秒、framebuffer 1.374 秒、控件 129 ms、flush 219 ms、render 222 ms。当前两次测量只差 2 ms，应用阶段变化约 1–2 ms，**没有证据表明整机启动速度获得可测量的提升**；HMI 首帧约 221 ms 也不能代表上电到可操作的总时间。QSPI/NOR 配置未变。当前日志没有 `RT_DEBUG_INIT_CONFIG` 逐项输出，所以无法从它确定 1.375 秒前各初始化函数的具体耗时。
++
++日志还显示 `/sdcard` 首次 FATFS 挂载失败，稍后才出现 `card insertion detected!`，但未包含后续挂载成功记录；需在页面确认 SD 是否最终可用。`/data` 的 LittleFS 挂载失败仍然存在；系统日志线程和升级状态文件使用 `/data/hmi.log`、`/data/upgrade.state`，因此持久化记录可能不可用，需要修复或确认数据分区文件系统。该日志没有工具箱连接、蜂鸣器动作或无线接口状态，不能用于验证这些功能。
++
++## v1.0.21 静默 RT 配置与构建结果
++
++正式 OS 配置在 `rt_hw_board_init()` 的驱动批量初始化前注册 `hmi_quiet` RT 设备并绑定控制台；串口写回调直接吞掉输出。生产配置同时关闭 RT UART0 驱动、FinSH/MSH 线程和 ULOG 输出，HMI 串口诊断格式化在正式配置下编译为空。v1.0.21 的 OtaProfile 仍保留 UART、FinSH 和 `RT_DEBUG_INIT`，用于后续临时逐项诊断。BootROM/SPL 使用独立输出路径，本次没有修改，因此其日志仍会显示。
++
++SDK 成功构建 v1.0.21 工厂镜像：OS ITB 从 v1.0.20 的 1,392,640 字节降到 1,081,344 字节，RODATA 仍为 2,502,656 字节；完整 IMG 从 4,561,408 字节降到 4,250,112 字节。以 v1.0.20 日志中的 47,050 KB/s 估算，OS 读取量减少对应约 6–7 ms；这是按镜像大小推算，**不是 v1.0.21 的实机启动测量**。这轮优化移除了 RT UART 输出路径和 RT Shell 线程；仍需要同板、同复位条件测量才能确认总启动变化。
++
++由于正式版本不再输出 RT-Thread 日志，整机启动时间不再能从该 UART 启动日志直接读取。需要 init 函数细分时，应使用保留串口输出的独立诊断 profile；静默正式版本的启动时长改用 GPIO 脉冲或外部计时。此次没有自动烧录、擦除 Flash 或修改 NOR 时钟。
++
+ ## v1.0.18 软件改动
+ 
+ - 工厂和 OTA profile 关闭显式启用的 CMU、GPIO、DMA、CAN、Audio、GPAI、TSEN、PSADC 测试命令，减少固件内容；没有更改底层驱动时钟。
+@@ -36,8 +52,8 @@ v1.0.19 OtaProfile 启用 SDK RT_DEBUG_INIT_CONFIG：UART 输出每个 board/dev
+ 诊断包使用 OTA 升级后版本为 1.0.19，不能再退回 v1.0.18；之后的正式 OTA 需提高版本号。安装、串口采集和后续修复均由用户手动确认；本工程不会自动烧录或改动 NOR 时钟。
+ ## 板上验收方法
+ 
+-1. 从 v1.0.16 或 v1.0.17 升级时，使用 v1.0.18 OTA CPIO 与签名；新板首次部署使用 v1.0.18 工厂镜像。烧录和 OTA 操作由用户手动执行。
+-2. UART0 从电源上升沿保存完整日志，记录 `Startup time` 和全部 `[boot_time]` 阶段。至少连续冷启动 10 次，记录最慢值和中位数。
++1. 新板首次部署使用 v1.0.21 工厂镜像。该镜像含配套 SPL/Bootloader，烧录由用户手动执行。
++2. v1.0.21 正式固件静默 RT-Thread UART，需以 GPIO 起停标记或外部计时从电源上升沿测量；连续冷启动至少 10 次，记录最慢值和中位数。需要 init 函数细分时，使用保留串口输出的独立诊断 profile。
+ 3. 在 SD 卡上分别打开 16/24/32 位 BMP（包括自底向上和 top-down、行 stride 需补齐的宽度）、JPG/JPEG、PNG；记录 `[image_preview]` 文件头、MPP、归一化和总耗时，核对颜色、铺屏与返回键。
+ 4. 检查热启动和连续快速打开/关闭图片时的内存占用、取消行为以及 SD 拔卡后的错误处理。
+ 
+diff --git "a/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md" "b/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
+index 361ab0b..67576bb 100644
+--- "a/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
++++ "b/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
+@@ -29,11 +29,13 @@
+ 
+ 已定位 v1.0.0 仍显示色块的原因：SDK 的 `AIC_DISP_BOOTUP_LOGO` 默认选择 `AIC_DISP_COLOR_BLOCK`，显示驱动会按 100 像素方块绘制蓝/绿/红/黑/白测试图。当前配套 Bootloader 关闭预启动 Logo；工厂 OS 和 OTA OS 保留 `AIC_DISP_BLACK_SCREEN=y` 并关闭 `AIC_DISP_COLOR_BLOCK`，OS 初始化 LVDS 时清黑屏，官方 LVGL 线程启动后直接创建中文 HMI 首页。同时关闭 `AIC_STARTUP_UI_SHOW` 和 `AIC_LVGL_DEMO`。中文字体由 FreeType 从 `/rodata/hmi/fonts/NotoSansSC-HMI.ttf` 加载，约 2.43 MiB，随 A/B RODATA 更新。工厂构建的 RODATA 镜像约 2.50 MiB，小于 5 MiB 槽位。QSPI/NOR 读取时钟保持 SDK 原配置；v1.0.18 整机启动和图片打开耗时仍需上板测量。
+ 
++v1.0.21 正式 profile 将 RT 控制台切到静默设备，在板级驱动初始化前完成绑定；关闭 RT UART0 驱动、FinSH/MSH 和 ULOG 输出，HMI 串口诊断调用在正式配置下编译为空。BootROM/SPL 的独立串口输出未改；OtaProfile 仍保留调试串口。为支持关闭 FinSH 的 SDK 构建，工程 overlay 只对未启用的 MbedTLS 示例禁用编译，并提供 `finsh.h`/`shell.h` 兼容头转入 SDK 自带空命令宏；底层驱动源码未改。
++
+ 官方 Bootloader 的 ENV 逻辑在升级期间试启动。HMI 策略将失败槽回退扩展为 OS/RODATA 成对回退；DATA 始终保持原槽。Bootloader 在候选系统前启动 60 秒看门狗并递增 `bootcount`。RT-Thread GUI 启动后改用 15 秒看门狗，要求 LVGL 心跳、GT911 设备、`/rodata` 与 `/data` 均正常，连续 30 秒后才调用官方 `aic_ota_status_update()` 清除升级标志。
+ 
+ ## 第一阶段交付和烧录
+ 
+-首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.18.img`，大小 4,553,216 字节，SHA-256 `41dd77b2ca7df40340d66214c84abc11ea0bc68ced3d6ddf504963df302b812d`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。日常 OTA 使用 v1.0.18 CPIO，不包含 SPL、ENV 或 DATA；旧 v1.0.17 OTA 低于 v1.0.18 系统。量产或维护时按板卡说明在 PA0 UBOOT 键上电进入 USB 烧录模式，再选择对应 D133CBS 工厂镜像。工厂镜像编译和复制完成不代表已烧进开发板；需要你手动用 AiBurn 烧录。本工程没有执行烧录、擦除或分区写入。
++首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.21.img`，大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。此次未生成 v1.0.21 日常 OTA；日常 OTA 不包含 SPL、ENV 或 DATA。量产或维护时按板卡说明在 PA0 UBOOT 键上电进入 USB 烧录模式，再选择对应 D133CBS 工厂镜像。工厂镜像编译和复制完成不代表已烧进开发板；需要由用户手动用 AiBurn 烧录。本工程没有执行烧录、擦除或分区写入。
+ 
+ 最终生成文件：SDK 输出 `output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/`。本工程 `downloads/` 保存交付副本。烧录后的触摸、显示、SD 插拔、RMII PHY 和自动回滚仍需目标板验证。
+ 
+@@ -68,7 +70,7 @@ LVGL 对象只由 `lv_user_gui_init` 所在的官方 LVGL 线程创建和更新
+ 
+ ## 阶段编译证据与验证边界
+ 
+-历史构建证据：`stage24_bootloader_fast_start_build.log`、`stage29_factory_v1.0.7_unused_driver_trim_build.log`、`stage30_ota_v1.0.9_unused_driver_trim_build.log`、`stage33_logo_factory_v1.0.10_build.log`、`stage34_app_launcher_factory_v1.0.11_build.log`、`stage35_app_grid_5x3_factory_v1.0.12_build.log`、`stage36_home_overview_factory_v1.0.13_build.log`、`stage37_startup_header_factory_v1.0.14_build.log`、`stage38_startup_header_factory_v1.0.15_build.log`、`stage39_startup_header_factory_v1.0.15_build.log`、`stage40_startup_header_factory_v1.0.16_build.log`、`stage41_ota_v1.0.17_build.log`。v1.0.18 OTA 与工厂 OS 构建日志分别为 `stage42_ota_v1.0.18_build.log` 和 `stage43_factory_v1.0.18_build.log`；二者均由 SDK SCons 成功构建。现有 v1.0.18 实测只有外部引脚热复位日志（Startup time 1.630 秒），尚无同条件冷启动和图片打开耗时。Windows PowerShell 构建脚本捕获 SCons 的 stderr 进度流，自动把原始 BMP 转成横向正读的 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
++历史构建证据：`stage24_bootloader_fast_start_build.log`、`stage29_factory_v1.0.7_unused_driver_trim_build.log`、`stage30_ota_v1.0.9_unused_driver_trim_build.log`、`stage33_logo_factory_v1.0.10_build.log`、`stage34_app_launcher_factory_v1.0.11_build.log`、`stage35_app_grid_5x3_factory_v1.0.12_build.log`、`stage36_home_overview_factory_v1.0.13_build.log`、`stage37_startup_header_factory_v1.0.14_build.log`、`stage38_startup_header_factory_v1.0.15_build.log`、`stage39_startup_header_factory_v1.0.15_build.log`、`stage40_startup_header_factory_v1.0.16_build.log`、`stage41_ota_v1.0.17_build.log`。v1.0.18 OTA 与工厂 OS 构建日志分别为 `stage42_ota_v1.0.18_build.log` 和 `stage43_factory_v1.0.18_build.log`。v1.0.21 静默 OS/工厂镜像构建日志为 `stage_quiet_startup_v1.0.21_factory_build.log`，SDK SCons 构建成功；用户提供的 v1.0.20 外部引脚热复位实测为 1.632 秒，v1.0.21 尚无板上数据。Windows PowerShell 构建脚本捕获 SCons stderr 进度流，自动把原始 BMP 转成 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
+ 
+ 构建和主机 CPIO/RSA 检查不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证真实 PHY、板载触摸、热插拔、看门狗计数及启动回退。确认这些行为仍需在目标板执行一次完整流程。
+ 
+@@ -90,4 +92,3 @@ SDK 的 RT_DEBUG_INIT_CONFIG 可逐项输出 RT-Thread board/device/component/fi
+ 
+ 诊断 OTA 版本为 1.0.19，主机 CPIO/RSA 检查通过。额外串口日志会增加启动开销，不能用其整机启动总时间作为生产性能指标。安装会把板端版本升级到 1.0.19；采集完日志后，正式修复 OTA 需要版本高于 1.0.19。诊断包只用于定位瓶颈，不用于量产。
+ 
+-
+diff --git "a/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md" "b/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
+index 9327e71..fabd21c 100644
+--- "a/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
++++ "b/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
+@@ -2,7 +2,7 @@
+ 
+ | 阶段 | 实现内容 | 编译/验证证据 |
+ | --- | --- | --- |
+-| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；Bootloader 跳过预启动黑屏，OS 黑屏初始化后进入 HMI；NOR QSPI 维持 100 MHz 四线/半周期采样 | `stage24_bootloader_fast_start_build.log`、`stage43_factory_v1.0.18_build.log` |
++| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；Bootloader 跳过预启动黑屏，OS 黑屏初始化后进入 HMI；NOR QSPI 维持 100 MHz 四线/半周期采样；v1.0.20 已有板上启动日志，v1.0.21 静默 OS 已编译 | `stage_quiet_startup_v1.0.21_factory_build.log`、v1.0.20 UART 日志 |
+ | 2 SD/FATFS | SDMC1、PC6 热插拔、/sdcard、文件列表/读写/复制/删除/新建/改名/容量，独立工作队列 | `stage3_os_build.log` 与最终 OS 编译 |
+ | 3 A/B OTA | 官方 aic-ota/aic-env、CPIO CRC 与包长、SHA256、RSA2048/SHA256、ENV提交、配对回退、看门狗和健康确认；v1.0.18 OTA 已编译、签名并通过主机侧校验 | `stage42_ota_v1.0.18_build.log`、`verify_ota_host.py`、`verify_ota_signature.ps1` |
+ | 4 SD OTA | /sdcard/UPDATE/ota.cpio 与 .sig，确认后校验/写非活动槽/重启 | 同上；工具 `verify_ota_host.py` 验证成员、SPL白名单、校验篡改和尾随数据 |
+@@ -10,18 +10,18 @@
+ | 6 LVGL HMI | LVGL 9.1 官方线程；输入键盘延迟至首次聚焦创建；图片预览完成由 LVGL 专用 20 ms 定时器刷新；BMP 解码批量读取并原位翻转倒序行 | `stage43_factory_v1.0.18_build.log` |
+ | 7 模块化与说明 | app、boot_manager、ota、storage、network、ui、system各有接口头文件和实现；Logo BMP 自动生成 LVGL RGB565 C 资源；编译、烧录、升级、故障说明及 Git 兼容 diff | `docs/sdk_changes.patch`、`docs/logo_factory_fw.patch`、`docs/app_shell_factory.patch`、`docs/app_grid_5x3_factory.patch`、`docs/home_overview_move.patch`、`docs/boot_speed_header.patch`、`docs/v1.0.18_startup_image_optimization.patch`；研发工具箱启动检查报告 |
+ | 8 蜂鸣器与工具箱设备消息 | PWM1_A/PE.11、4 kHz；LNET 首次 INFO 回传 TCP 连接消息，OTA BEGIN 回传升级消息；RT-Thread 工作线程异步请求 1 秒蜂鸣；工具箱健康查询使用 0xD105 | `stage_wifi_buzzer_v1.0.20_factory_build.log`；工具箱 Python 语法检查 |
++| 9 静默输出与启动瘦身 | RT 控制台预先绑定空输出设备，禁用 OS UART0、FinSH/MSH 线程及 ULOG 输出；HMI 调试串口格式化由诊断配置控制；BootROM/SPL 配置未改 | `stage_quiet_startup_v1.0.21_factory_build.log`、`docs/quiet_startup_v1.0.21_source.patch`、新 v1.0.21 镜像 |
+ 
+-当前工厂镜像为 v1.0.20，`downloads/d13x_d133cbv-hmi-nor_v1.0.20.img` 大小 4,561,408 字节，SHA-256 `4cafb6f7433399e880c66912bfbbae8e31b9e4d927fc9f6e43f97ce78a680d14`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA。SDK 构建报告 OS 为 1,392,640 字节，小于 2 MiB 槽位；RODATA 为 2,502,656 字节，小于 5 MiB 槽位。此次未生成 v1.0.20 OTA 包；v1.0.18 OTA CPIO 与 v1.0.19 诊断包均不适用于已经安装 v1.0.19 的设备升级。
++当前工厂镜像为 v1.0.21，`downloads/d13x_d133cbv-hmi-nor_v1.0.21.img` 大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA。SDK 构建报告 OS 为 1,081,344 字节，小于 2 MiB 槽位；RODATA 为 2,502,656 字节，小于 5 MiB 槽位。相较 v1.0.20 OS/镜像减少 311,296 字节；按先前 47,050 KB/s 读取率推算，读取量约少 6–7 ms，尚无 v1.0.21 板上计时。此次未生成 v1.0.21 OTA 包。
+ 
+-用户提供的 v1.0.16 上电复位日志报告整机启动 `1.625 sec`；最新 v1.0.18 外部引脚热复位日志报告 `1.630 sec`、SPL 读取 1,380,780 字节耗时 28,658 μs。两者复位条件不同，不可直接比较。最新 HMI 标记为控件129 ms、flush219 ms、render222 ms，均从 app_manager 起算；没有图片打开日志。v1.0.18 已移除显式启用的未用驱动测试命令、延迟创建键盘、批量读取 BMP，并用20 ms预览定时器；整机冷启动和图片耗时仍需上板测量，不能宣称已达1秒。QSPI/NOR 参数保持原配置。
++用户提供的 v1.0.20 外部引脚热复位日志报告 `Startup time: 1.632 sec`；SPL 读取 1,389,240 字节耗时 28,834 μs；framebuffer 在 1.375 秒分配；HMI 标记控件127 ms、flush218 ms、render221 ms。此前 v1.0.18 同类复位为 1.630 秒，差 2 ms，未显示整机速度改善。需要 RT 初始化逐项耗时才能继续定位 1.375 秒前的时间；QSPI/NOR 参数保持原配置。
+ 
+ v1.0.19 RT_DEBUG_INIT 诊断 OTA 已通过 SDK 构建、CPIO 主机校验和 RSA 验签，包大小 3,931,136 字节，SHA-256 `ff783f19bb476509175ddb0fa962732368e9b0c760302dbf526971d4e1ca8c0b`。它输出每个 RT-Thread 初始化函数及早期阶段耗时；UART 大量日志会增加启动时间，profile 仅用于定位，不是生产固件。安装后设备版本为1.0.19，后续正式 OTA 必须使用更高版本。
+ 
+-板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.20 没有启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。PWM 蜂鸣、协议编译、工具箱源代码变更均未做真实板级/网络验收。新的工具箱 EXE 尚未重新打包；当前已发布的 0.8.36 不会显示新设备消息。
++板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.21 没有启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。用户提供的 v1.0.20 UART 日志验证了启动和 LVGL 首帧，但未验证蜂鸣器、Wi-Fi、工具箱 TCP 或 OTA。该日志还报告 `/data` LittleFS 挂载失败；`/sdcard` 初始挂载失败后检测到插卡，但未见挂载成功行。
+ 
+-所有代码基于本地 Luban-Lite 接口；没有修改 `bsp/` 驱动源码，也没有写实际 Flash 地址。v1.0.20 增加应用层蜂鸣与设备消息模块，工厂镜像构建不代表蜂鸣器或 TCP 的板级验收。诊断 profile 仅在 `RT_DEBUG_INIT` 打开时为 RT-Thread board/device/component 初始化输出计时，并不改变生产 profile 的启动路径。
++所有代码基于本地 Luban-Lite 接口；没有修改 `bsp/` 底层驱动，也没有写实际 Flash 地址。v1.0.21 通过板级静默 console 设备在驱动初始化前关闭 RT 控制台输出，FinSH/MSH 线程与 RT UART0 驱动在生产 profile 中关闭；HMI 调试格式化在正式构建时编译为空。独立诊断 profile 保留串口输出。BootROM/SPL 的打印路径没有修改。静默配置和构建结果尚未上板验证。
+ 
+-尚未完成实机验收：首页不显示状态胶囊、设备总览卡片打开独立详情页、5×3 启动器布局、顶栏/Logo 间距、新版完整启动速度、SD 图片各格式颜色/内存占用、全屏触摸返回、NOR 原频率冷启动稳定性、LVDS 时序、GT911 触摸、SD 插拔、RMII 链路/DHCP、Wi-Fi、蜂鸣、看门狗触发、A/B 试启动与回退，以及工具箱对板端 TCP 的真实传输。本次没有使用 AiBurn、烧录、擦除 NOR 或改变开发板状态。Bootloader 预启动黑屏已关闭，OS 仍初始化 LVDS；v1.0.20 工厂镜像供用户自行用 AiBurn 首次部署。日常 OTA 不含 SPL/Bootloader。UART `[boot_time]` 数值只覆盖 RT-Thread app 初始化到显示 flush，不等于完整上电时长；完整 1 秒验收需上板外部测量。
++尚未完成实机验收：首页不显示状态胶囊、设备总览卡片打开独立详情页、5×3 启动器布局、顶栏/Logo 间距、v1.0.21 静默串口结果、同条件冷启动与完整 1 秒目标、SD 图片各格式颜色/内存占用、全屏触摸返回、NOR 原频率稳定性、LVDS 时序、GT911 触摸、SD 插拔及最终挂载、`/data` LittleFS、RMII 链路/DHCP、Wi-Fi、蜂鸣、看门狗触发、A/B 试启动与回退，以及工具箱对板端 TCP 的真实传输。用户提供的日志确认 v1.0.20 在板上运行并显示 LVGL；v1.0.21 仅完成 SDK 构建。本次没有连接或操作硬件。日常 OTA 不含 SPL/Bootloader；尚未生成 v1.0.21 OTA。UART `[boot_time]` 在静默正式配置中不输出；整机时长仍需板上 UART 以外的计时方式验证。
+ 
+ RSA私钥 `keys/development_private.pem` 是仅供开发的本地测试密钥。量产必须改用受控密钥，并配置TLS/证书或TLS设备身份认证；当前TCP OTA按用户要求运行在局域网明文链路，由签名和屏幕确认保护升级授权。
+-
+diff --git "a/docs/\346\227\240\347\272\277\344\270\216\350\234\202\351\270\243\345\231\250\351\233\206\346\210\220.md" "b/docs/\346\227\240\347\272\277\344\270\216\350\234\202\351\270\243\345\231\250\351\233\206\346\210\220.md"
+index 9cfcc09..35dbc9f 100644
+--- "a/docs/\346\227\240\347\272\277\344\270\216\350\234\202\351\270\243\345\231\250\351\233\206\346\210\220.md"
++++ "b/docs/\346\227\240\347\272\277\344\270\216\350\234\202\351\270\243\345\231\250\351\233\206\346\210\220.md"
+@@ -19,4 +19,3 @@ RTL8723DS 需要与该芯片匹配的 RT-Thread SDIO WLAN 驱动、芯片初始
+ ## 验证边界
+ 
+ 构建只能验证 PWM API、工程配置和消息协议代码可链接。蜂鸣器声响、RTL8723DS 枚举/扫描/关联和实网 TCP 仍需开发板验证；本次不会自动烧录或改写 NOR。
+-
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 3fba967..5d354e0 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1,2 +1 @@
+-4cafb6f7433399e880c66912bfbbae8e31b9e4d927fc9f6e43f97ce78a680d14  d13x_d133cbv-hmi-nor_v1.0.20.img
+-
++d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c  d13x_d133cbv-hmi-nor_v1.0.21.img
+diff --git a/downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256 b/downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+new file mode 100644
+index 0000000..5d354e0
+--- /dev/null
++++ b/downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+@@ -0,0 +1 @@
++d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c  d13x_d133cbv-hmi-nor_v1.0.21.img
+diff --git a/source/application/rt-thread/d133_hmi/Kconfig b/source/application/rt-thread/d133_hmi/Kconfig
+index ab22939..f472b1d 100644
+--- a/source/application/rt-thread/d133_hmi/Kconfig
++++ b/source/application/rt-thread/d133_hmi/Kconfig
+@@ -5,6 +5,17 @@ config HMI_FW_VERSION
+ config HMI_APP
+     bool
+     default y
++
++config HMI_QUIET_CONSOLE
++    bool "Silence RT-Thread console in production"
++    depends on HMI_APP
++    default n
++
++config HMI_SERIAL_DIAGNOSTICS
++    bool "Enable HMI serial diagnostics"
++    depends on HMI_APP
++    default n
++
+ config HMI_NETWORK
+     bool "Enable D133 toolbox TCP OTA server"
+     default n
+diff --git a/source/application/rt-thread/d133_hmi/app/app_manager.c b/source/application/rt-thread/d133_hmi/app/app_manager.c
+index 21813a0..336b4b2 100644
+--- a/source/application/rt-thread/d133_hmi/app/app_manager.c
++++ b/source/application/rt-thread/d133_hmi/app/app_manager.c
+@@ -10,6 +10,7 @@ unsigned int app_manager_boot_elapsed_ms(void)
+ #include "storage_manager.h"
+ #include "system_manager.h"
+ #include "device_event_manager.h"
++#include "hmi_serial_log.h"
+ #include "boot_manager.h"
+ #include "ota_manager.h"
+ #ifdef HMI_NETWORK
+@@ -25,10 +26,9 @@ int app_manager_init(void)
+     if(network_manager_init())return -3;
+ #endif
+     ready=1;system_manager_log("应用服务初始化完成");
+-    rt_kprintf("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
++    hmi_serial_log("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
+     return 0;
+ }
+ 
+ INIT_APP_EXPORT(app_manager_init);
+ 
+-
+diff --git a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+index 64a9e94..757eb8b 100644
+--- a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
++++ b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+@@ -1,4 +1,5 @@
+ #include "boot_manager.h"
++#include "hmi_serial_log.h"
+ #include "system_manager.h"
+ #include "ota_package.h"
+ #include <stdio.h>
+@@ -19,7 +20,7 @@ int boot_manager_confirm(void)
+     int r=aic_ota_status_update();
+     if(!r){rt_mutex_take(&lock,RT_WAITING_FOREVER);state.pending=0;state.confirmed=1;rt_mutex_release(&lock);
+         char record[128];snprintf(record,sizeof(record),"confirmed version=%s target=%c",HMI_VERSION,state.current);system_manager_record_upgrade(record);system_manager_log("新系统健康检查通过，启动槽位已确认");}
+-    rt_kprintf("[boot] health confirmation=%d\n",r);return r;
++    hmi_serial_log("[boot] health confirmation=%d\n",r);return r;
+ }
+ static void monitor(void *arg)
+ {
+diff --git a/source/application/rt-thread/d133_hmi/ota/ota_manager.c b/source/application/rt-thread/d133_hmi/ota/ota_manager.c
+index 3d34711..7c9c2b3 100644
+--- a/source/application/rt-thread/d133_hmi/ota/ota_manager.c
++++ b/source/application/rt-thread/d133_hmi/ota/ota_manager.c
+@@ -3,6 +3,7 @@
+ #include "ota_signature.h"
+ #include "boot_manager.h"
+ #include "system_manager.h"
++#include "hmi_serial_log.h"
+ #include <rtthread.h>
+ #include <stdbool.h>
+ #include <mbedtls/sha256.h>
+@@ -47,8 +48,8 @@ static void worker(void *unused)
+         if(aic_upgrade_end()){error=-27;goto fail;}
+         snprintf(record,sizeof(record),"committed version=%s target=%c",version,boot.current=='A'?'B':'A');
+         if(system_manager_record_upgrade(record))system_manager_log("警告：ENV 已提交，但升级状态文件写入失败");
+-        boot_manager_refresh();update(OTA_READY,100,0);rt_kprintf("[ota] verified inactive slots ready; reboot required\n");continue;
+-fail:if(f)fclose(f);if(initialized)ota_deinit();if(hash_initialized)mbedtls_sha256_free(&stream_hash);update(OTA_FAILED,0,error);char failure_record[128];snprintf(failure_record,sizeof(failure_record),"failed error=%d version=%s",error,j.version[0]?j.version:"unknown");system_manager_record_upgrade(failure_record);{char log_text[128];snprintf(log_text,sizeof(log_text),"升级失败，错误码：%d，版本：%s",error,j.version[0]?j.version:"未知");system_manager_log(log_text);}rt_kprintf("[ota] failed=%d; current slot retained\n",error);
++        boot_manager_refresh();update(OTA_READY,100,0);hmi_serial_log("[ota] verified inactive slots ready; reboot required\n");continue;
++fail:if(f)fclose(f);if(initialized)ota_deinit();if(hash_initialized)mbedtls_sha256_free(&stream_hash);update(OTA_FAILED,0,error);char failure_record[128];snprintf(failure_record,sizeof(failure_record),"failed error=%d version=%s",error,j.version[0]?j.version:"unknown");system_manager_record_upgrade(failure_record);{char log_text[128];snprintf(log_text,sizeof(log_text),"升级失败，错误码：%d，版本：%s",error,j.version[0]?j.version:"未知");system_manager_log(log_text);}hmi_serial_log("[ota] failed=%d; current slot retained\n",error);
+     }
+ }
+ int ota_manager_init(void){rt_thread_t t;verifier=ota_signature_verify;rt_mutex_init(&mutex,"otastate",RT_IPC_FLAG_PRIO);queue=rt_mq_create("otajob",sizeof(job_t),1,RT_IPC_FLAG_FIFO);if(!queue)return -1;t=rt_thread_create("hmi_ota",worker,0,8192,21,10);return t?rt_thread_startup(t):-1;}
+diff --git a/source/application/rt-thread/d133_hmi/ota/ota_sd.c b/source/application/rt-thread/d133_hmi/ota/ota_sd.c
+index d67f974..8664424 100644
+--- a/source/application/rt-thread/d133_hmi/ota/ota_sd.c
++++ b/source/application/rt-thread/d133_hmi/ota/ota_sd.c
+@@ -1,7 +1,8 @@
+ #include "ota_sd.h"
++#include "hmi_serial_log.h"
+ #include "ota_manager.h"
+ #include <rtthread.h>
+ /* 用户主动调用命令后，由 OTA 工作线程校验包和签名，命令线程不直接写 Flash。 */
+ int ota_sd_start(void){return ota_manager_request("/sdcard/UPDATE/ota.cpio",0,0,0);}
+-static void sd_ota_command(void){rt_kprintf("[sd-ota] request=%d\n",ota_sd_start());}
++static void sd_ota_command(void){hmi_serial_log("[sd-ota] request=%d\n",ota_sd_start());}
+ MSH_CMD_EXPORT_ALIAS(sd_ota_command,hmi_sd_ota,Install signed SD CPIO to inactive slots);
+diff --git a/source/application/rt-thread/d133_hmi/storage/sd_manager.c b/source/application/rt-thread/d133_hmi/storage/sd_manager.c
+index 6b7d8dc..889a8a6 100644
+--- a/source/application/rt-thread/d133_hmi/storage/sd_manager.c
++++ b/source/application/rt-thread/d133_hmi/storage/sd_manager.c
+@@ -1,9 +1,10 @@
+ #include "sd_manager.h"
++#include "hmi_serial_log.h"
+ #include <rtthread.h>
+ #include <dfs_fs.h>
+ #include <string.h>
+ /* 插拔和自动挂载复用官方 SDMC1 热插拔线程及 board.c 挂载表。 */
+-int sd_manager_init(void){rt_kprintf("[sd] SDMC1 /sdcard; detect PC.6\n");return 0;}
++int sd_manager_init(void){hmi_serial_log("[sd] SDMC1 /sdcard; detect PC.6\n");return 0;}
+ int sd_manager_ready(void)
+ {
+     struct dfs_filesystem *fs=dfs_filesystem_lookup("/sdcard");
+diff --git a/source/application/rt-thread/d133_hmi/storage/storage_manager.c b/source/application/rt-thread/d133_hmi/storage/storage_manager.c
+index 8391db1..5a2b995 100644
+--- a/source/application/rt-thread/d133_hmi/storage/storage_manager.c
++++ b/source/application/rt-thread/d133_hmi/storage/storage_manager.c
+@@ -1,5 +1,6 @@
+ #include "storage_manager.h"
+ #include "sd_manager.h"
++#include "hmi_serial_log.h"
+ #include <rtthread.h>
+ #include <string.h>
+ static rt_mq_t jobs,results;
+@@ -19,7 +20,7 @@ static void worker(void *arg)
+         case ST_WRITE:r.error=q.length<=sizeof(q.data)?file_manager_write(q.path,q.data,q.length):-1;break;
+         case ST_CAPACITY:r.error=file_manager_capacity(q.path,&r.total,&r.free_bytes);break;
+         default:r.error=-1;break;}
+-        rt_kprintf("[storage] op=%d result=%d %s\n",q.op,r.error,q.path);
++        hmi_serial_log("[storage] op=%d result=%d %s\n",q.op,r.error,q.path);
+         /* 结果队列背压仅等待工作线程，LVGL 始终非阻塞轮询。 */
+         while(rt_mq_send(results,&r,sizeof(r))!=RT_EOK)rt_thread_mdelay(20);
+     }
+diff --git a/source/application/rt-thread/d133_hmi/system/hmi_serial_log.c b/source/application/rt-thread/d133_hmi/system/hmi_serial_log.c
+new file mode 100644
+index 0000000..b736d6d
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/system/hmi_serial_log.c
+@@ -0,0 +1,20 @@
++#include "hmi_serial_log.h"
++
++#include <rtthread.h>
++#include <stdarg.h>
++
++void hmi_serial_log(const char *format, ...)
++{
++#ifdef HMI_SERIAL_DIAGNOSTICS
++    char buffer[512];
++    va_list args;
++
++    va_start(args, format);
++    rt_vsnprintf(buffer, sizeof(buffer), format, args);
++    va_end(args);
++    rt_kputs(buffer);
++#else
++    /* 正式配置不拼接、不发送 HMI 调试串口字符串。 */
++    (void)format;
++#endif
++}
+diff --git a/source/application/rt-thread/d133_hmi/system/hmi_serial_log.h b/source/application/rt-thread/d133_hmi/system/hmi_serial_log.h
+new file mode 100644
+index 0000000..8a70db2
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/system/hmi_serial_log.h
+@@ -0,0 +1,7 @@
++#ifndef D133_HMI_SERIAL_LOG_H
++#define D133_HMI_SERIAL_LOG_H
++
++/* 仅诊断构建输出串口日志；正式固件由配置在编译期移除格式化开销。 */
++void hmi_serial_log(const char *format, ...);
++
++#endif
+diff --git a/source/application/rt-thread/d133_hmi/system/system_manager.c b/source/application/rt-thread/d133_hmi/system/system_manager.c
+index 7e7db77..7053c78 100644
+--- a/source/application/rt-thread/d133_hmi/system/system_manager.c
++++ b/source/application/rt-thread/d133_hmi/system/system_manager.c
+@@ -1,4 +1,5 @@
+ #include "system_manager.h"
++#include "hmi_serial_log.h"
+ #include <rtthread.h>
+ #include <string.h>
+ #include <stdio.h>
+@@ -27,7 +28,7 @@ void system_manager_log(const char *s)
+     char line[512];snprintf(line,sizeof(line),"%.510s",s);unsigned n=strlen(line);
+     rt_mutex_take(&lock,RT_WAITING_FOREVER);if(strlen(logbuf)+n+2>=sizeof(logbuf))logbuf[0]=0;strcat(logbuf,line);strcat(logbuf,"\n");rt_mutex_release(&lock);
+     if(messages)rt_mq_send(messages,line,sizeof(line));
+-    rt_kprintf("[hmi] %s\n",line);
++    hmi_serial_log("[hmi] %s\n",line);
+ }
+ void system_manager_logs(char *out,unsigned n){if(!n)return;rt_mutex_take(&lock,RT_WAITING_FOREVER);rt_strncpy(out,logbuf,n-1);out[n-1]=0;rt_mutex_release(&lock);}
+ /* 只供 OTA/健康线程调用，必须在返回前落盘。ENV 仍是启动状态的权威来源。 */
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index 04f6c7e..cfda5ba 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -1,4 +1,5 @@
+ #include "image_preview.h"
++#include "hmi_serial_log.h"
+ #include "file_manager.h"
+ #include <rtthread.h>
+ #include <aic_core.h>
+@@ -197,7 +198,7 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
+     preview_image.data = pixels;
+     preview_image.reserved = decoded;
+     aicos_dcache_clean_range((unsigned long *)pixels, (int64_t)destination_size);
+-    rt_kprintf("[image_preview] MPP color format %u normalized to RGB565: %u x %u\n",
++    hmi_serial_log("[image_preview] MPP color format %u normalized to RGB565: %u x %u\n",
+                (unsigned)source_header.cf, source_header.w, source_header.h);
+     return IMAGE_PREVIEW_ERR_NONE;
+ }
+@@ -218,7 +219,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
+     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+     decode_started = rt_tick_get_millisecond();
+     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
+-        rt_kprintf("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
++        hmi_serial_log("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
+                    (unsigned)(rt_tick_get_millisecond() - decode_started),
+                    preview_source_path);
+         return IMAGE_PREVIEW_ERR_DECODE;
+@@ -230,7 +231,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
+          decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB888 &&
+          decoder_dsc.header.cf != LV_COLOR_FORMAT_ARGB8888 &&
+          decoder_dsc.header.cf != LV_COLOR_FORMAT_XRGB8888)) {
+-        rt_kprintf("[image_preview] 解码器输出格式无效：%s\n", preview_source_path);
++        hmi_serial_log("[image_preview] 解码器输出格式无效：%s\n", preview_source_path);
+         lv_image_decoder_close(&decoder_dsc);
+         decoder_opened = 0;
+         memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+@@ -241,7 +242,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
+     normalize_started = rt_tick_get_millisecond();
+     result = normalize_decoded_frame_to_rgb565(decoder_dsc.decoded);
+     normalize_ms = rt_tick_get_millisecond() - normalize_started;
+-    rt_kprintf("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
++    hmi_serial_log("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
+                decode_ms, normalize_ms, decoder_dsc.header.w, decoder_dsc.header.h,
+                (unsigned)decoder_dsc.header.cf);
+     if (result != IMAGE_PREVIEW_ERR_NONE) {
+@@ -268,7 +269,7 @@ static int load_image(const char *path)
+         return IMAGE_PREVIEW_ERR_FORMAT;
+     if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
+         (uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
+-        rt_kprintf("[image_preview] 文件不可读或大小无效：%s\n", path);
++        hmi_serial_log("[image_preview] 文件不可读或大小无效：%s\n", path);
+         return IMAGE_PREVIEW_ERR_SIZE;
+     }
+ 
+@@ -291,12 +292,12 @@ static int load_image(const char *path)
+ 
+     info_started = rt_tick_get_millisecond();
+     if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
+-        rt_kprintf("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
++        hmi_serial_log("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
+         return IMAGE_PREVIEW_ERR_DECODE;
+     }
+     info_ms = rt_tick_get_millisecond() - info_started;
+     if (!dimensions_supported(&header)) {
+-        rt_kprintf("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
++        hmi_serial_log("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
+                    path, header.w, header.h);
+         return IMAGE_PREVIEW_ERR_SIZE;
+     }
+@@ -306,7 +307,7 @@ static int load_image(const char *path)
+     /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
+     decode_started = rt_tick_get_millisecond();
+     result = decode_mpp_image(&header);
+-    rt_kprintf("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
++    hmi_serial_log("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
+                (unsigned)(rt_tick_get_millisecond() - started), info_ms,
+                (unsigned)(rt_tick_get_millisecond() - decode_started), result);
+     return result;
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index 79de8ae..7da4e52 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -1,4 +1,5 @@
+ #include "ui_manager.h"
++#include "hmi_serial_log.h"
+ #include "app_manager.h"
+ #include "lvgl.h"
+ #include <rtthread.h>
+@@ -82,11 +83,11 @@ static void boot_display_timing(lv_event_t *event)
+ 
+     if (code == LV_EVENT_RENDER_READY && !first_render_logged) {
+         first_render_logged = 1;
+-        rt_kprintf("[boot_time] lvgl_render_ready=%u ms\n",
++        hmi_serial_log("[boot_time] lvgl_render_ready=%u ms\n",
+                    app_manager_boot_elapsed_ms());
+     } else if (code == LV_EVENT_FLUSH_FINISH && !first_flush_logged) {
+         first_flush_logged = 1;
+-        rt_kprintf("[boot_time] display_flush_return=%u ms\n",
++        hmi_serial_log("[boot_time] display_flush_return=%u ms\n",
+                    app_manager_boot_elapsed_ms());
+     }
+ }
+@@ -921,7 +922,7 @@ void hmi_ui_init(void)
+     lv_obj_t *header_band;
+     lv_obj_t *header_accent;
+ 
+-    rt_kprintf("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
++    hmi_serial_log("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
+     /* 字体由只读资源分区提供；加载失败时不启动健康心跳，保留 A/B 回滚保护。 */
+     hmi_font = lv_freetype_font_create(HMI_FONT_PATH,
+         LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 18, LV_FREETYPE_FONT_STYLE_NORMAL);
+@@ -929,16 +930,16 @@ void hmi_ui_init(void)
+         lv_obj_t *error = lv_label_create(root);
+         lv_label_set_text(error, "Chinese font load failed; check /rodata/hmi/fonts.");
+         lv_obj_set_pos(error, 20, 30);
+-        rt_kprintf("[hmi] Chinese font load failed; health confirmation blocked\n");
++        hmi_serial_log("[hmi] Chinese font load failed; health confirmation blocked\n");
+         return;
+     }
+     /* 两种界面字号复用同一个字体实例，避免重复创建 FreeType 字体对象。 */
+     hmi_font_small = hmi_font;
+-    rt_kprintf("[boot_time] chinese_font_ready=%u ms\n",app_manager_boot_elapsed_ms());
++    hmi_serial_log("[boot_time] chinese_font_ready=%u ms\n",app_manager_boot_elapsed_ms());
+     lv_obj_set_style_text_font(root, body_font(), LV_PART_MAIN);
+     if (!app_manager_ready()) {
+         label(root, "应用服务初始化失败，请检查串口日志。", 20, 30, 900);
+-        rt_kprintf("[hmi] application services are not ready; health confirmation blocked\n");
++        hmi_serial_log("[hmi] application services are not ready; health confirmation blocked\n");
+         return;
+     }
+     lv_obj_set_style_bg_color(root, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
+@@ -1009,5 +1010,5 @@ void hmi_ui_init(void)
+         lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,
+                                 LV_EVENT_FLUSH_FINISH, NULL);
+     }
+-    rt_kprintf("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
++    hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
+ }
+diff --git a/source/bsp/examples/test-mbedtls-csrp/SConscript b/source/bsp/examples/test-mbedtls-csrp/SConscript
+new file mode 100644
+index 0000000..55a92bf
+--- /dev/null
++++ b/source/bsp/examples/test-mbedtls-csrp/SConscript
+@@ -0,0 +1,14 @@
++Import('AIC_ROOT')
++Import('PRJ_KERNEL')
++from building import *
++
++cwd = GetCurrentDir()
++CPPPATH = [cwd]
++src = []
++
++# SRP 测试程序只在显式启用 MbedTLS 示例时加入固件。
++if GetDepend(['LPKG_USING_MBEDTLS', 'LPKG_USING_MBEDTLS_EXAMPLE']):
++    src += Glob('*.c')
++
++group = DefineGroup('test-mbedtls-csrp', src, depend=[''], CPPPATH=CPPPATH)
++Return('group')
+diff --git a/source/bsp/examples/test-mbedtls/SConscript b/source/bsp/examples/test-mbedtls/SConscript
+new file mode 100644
+index 0000000..5ca933d
+--- /dev/null
++++ b/source/bsp/examples/test-mbedtls/SConscript
+@@ -0,0 +1,14 @@
++Import('AIC_ROOT')
++Import('PRJ_KERNEL')
++from building import *
++
++cwd = GetCurrentDir()
++CPPPATH = [cwd]
++src = []
++
++# 仅在用户显式启用 SDK 示例时构建依赖 FinSH 命令表的 MbedTLS 测试。
++if GetDepend(['LPKG_USING_MBEDTLS', 'LPKG_USING_MBEDTLS_EXAMPLE', 'RT_USING_FINSH']):
++    src += Glob('*.c')
++
++group = DefineGroup('test-mbedtls', src, depend=[''], CPPPATH=CPPPATH)
++Return('group')
+diff --git a/source/kernel/rt-thread/include/finsh.h b/source/kernel/rt-thread/include/finsh.h
+new file mode 100644
+index 0000000..c7724a5
+--- /dev/null
++++ b/source/kernel/rt-thread/include/finsh.h
+@@ -0,0 +1,15 @@
++#ifndef D133_FINSH_COMPAT_H
++#define D133_FINSH_COMPAT_H
++
++/*
++ * 中文说明：部分 ArtInChip OTA/MbedTLS 源文件无条件包含 finsh.h，
++ * 即使正式配置关闭 FinSH。调试配置继续转入 SDK 的真实 FinSH 头文件；
++ * 正式静默配置只使用 rtdef.h 提供的空命令导出宏，不创建 shell。
++ */
++#ifdef RT_USING_FINSH
++#include_next <finsh.h>
++#else
++#include <rtdef.h>
++#endif
++
++#endif
+diff --git a/source/kernel/rt-thread/include/shell.h b/source/kernel/rt-thread/include/shell.h
+new file mode 100644
+index 0000000..2de1305
+--- /dev/null
++++ b/source/kernel/rt-thread/include/shell.h
+@@ -0,0 +1,15 @@
++#ifndef D133_SHELL_COMPAT_H
++#define D133_SHELL_COMPAT_H
++
++/*
++ * 中文说明：部分 ArtInChip 多媒体示例在关闭 FinSH 后仍包含 shell.h，
++ * 但只用 MSH_CMD_EXPORT_ALIAS 导出调试命令。正式静默构建复用 rtdef.h
++ * 的空导出宏；诊断配置转发到 SDK 的真实 shell.h。
++ */
++#ifdef RT_USING_FINSH
++#include_next <shell.h>
++#else
++#include <rtdef.h>
++#endif
++
++#endif
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index b742015..4c9c37b 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -15,7 +15,6 @@ CONFIG_LVGL_V_9=y
+ 
+ CONFIG_LV_COLOR_DEPTH=16
+ CONFIG_LV_CACHE_IMG_NUM=8
+-CONFIG_AIC_USING_UART0=y
+ CONFIG_AIC_USING_I2C2=y
+ # CONFIG_AIC_USING_CAN0 is not set
+ CONFIG_AIC_USING_QSPI0=y
+@@ -62,10 +61,10 @@ CONFIG_IDLE_THREAD_STACK_SIZE=1024
+ CONFIG_RT_MEMHEAP_BSET_MODE=y
+ CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
+ # CONFIG_RT_USING_MEMHEAP_AUTO_BINDING is not set
+-CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_CONSOLE_DEVICE_NAME="hmi_quiet"
++# CONFIG_RT_USING_MSH is not set
++# CONFIG_RT_USING_FINSH is not set
+ CONFIG_RT_MAIN_THREAD_STACK_SIZE=4096
+-CONFIG_FINSH_USING_WORD_OPERATION=y
+-CONFIG_FINSH_USING_FUNC_EXT=y
+ CONFIG_DFS_FILESYSTEMS_MAX=8
+ CONFIG_RT_USING_DFS_MNTTABLE=y
+ CONFIG_RT_USING_DFS_ELMFAT=y
+@@ -88,9 +87,9 @@ CONFIG_RT_SFUD_USING_QSPI=y
+ CONFIG_RT_USING_TOUCH=y
+ CONFIG_RT_TOUCH_PIN_IRQ=y
+ CONFIG_RT_USING_ULOG=y
+-CONFIG_ULOG_OUTPUT_LVL_W=y
++CONFIG_ULOG_OUTPUT_LVL_A=y
++# CONFIG_ULOG_USING_FILTER is not set
+ CONFIG_ULOG_TIME_USING_TIMESTAMP=y
+-CONFIG_ULOG_USING_FILTER=y
+ CONFIG_LPKG_USING_CPU_USAGE=y
+ CONFIG_LPKG_USING_LITTLEFS=y
+ CONFIG_AIC_MPP_PLAYER_INTERFACE=y
+@@ -123,6 +122,7 @@ CONFIG_LPKG_USING_OTA_DOWNLOADER=y
+ CONFIG_OTA_DATA_DIRECT=y
+ CONFIG_LPKG_USING_MBEDTLS=y
+ CONFIG_HMI_APP=y
++CONFIG_HMI_QUIET_CONSOLE=y
+ 
+ CONFIG_HMI_SD_OTA=y
+ CONFIG_HMI_NETWORK=y
+@@ -139,9 +139,8 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.20"
++CONFIG_HMI_FW_VERSION="1.0.21"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+-
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index c026594..9bb03ae 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -15,7 +15,6 @@ CONFIG_LVGL_V_9=y
+ 
+ CONFIG_LV_COLOR_DEPTH=16
+ CONFIG_LV_CACHE_IMG_NUM=8
+-CONFIG_AIC_USING_UART0=y
+ CONFIG_AIC_USING_I2C2=y
+ # CONFIG_AIC_USING_CAN0 is not set
+ CONFIG_AIC_USING_QSPI0=y
+@@ -62,10 +61,10 @@ CONFIG_IDLE_THREAD_STACK_SIZE=1024
+ CONFIG_RT_MEMHEAP_BSET_MODE=y
+ CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
+ # CONFIG_RT_USING_MEMHEAP_AUTO_BINDING is not set
+-CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_CONSOLE_DEVICE_NAME="hmi_quiet"
++# CONFIG_RT_USING_MSH is not set
++# CONFIG_RT_USING_FINSH is not set
+ CONFIG_RT_MAIN_THREAD_STACK_SIZE=4096
+-CONFIG_FINSH_USING_WORD_OPERATION=y
+-CONFIG_FINSH_USING_FUNC_EXT=y
+ CONFIG_DFS_FILESYSTEMS_MAX=8
+ CONFIG_RT_USING_DFS_MNTTABLE=y
+ CONFIG_RT_USING_DFS_ELMFAT=y
+@@ -88,9 +87,9 @@ CONFIG_RT_SFUD_USING_QSPI=y
+ CONFIG_RT_USING_TOUCH=y
+ CONFIG_RT_TOUCH_PIN_IRQ=y
+ CONFIG_RT_USING_ULOG=y
+-CONFIG_ULOG_OUTPUT_LVL_W=y
++CONFIG_ULOG_OUTPUT_LVL_A=y
++# CONFIG_ULOG_USING_FILTER is not set
+ CONFIG_ULOG_TIME_USING_TIMESTAMP=y
+-CONFIG_ULOG_USING_FILTER=y
+ CONFIG_LPKG_USING_CPU_USAGE=y
+ CONFIG_LPKG_USING_LITTLEFS=y
+ CONFIG_AIC_MPP_PLAYER_INTERFACE=y
+@@ -123,6 +122,7 @@ CONFIG_LPKG_USING_OTA_DOWNLOADER=y
+ CONFIG_OTA_DATA_DIRECT=y
+ CONFIG_LPKG_USING_MBEDTLS=y
+ CONFIG_HMI_APP=y
++CONFIG_HMI_QUIET_CONSOLE=y
+ 
+ CONFIG_HMI_SD_OTA=y
+ CONFIG_HMI_NETWORK=y
+@@ -137,7 +137,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.20"
++CONFIG_HMI_FW_VERSION="1.0.21"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+@@ -145,4 +145,3 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+ 
+-
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+index 2e6b977..afc5e54 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+@@ -124,6 +124,7 @@ CONFIG_LPKG_USING_OTA_DOWNLOADER=y
+ CONFIG_OTA_DATA_DIRECT=y
+ CONFIG_LPKG_USING_MBEDTLS=y
+ CONFIG_HMI_APP=y
++CONFIG_HMI_SERIAL_DIAGNOSTICS=y
+ 
+ CONFIG_HMI_SD_OTA=y
+ CONFIG_HMI_NETWORK=y
+@@ -146,4 +147,3 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+ 
+-
+diff --git a/source/target/d13x/d133cbv-hmi-nor/board.c b/source/target/d13x/d133cbv-hmi-nor/board.c
+index 050c047..4ca305d 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/board.c
++++ b/source/target/d13x/d133cbv-hmi-nor/board.c
+@@ -20,6 +20,9 @@ extern void aic_board_sysclk_init(void);
+ #if RT_DEBUG_INIT
+ #include <aic_time.h>
+ #endif
++#ifdef HMI_QUIET_CONSOLE
++#include "quiet_console.h"
++#endif
+ 
+ extern size_t __heap_start;
+ extern size_t __heap_end;
+@@ -176,6 +179,11 @@ void rt_hw_board_init(void)
+ #endif
+ #endif
+ 
++#ifdef HMI_QUIET_CONSOLE
++    /* 在板级驱动初始化前切到空输出设备，避免 RT-Thread 日志占用 UART。 */
++    (void)hmi_quiet_console_register();
++#endif
++
+ #if RT_DEBUG_INIT
+     init_start_us = aic_get_time_us();
+ #endif
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index d215aad..2d346ca 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.20",
++            "version": "1.0.21",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
+@@ -115,4 +115,3 @@
+     },
+ }
+ 
+-
+diff --git a/source/target/d13x/d133cbv-hmi-nor/quiet_console.c b/source/target/d13x/d133cbv-hmi-nor/quiet_console.c
+new file mode 100644
+index 0000000..2c91fe3
+--- /dev/null
++++ b/source/target/d13x/d133cbv-hmi-nor/quiet_console.c
+@@ -0,0 +1,87 @@
++#include "quiet_console.h"
++#include <rtconfig.h>
++
++#if defined(KERNEL_RTTHREAD) && defined(RT_USING_DEVICE) && \
++    defined(RT_USING_CONSOLE) && defined(HMI_QUIET_CONSOLE)
++
++#include <rtdevice.h>
++#include <rtthread.h>
++
++#define HMI_QUIET_CONSOLE_NAME "hmi_quiet"
++
++static struct rt_device quiet_console;
++
++/* 静默设备只吞掉控制台写入，不触碰 BootROM/SPL 的早期 UART。 */
++static rt_err_t quiet_open(rt_device_t device, rt_uint16_t oflag)
++{
++    (void)device;
++    (void)oflag;
++    return RT_EOK;
++}
++
++static rt_err_t quiet_close(rt_device_t device)
++{
++    (void)device;
++    return RT_EOK;
++}
++
++static rt_size_t quiet_read(rt_device_t device, rt_off_t position,
++                            void *buffer, rt_size_t size)
++{
++    (void)device;
++    (void)position;
++    (void)buffer;
++    (void)size;
++    return 0;
++}
++
++static rt_size_t quiet_write(rt_device_t device, rt_off_t position,
++                             const void *buffer, rt_size_t size)
++{
++    (void)device;
++    (void)position;
++    (void)buffer;
++    return size;
++}
++
++#ifdef RT_USING_DEVICE_OPS
++static const struct rt_device_ops quiet_ops =
++{
++    RT_NULL,
++    quiet_open,
++    quiet_close,
++    quiet_read,
++    quiet_write,
++    RT_NULL,
++};
++#endif
++
++int hmi_quiet_console_register(void)
++{
++    rt_memset(&quiet_console, 0, sizeof(quiet_console));
++    quiet_console.type = RT_Device_Class_Char;
++#ifdef RT_USING_DEVICE_OPS
++    quiet_console.ops = &quiet_ops;
++#else
++    quiet_console.open = quiet_open;
++    quiet_console.close = quiet_close;
++    quiet_console.read = quiet_read;
++    quiet_console.write = quiet_write;
++#endif
++
++    if (rt_device_register(&quiet_console, HMI_QUIET_CONSOLE_NAME,
++                           RT_DEVICE_FLAG_RDWR) != RT_EOK)
++        return -RT_ERROR;
++
++    rt_console_set_device(HMI_QUIET_CONSOLE_NAME);
++    return rt_console_get_device() == &quiet_console ? RT_EOK : -RT_ERROR;
++}
++
++#else
++
++int hmi_quiet_console_register(void)
++{
++    return 0;
++}
++
++#endif
+diff --git a/source/target/d13x/d133cbv-hmi-nor/quiet_console.h b/source/target/d13x/d133cbv-hmi-nor/quiet_console.h
+new file mode 100644
+index 0000000..7e766d7
+--- /dev/null
++++ b/source/target/d13x/d133cbv-hmi-nor/quiet_console.h
+@@ -0,0 +1,6 @@
++#ifndef D133_QUIET_CONSOLE_H
++#define D133_QUIET_CONSOLE_H
++
++int hmi_quiet_console_register(void);
++
++#endif
