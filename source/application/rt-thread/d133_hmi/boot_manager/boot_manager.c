@@ -2,6 +2,7 @@
 #include "hmi_serial_log.h"
 #include "system_manager.h"
 #include "ota_package.h"
+#include "display_profile_manager.h"
 #include <stdio.h>
 #include <rtthread.h>
 #include <rtdevice.h>
@@ -30,8 +31,10 @@ static void monitor(void *arg)
     if(!watchdog_ok)system_manager_log("看门狗未能启动，已阻止新系统健康确认");
     while(1){
         boot_status_t snapshot;boot_manager_get(&snapshot);
+        display_profile_info_t profile;display_profile_get_active(&profile);
         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata"),*data=dfs_filesystem_lookup("/data");
-        int ok=watchdog_ok && rt_device_find("gt911") && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
+        int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
+        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
         rt_thread_mdelay(1000);
     }
@@ -54,7 +57,6 @@ int boot_manager_init(void)
     }
     t=rt_thread_create("hmi_health",monitor,0,3072,20,10);return t?rt_thread_startup(t):-1;
 }
-
 
 
 

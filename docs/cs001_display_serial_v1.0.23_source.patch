@@ -1,0 +1,3110 @@
+diff --git a/.gitignore b/.gitignore
+index 01f9325..15140b4 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -24,6 +24,8 @@ downloads/*
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.22.img
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.22.img.sha256
++!downloads/d13x_d133cbv-hmi-nor_v1.0.23.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.23.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
+diff --git a/README.md b/README.md
+index d0347fa..a39dab1 100644
+--- a/README.md
++++ b/README.md
+@@ -4,16 +4,16 @@
+ 
+ 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
+ 
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.22 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.23 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+ 
+-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.22 继续使用静默 RT 控制台、关闭 FinSH Shell 和 ULOG 输出，并重新启用 UART0 作为屏幕代号协议专用串口。RT 控制台仍绑定 `hmi_quiet`，不输出 RT-Thread/HMI/Shell 日志；BootROM/SPL 输出保持。独立诊断 profile 保留逐项计时。v1.0.20 热复位实测 1.632 秒；v1.0.22 尚未上板测量，1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
++启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.23 继续使用静默 RT 控制台、关闭 FinSH Shell 和 ULOG 输出，UART0 用于屏幕代号协议和当前 profile 启动行。RT 控制台仍绑定 `hmi_quiet`，BootROM/SPL 输出保持。独立诊断 profile 保留逐项计时。v1.0.20 热复位实测 1.632 秒；v1.0.23 尚未上板测量，1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
+ 
+ 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
+ 
+ ```powershell
+ .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
+-.\scripts\build.ps1 -Target OS -LogName stage_panel_serial_images_v1.0.22_build.log
+-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_panel_serial_images_v1.0.22_ota_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_cs001_display_serial_v1.0.23_build.log
++.\scripts\build.ps1 -Target OtaCandidate -LogName stage_cs001_display_serial_v1.0.23_ota_build.log
+ .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
+ ```
+ 
+@@ -21,20 +21,22 @@
+ 
+ 文件管理页选中 SD 图片并按“打开 / 读取”后，图片按原始像素 1:1 显示：小图居中，大图中心裁去屏幕以外部分；左上角固定“返回”键。BMP 只读取可见区域并申请屏幕大小的 RGB565 输出区，支持 16/24/32 位 BI_RGB 与 16/32 位 BI_BITFIELDS；JPG/JPEG、PNG 使用 SDK MPP 硬件裁剪窗口。JPEG/PNG 压缩输入上限为 4 MiB，PNG 仍遵循 SDK 800 万像素限制，解码硬件与 LVGL 图像描述符上限仍适用。当前只完成编译，需在目标板验证颜色、裁剪和 CMA 余量。
+ 
+-UART0 接收 `CS000`/`CS001` 屏幕代号并返回状态。`CS000` 返回当前 1024×600 LVDS/GT911 配置；`CS001` 返回 `NOT_CONFIGURED`，不会伪装成切换成功。协议和缺少的 CS001 屏幕电气资料见[屏幕代号串口协议](docs/屏幕代号串口协议.md)。
++UART0 接收 `CS000`/`CS001` 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为基于 EK79202DA timing 的 1280×800 LVDS 显示 profile，当前触摸输入关闭。启动时串口打印当前代号；完整资料核对和验收边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)。
+ 
+ - [实施与构建说明](docs/实施说明.md)
+ - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
+ - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
+ - [屏幕代号串口协议](docs/屏幕代号串口协议.md)
+ - [故障排查](docs/故障排查.md)
++- [v1.0.23 CS001/UART 构建日志](docs/stage_cs001_display_serial_v1.0.23_build.log)
++- [v1.0.23 CS001显示与UART源码差异](docs/cs001_display_serial_v1.0.23_source.patch)
+ - [v1.0.22 图片预览与屏幕串口源码差异](docs/panel_serial_images_v1.0.22_source.patch)
+ - [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
+ - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
+ - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
+ - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
+ 
+-当前工厂镜像为 [v1.0.22 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.22.img)，大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未发布日常 OTA 包。BootROM/SPL 输出保留，RT-Thread/HMI/Shell 控制台静默；UART0 仅用于屏幕代号指令。当前构建通过 Luban-Lite SCons；未上板验证串口、显示和图像缓冲表现。
++当前工厂镜像为 [v1.0.23 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.23.img)，大小 4,264,448 字节，SHA-256 `0ebcdc7d64cd8e4ca05c849e0759b510a142681d64807c01837be53fdf485479`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。BootROM/SPL 输出保留，RT-Thread/HMI/Shell 控制台静默；UART0 用于 profile 启动行和代号命令。构建已通过 Luban-Lite SCons，实际 UART RX、1280×800 LVDS strap 和画面仍需目标板验收。
+ 
+ ## 仓库内容
+ 
+@@ -58,6 +60,6 @@ UART0 接收 `CS000`/`CS001` 屏幕代号并返回状态。`CS000` 返回当前
+ 
+ 首页采用 5×3 应用网格，仅显示六个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+ 
+-用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.22 保持静默 RT 控制台、FinSH/MSH 和 ULOG 关闭，同时开启 UART0 驱动供代号协议使用；Shell 与诊断输出仍未绑定到该 UART。此次启动耗时尚未上板测量，QSPI/NOR 时钟保持不变。
++用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.23 保持静默 RT 控制台、FinSH/MSH 和 ULOG 关闭，同时用 UART0 接收代号并输出启动 profile。此次启动耗时尚未上板测量，QSPI/NOR 时钟保持不变。
+ 
+ 板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
+diff --git a/docs/stage_cs001_display_serial_v1.0.23_build.log b/docs/stage_cs001_display_serial_v1.0.23_build.log
+new file mode 100644
+index 0000000..aa3bb95
+--- /dev/null
++++ b/docs/stage_cs001_display_serial_v1.0.23_build.log
+@@ -0,0 +1,72 @@
++scons: Reading SConscript files ...
++Newlib version:3.2.0
++scons: done reading SConscript files.
++scons: Building targets ...
++
++scons: warning: you do not seem to have the pywin32 extensions installed;
++	parallel (-j) builds may not work reliably with open Python files.
++File "<string>", line 1, in <module>
++scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
++  CC bsp\peripheral\touch\gt911\src\gt911.c
++LINK output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++-rw-r--r-- 1 11684548 Nov  2 16:46 output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++
++riscv64-unknown-elf-objcopy -O binary output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.bin
++riscv64-unknown-elf-size output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++   text	   data	    bss	    dec	    hex	filename
++1079220	  12980	 475240	1567440	 17ead0	output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --clean rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --src D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\application\rt-thread\d133_hmi\assets/ --dst rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/linked_size.py -m D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.map
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makefatfs.py --fullpart --volab default --cluster 8 --sector 512 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir rodata --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/rodata.fatfs --reserved 50
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makelittlefs.py --pagesize 256 --blocksize 4096 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir data/ --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs --reserved 50
++Info: inputdir data/ is not exist, use a empty one.
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/tools/scripts/mklittlefs.exe -c D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty -b 4096 -p 256 -s 1048576 D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs
++Backup raw image: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs.raw
++Trim trailing 0xFF: 1048576 -> 8192
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_private_resource.py -v -l D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.json,D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/partition.json -o D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin
++Generated D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin: 1992 bytes
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/elf_parse.py output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ riscv64-unknown-elf-
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_image.py -v -c D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/image_cfg.json -d D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/usbupg-psram-init.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_ext.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/loader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/bootloader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_os.itb ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/env.bin ...
++	Image header is generated.
++	Meta data for image components:
++		Meta for image.updater.psram       offset in file 0x1a00     size in file 0x5b10 (23312)
++		Meta for image.updater.spl         offset in file 0x7a00     size in file 0x4b610 (308752)
++		Meta for image.info                offset in file 0x0        size in file 0x800 (2048)
++		Meta for image.target.spl          offset in file 0x53200    size in file 0x4b610 (308752)
++		Meta for image.target.env          offset in file 0x9ea00    size in file 0x1000 (4096)
++		Meta for image.target.env_r        offset in file 0x9fa00    size in file 0x1000 (4096)
++		Meta for image.target.os           offset in file 0xa0a00    size in file 0x10b800 (1095680)
++		Meta for image.target.rodata       offset in file 0x1ac200   size in file 0x263000 (2502656)
++		Meta for image.target.data         offset in file 0x40f200   size in file 0x2000 (8192)
++	Packing file data:
++		usbupg-psram-init.aic
++		bootloader.aic
++		bootloader.aic
++		env.bin
++		env.bin
++		d13x_os.itb
++		rodata.fatfs
++		data.lfs
++	Image file is generated: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_d133cbv-hmi-nor_v1.0.23.img
++
++
++make CPIO image begin...
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mkcpio.py Windows D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\target/d13x/d133cbv-hmi-nor/pack/ D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++ota_info.bin
++d13x_os.itb
++rodata.fatfs
++7030 blocks
++Successfully updated size to ota.cpio
++make CPIO image done...
++
++Luban-Lite is built successfully
++
++scons: done building targets.
+diff --git a/docs/启动优化与实测.md b/docs/启动优化与实测.md
+index 63a254b..5fdeac4 100644
+--- a/docs/启动优化与实测.md
++++ b/docs/启动优化与实测.md
+@@ -40,6 +40,12 @@ v1.0.22 保留 `hmi_quiet` RT 控制台、FinSH/MSH 与 ULOG 静默配置，同
+ 
+ 图片预览改成原始像素 1:1：小图居中，大图按中心窗口裁切。BMP 解码器只按可视区域逐行读取并分配屏幕大小的 RGB565 输出缓冲；JPG/JPEG 与 PNG 通过 SDK MPP 已有裁剪命令设置源窗口和输出尺寸。JPEG/PNG 压缩输入仍限制为 4 MiB，PNG 像素数保留 SDK 800 万限制；JPEG 上限、MPP 硬件边界、CMA 余量和颜色结果需要板上验证。构建日志为 `stage_panel_serial_images_v1.0.22_build.log`，SDK 报告 `Luban-Lite is built successfully`，生成 4,262,400 字节工厂 IMG；该编译结果不代表实际显示验收。
+ 
++## v1.0.23 UART RX、CS001 显示 profile
++
++用户手动烧录 v1.0.22 后，串口助手以 115200/8N1 发送 `CS001` 未收到应答。v1.0.22 的 RX 工作线程丢弃了 UART 回调提供的字节数，改为请求固定 32 字节，可能无法及时消费短帧。v1.0.23 改为按回调字节数读取，并在 UART0 服务启动后输出当前 `READY` profile 行；该修复已编译，尚未板上验证。
++
++CS001 将 `hmi_screen` 通过官方 ENV API 保存后软件重启。FAL 初始化移到 RT-Thread init 子优先级 2.9，早于 `aicfb_probe` 的设备初始化；panel overlay 在 probe 时读取 ENV，选择 EK79202DA 的 1280×800 timing descriptor。时序使用 72.4 MHz、总行 1440 DCLK、总帧 838 行；HSYNC 20、VSYNC 2 是落在 datasheet 允许范围内的工程选值，不是厂商给定的典型脉宽。该 profile 暂不启动触摸，启动行回报 `TOUCH=DISABLED`。LVDS strap、lane/polarity 和画面质量仍待目标板检查；可用串口发 `CS000` 回退。
++
+ ## v1.0.18 软件改动
+ 
+ - 工厂和 OTA profile 关闭显式启用的 CMU、GPIO、DMA、CAN、Audio、GPAI、TSEN、PSADC 测试命令，减少固件内容；没有更改底层驱动时钟。
+@@ -58,11 +64,11 @@ v1.0.19 OtaProfile 启用 SDK RT_DEBUG_INIT_CONFIG：UART 输出每个 board/dev
+ 诊断包使用 OTA 升级后版本为 1.0.19，不能再退回 v1.0.18；之后的正式 OTA 需提高版本号。安装、串口采集和后续修复均由用户手动确认；本工程不会自动烧录或改动 NOR 时钟。
+ ## 板上验收方法
+ 
+-1. 新板首次部署使用 v1.0.22 工厂镜像。该镜像含配套 SPL/Bootloader，烧录由用户手动执行。
+-2. v1.0.22 正式固件静默 RT-Thread 控制台；UART0 只回传屏幕代号协议。用 GPIO 起停标记或外部计时从电源上升沿测量，连续冷启动至少 10 次，记录最慢值和中位数。需要 init 函数细分时，使用保留串口输出的独立诊断 profile。
+-3. 在 UART0 发送 `CS000`、`CS001` 和未知代号，分别确认当前配置应答、未配置拒绝和未知代号错误；再在 SD 卡打开 16/24/32 位 BMP、JPG/JPEG、PNG，核对小图居中、大图中心裁剪、颜色、返回键和内存余量。
++1. 新板首次部署使用 v1.0.23 工厂镜像。该镜像含配套 SPL/Bootloader，烧录由用户手动执行。
++2. v1.0.23 正式固件保持 RT 控制台静默；连续冷启动时记录 UART0 的 `CS000,READY`/`CS001,READY` 行，再以外部计时测量从电源沿到可操作界面，至少 10 次。
++3. UART0 发送 `CS000`、`CS001` 和未知代号，确认当前 profile、重启切换与错误应答；在 CS001 下检查 1280×800 LVDS 画面。触摸当前关闭。
+ 4. 检查热启动和连续快速打开/关闭图片时的内存占用、取消行为以及 SD 拔卡后的错误处理。
+ 
+-目标板上 v1.0.22 仍需串口、图片和同条件冷启动验收；A/B 升级和回滚也尚未验收。本轮没有使用 AiBurn、连接开发板或写入 Flash。上电进入 BROM 的问题由用户自行修复，本轮没有修改该启动路径。
++目标板上 v1.0.23 仍需 UART RX、启动 profile 行、CS001 LVDS、串口回退和同条件冷启动验收；A/B 升级和回滚也尚未验收。本轮没有使用 AiBurn、连接开发板或写入 Flash。上电进入 BROM 的问题由用户自行修复，本轮没有修改该启动路径。
+ 
+ 构建记录：`stage42_ota_v1.0.18_build.log`、`stage43_factory_v1.0.18_build.log`。代码差异见 `v1.0.18_startup_image_optimization.patch`。
+diff --git a/docs/实施说明.md b/docs/实施说明.md
+index a6e400f..c929d4c 100644
+--- a/docs/实施说明.md
++++ b/docs/实施说明.md
+@@ -29,13 +29,13 @@
+ 
+ 已定位 v1.0.0 仍显示色块的原因：SDK 的 `AIC_DISP_BOOTUP_LOGO` 默认选择 `AIC_DISP_COLOR_BLOCK`，显示驱动会按 100 像素方块绘制蓝/绿/红/黑/白测试图。当前配套 Bootloader 关闭预启动 Logo；工厂 OS 和 OTA OS 保留 `AIC_DISP_BLACK_SCREEN=y` 并关闭 `AIC_DISP_COLOR_BLOCK`，OS 初始化 LVDS 时清黑屏，官方 LVGL 线程启动后直接创建中文 HMI 首页。同时关闭 `AIC_STARTUP_UI_SHOW` 和 `AIC_LVGL_DEMO`。中文字体由 FreeType 从 `/rodata/hmi/fonts/NotoSansSC-HMI.ttf` 加载，约 2.43 MiB，随 A/B RODATA 更新。工厂构建的 RODATA 镜像约 2.50 MiB，小于 5 MiB 槽位。QSPI/NOR 读取时钟保持 SDK 原配置；v1.0.18 整机启动和图片打开耗时仍需上板测量。
+ 
+-v1.0.22 正式 profile 将 RT 控制台切到静默设备，在板级驱动初始化前完成绑定；UART0 驱动重新启用，仅供屏幕代号协议收发；FinSH/MSH 和 ULOG 输出保持关闭，HMI 串口诊断调用在正式配置下编译为空。BootROM/SPL 的独立串口输出未改；OtaProfile 仍保留调试串口。为支持关闭 FinSH 的 SDK 构建，工程 overlay 只对未启用的 MbedTLS 示例禁用编译，并提供 `finsh.h`/`shell.h` 兼容头转入 SDK 自带空命令宏；底层 BSP 驱动源码未改。
++v1.0.23 正式 profile 将 RT 控制台切到静默设备，在板级驱动初始化前完成绑定；UART0 驱动用于启动时 profile 行和屏幕代号协议；FinSH/MSH 和 ULOG 输出保持关闭。屏幕选择通过官方 `fw_env_write/fw_env_flush` 保存，panel probe 在 LVDS framebuffer 初始化前读取 ENV；FAL 初始化调整到 RT-Thread init level `2.9`，以确保冗余 ENV 可读。CS001 按 EK79202DA 候选 timing 使用 1280×800 单链路 LVDS，暂不启用触摸。BootROM/SPL 输出未改；无自动烧录。
+ 
+ 官方 Bootloader 的 ENV 逻辑在升级期间试启动。HMI 策略将失败槽回退扩展为 OS/RODATA 成对回退；DATA 始终保持原槽。Bootloader 在候选系统前启动 60 秒看门狗并递增 `bootcount`。RT-Thread GUI 启动后改用 15 秒看门狗，要求 LVGL 心跳、GT911 设备、`/rodata` 与 `/data` 均正常，连续 30 秒后才调用官方 `aic_ota_status_update()` 清除升级标志。
+ 
+ ## 第一阶段交付和烧录
+ 
+-首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.22.img`，大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。此次未发布 v1.0.22 日常 OTA；日常 OTA 不包含 SPL、ENV 或 DATA。工厂镜像由用户手动使用 AiBurn 烧录；本工程没有执行烧录、擦除或分区写入。
++首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.23.img`，大小 4,264,448 字节，SHA-256 `0ebcdc7d64cd8e4ca05c849e0759b510a142681d64807c01837be53fdf485479`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。此次未生成 v1.0.23 日常 OTA；日常 OTA 不包含 SPL、ENV 或 DATA。工厂镜像由用户手动使用 AiBurn 烧录；本工程没有执行烧录、擦除或分区写入。
+ 
+ 最终生成文件：SDK 输出 `output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/`。本工程 `downloads/` 保存交付副本。烧录后的触摸、显示、SD 插拔、RMII PHY 和自动回滚仍需目标板验证。
+ 
+@@ -43,7 +43,7 @@ v1.0.22 正式 profile 将 RT 控制台切到静默设备，在板级驱动初
+ 
+ 板级 pinmux 复用 SDK 的 SDMC1 PC0–PC6；PC6 是插卡检测。官方 `drv_sdcard.c` 热插拔线程处理插拔，board mount table 将 FATFS 自动挂载为 `/sdcard`。`sd_manager` 查询该挂载，`storage_manager` 使用 RT-Thread 消息队列把 POSIX DFS/FATFS 文件操作送到独立线程。列表每页最多显示 32 项，长列表可刷新；纯文本读取/写入上限 511 字节。创建文件夹、复制、改名、删除、浏览、大小和容量查询均在工作线程执行。图片按原始像素显示：小图居中，大图中心裁切，不进行缩放；左上角有触摸返回键。BMP 仅读取可见窗口行并转换为 RGB565；JPG/JPEG、PNG 通过 SDK MPP 裁剪接口输出可视窗口，避免按源图尺寸分配整帧。JPEG/PNG 压缩文件上限为 4 MiB，PNG 仍受 SDK 800 万像素上限约束。图片读取与解码在线程完成，LVGL 线程只更新控件。正式配置不输出 `[image_preview]` 调试日志。`/sdcard/UPDATE` 由 OTA 服务保留。
+ 
+-UART0 屏幕代号协议见 [屏幕代号串口协议](屏幕代号串口协议.md)。当前 `CS000` 为 1024×600 LVDS/GT911；`CS001` 会明确返回 `NOT_CONFIGURED`。新屏的样件确认资料没有 LCM 电气时序/排线定义，SDK 也没有 ATMXT1066TD 驱动，因此本版本不执行硬件切换。
++UART0 屏幕代号协议见 [屏幕代号串口协议](屏幕代号串口协议.md)。当前 `CS000` 为 1024×600 LVDS/GT911；`CS001` 可选择 1280×800 LVDS 并在切换后重启，触摸暂时关闭。新资料给出了 EK79202DA 芯片级时序，但模组 strap/lane/polarity 和 ATMXT1066TD 驱动仍未验证/接入。
+ 
+ SD OTA 文件放在 `/sdcard/UPDATE/ota.cpio`，并带同名 `/sdcard/UPDATE/ota.cpio.sig`。先用 `scripts/sign_ota.ps1` 对 OTA CPIO 签名；签名采用 RSA-2048/SHA-256，公钥随只读资源部署在 `/rodata/hmi/ota_public.pem`。缺少签名、公钥、SHA256 或槽位容量校验失败时不会调用 OTA 写入。文件页触发 OTA 后，在 LVDS 屏幕确认；成功写入非活动槽并提交官方 ENV 后，设备自动重启。
+ 
+@@ -72,9 +72,9 @@ LVGL 对象只由 `lv_user_gui_init` 所在的官方 LVGL 线程创建和更新
+ 
+ ## 阶段编译证据与验证边界
+ 
+-历史构建证据包括 v1.0.21 静默启动版本；本次 OS 与工厂 IMG 构建日志为 `stage_panel_serial_images_v1.0.22_build.log`，SDK SCons 报告 `Luban-Lite is built successfully`。新镜像尚未在开发板验证。Windows PowerShell 构建脚本捕获 SCons stderr 进度流，自动把原始 BMP 转成 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
++历史构建证据包括 v1.0.21 静默启动和 v1.0.22 图片/串口版本；本次 OS 与工厂 IMG 构建日志为 `stage_cs001_display_serial_v1.0.23_build.log`，SDK SCons 报告 `Luban-Lite is built successfully`。串口、CS001 显示和画面需由用户在目标板验证。Windows PowerShell 构建脚本捕获 SCons stderr 进度流，自动把原始 BMP 转成 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
+ 
+-构建成功不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证 UART0 指令收发、图像颜色/裁剪/内存、显示、触摸、真实 PHY、热插拔、看门狗计数或启动回退。确认这些行为仍需在目标板执行验证。用户已经修复上电进入 BROM 的问题，本轮未改动 PA0/BOOT 硬件或启动配置。
++构建成功不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证 UART0 指令收发、CS001 1280×800 显示、LVDS strap/极性/颜色或串口 profile 回退。CS001 触摸被有意禁用，ATMXT1066TD 仍待后续接入。用户已手动烧录 v1.0.22 并报告发送命令无应答；v1.0.23 改为按 RX 回调长度读取并增加启动 profile 行，仍需用户手动烧录验证。本轮未改 PA0/BOOT 启动行为。
+ 
+ ## v1.0.18 OTA 包与发布资源
+ 
+diff --git a/docs/实现状态.md b/docs/实现状态.md
+index 0419717..4517243 100644
+--- a/docs/实现状态.md
++++ b/docs/实现状态.md
+@@ -2,27 +2,27 @@
+ 
+ | 阶段 | 实现内容 | 编译/验证证据 |
+ | --- | --- | --- |
+-| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；Bootloader 跳过预启动黑屏，OS 黑屏初始化后进入 HMI；NOR QSPI 维持 100 MHz 四线/半周期采样；v1.0.22 保持静默 RT 控制台并启用 UART0 协议驱动 | `stage_panel_serial_images_v1.0.22_build.log`；v1.0.20 UART 日志 |
++| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；OS 黑屏初始化后进入 HMI；NOR QSPI 维持 SDK 配置；UART0 保持静默控制台并服务屏幕 profile | `stage_cs001_display_serial_v1.0.23_build.log` |
+ | 2 SD/FATFS | SDMC1、PC6 热插拔、/sdcard、文件列表/读写/复制/删除/新建/改名/容量，独立工作队列 | `stage3_os_build.log` 与最终 OS 编译 |
+ | 3 A/B OTA | 官方 aic-ota/aic-env、CPIO CRC 与包长、SHA256、RSA2048/SHA256、ENV提交、配对回退、看门狗和健康确认；v1.0.18 OTA 已编译、签名并通过主机侧校验 | `stage42_ota_v1.0.18_build.log`、`verify_ota_host.py`、`verify_ota_signature.ps1` |
+ | 4 SD OTA | /sdcard/UPDATE/ota.cpio 与 .sig，确认后校验/写非活动槽/重启 | 同上；工具 `verify_ota_host.py` 验证成员、SPL白名单、校验篡改和尾随数据 |
+ | 5 RMII/TCP OTA | GMAC0 RMII、RTL8201F、netdev DHCP/静态配置、TCP 8899推包、RSA签名和逐帧ACK | `stage5_os_build.log`、`final_integrity_build.log` |
+-| 6 LVGL HMI | LVGL 9.1 官方线程；图片小于屏幕时居中 1:1 显示，大图中心裁剪；BMP 只读可见窗口，JPG/PNG 复用 MPP 硬件裁剪 | `stage_panel_serial_images_v1.0.22_build.log` |
++| 6 LVGL HMI | LVGL 9.1 官方线程；图片小于屏幕时居中 1:1 显示，大图中心裁剪；BMP 只读可见窗口，JPG/PNG 复用 MPP 硬件裁剪；CS001 1280×800 profile 不启动触摸输入 | `stage_cs001_display_serial_v1.0.23_build.log` |
+ | 7 模块化与说明 | app、boot_manager、ota、storage、network、ui、system各有接口头文件和实现；Logo BMP 自动生成 LVGL RGB565 C 资源；编译、烧录、升级、故障说明及 Git 兼容 diff | `docs/sdk_changes.patch`、`docs/logo_factory_fw.patch`、`docs/app_shell_factory.patch`、`docs/app_grid_5x3_factory.patch`、`docs/home_overview_move.patch`、`docs/boot_speed_header.patch`、`docs/v1.0.18_startup_image_optimization.patch`；研发工具箱启动检查报告 |
+ | 8 蜂鸣器与工具箱设备消息 | PWM1_A/PE.11、4 kHz；LNET 首次 INFO 回传 TCP 连接消息，OTA BEGIN 回传升级消息；RT-Thread 工作线程异步请求 1 秒蜂鸣；工具箱健康查询使用 0xD105 | `stage_wifi_buzzer_v1.0.20_factory_build.log`；工具箱 Python 语法检查 |
+-| 9 静默输出与启动瘦身 | RT 控制台预先绑定空输出设备；UART0 驱动仅服务屏幕代号协议，FinSH/MSH 与 ULOG 输出关闭；BootROM/SPL 配置未改 | `stage_panel_serial_images_v1.0.22_build.log`、新 v1.0.22 IMG |
+-| 10 屏幕代号串口 | UART0 115200/8N1；`CS000` 查询当前 1024×600/GT911；`CS001` 明确拒绝为未配置 | 协议文档；仅编译通过，未板测 |
++| 9 静默输出与启动瘦身 | RT 控制台预先绑定空输出设备；UART0 驱动用于启动 profile 行与屏幕代号协议，FinSH/MSH 与 ULOG 输出关闭；FAL 提前初始化以便 panel probe 读取 ENV | `stage_cs001_display_serial_v1.0.23_build.log`、v1.0.23 IMG |
++| 10 屏幕代号串口 | UART0 115200/8N1，RX 按回调长度读取；启动打印当前代号；屏幕 profile 通过官方 ENV 保存，切换后重启 | 协议文档；编译通过，串口实测未完成 |
+ 
+-当前工厂镜像为 v1.0.22，`downloads/d13x_d133cbv-hmi-nor_v1.0.22.img` 大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA；本次未发布日常 OTA。v1.0.22 只完成 SDK 构建，没有板上启动/串口/图片预览数据。
++当前工厂镜像为 v1.0.23，`downloads/d13x_d133cbv-hmi-nor_v1.0.23.img` 大小 4,264,448 字节，SHA-256 `0ebcdc7d64cd8e4ca05c849e0759b510a142681d64807c01837be53fdf485479`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA；未生成日常 OTA。v1.0.23 已通过 SDK 构建，串口 RX、ENV 切换与实际 LVDS 画面仍待板测。
+ 
+ 用户提供的 v1.0.20 外部引脚热复位日志报告 `Startup time: 1.632 sec`；SPL 读取 1,389,240 字节耗时 28,834 μs；framebuffer 在 1.375 秒分配；HMI 标记控件127 ms、flush218 ms、render221 ms。此前 v1.0.18 同类复位为 1.630 秒，差 2 ms，未显示整机速度改善。需要 RT 初始化逐项耗时才能继续定位 1.375 秒前的时间；QSPI/NOR 参数保持原配置。
+ 
+ v1.0.19 RT_DEBUG_INIT 诊断 OTA 已通过 SDK 构建、CPIO 主机校验和 RSA 验签，包大小 3,931,136 字节，SHA-256 `ff783f19bb476509175ddb0fa962732368e9b0c760302dbf526971d4e1ca8c0b`。它输出每个 RT-Thread 初始化函数及早期阶段耗时；UART 大量日志会增加启动时间，profile 仅用于定位，不是生产固件。安装后设备版本为1.0.19，后续正式 OTA 必须使用更高版本。
+ 
+-板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.22 仍未启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。用户提供的 v1.0.20 UART 日志验证了当时的启动和 LVGL 首帧，但未验证本次 UART0 命令、图片裁剪或 CMA 余量。该日志还报告 `/data` LittleFS 挂载失败；`/sdcard` 初始挂载失败后检测到插卡，但未见挂载成功行。
++板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.23 仍未启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。用户提供的 v1.0.20 UART 日志只验证了当时的启动和 LVGL 首帧，未验证本次 UART0 RX/TX、CS001 LVDS 或 CMA 余量。该日志还报告 `/data` LittleFS 挂载失败；`/sdcard` 初始挂载失败后检测到插卡，但未见挂载成功行。
+ 
+-所有代码基于本地 Luban-Lite 接口；没有修改 `bsp/` 底层驱动，也没有写实际 Flash 地址。v1.0.22 通过板级静默 console 设备关闭 RT 控制台输出；UART0 驱动重新启用，只用于屏幕代号协议；FinSH/MSH 与 ULOG 输出仍关闭。BootROM/SPL 打印路径没有修改。用户已自行修复上电进入 BROM，本次未改 PA0/BOOT 配置。编译结果尚未上板验证。
++HMI 业务仍使用 Luban-Lite/RT-Thread 接口。为实现 CS001，本次通过工程 overlay 扩展 ArtInChip panel simple descriptor，并将 FAL init 顺序前移至 panel probe 前；没有修改 SDK 原始文件，也没有直接操作 Flash 地址。CS001 使用 1280×800、72.4 MHz 候选 timing，触摸标记为禁用。`hmi_screen` 由官方 ENV API 更新，之后软件重启。用户已手动烧录 v1.0.22 并报告 UART 发命令无应答；v1.0.23 修正 RX 消费长度并加启动 profile 行，未在硬件验证。上电进入 BROM 问题已由用户修复，本次未改 PA0/BOOT 硬件路径。
+ 
+-尚未完成实机验收：v1.0.22 UART0 的 `CS000`/`CS001` 应答、JPG/PNG MPP 裁剪、BMP 16/24/32 位颜色、图片 CMA 余量、触摸返回、同条件冷启动与 1 秒目标、LVDS/GT911、SD 插拔和挂载、`/data` LittleFS、RMII/DHCP、蜂鸣、看门狗/A/B 回退，以及工具箱对板端 TCP 的真实传输。CS001 仍未配置；待完整 LCM 时序/排线资料和 ATMXT1066TD 驱动依赖。没有连接或操作硬件，未烧录/擦除 Flash，也没有发布本版本 OTA。UART `[boot_time]` 在静默正式配置中不输出；整机时长仍需外部计时验证。
++尚未完成实机验收：v1.0.23 启动 profile 行、`CS000`/`CS001` RX/TX、CS001 1280×800 LVDS lane/strap/sync 极性/色彩、软件重启回退、显示花屏情况、图片 CMA 余量、同条件冷启动与 1 秒目标，以及原有 SD、RMII、蜂鸣、看门狗/A/B OTA/工具箱验收。CS001 触摸按用户要求暂时禁用，ATMXT1066TD 驱动/config 后续再补。没有自动烧录/擦除 Flash，也未生成本版本日常 OTA。
+ 
+ RSA私钥 `keys/development_private.pem` 是仅供开发的本地测试密钥。量产必须改用受控密钥，并配置TLS/证书或TLS设备身份认证；当前TCP OTA按用户要求运行在局域网明文链路，由签名和屏幕确认保护升级授权。
+diff --git a/docs/屏幕代号串口协议.md b/docs/屏幕代号串口协议.md
+index b1eea1a..7e94452 100644
+--- a/docs/屏幕代号串口协议.md
++++ b/docs/屏幕代号串口协议.md
+@@ -4,8 +4,9 @@
+ 
+ - UART：UART0，115200 baud，8 data bits，no parity，1 stop bit（8N1）。
+ - 命令：5 个 ASCII 字符，例如 `CS000`；可直接发送，也可追加 CR、LF 或 CRLF。
+-- 应答：ASCII 文本，以 CRLF 结束；没有额外控制台日志、校验和或二进制帧头。
++- 应答：ASCII 文本，以 CRLF 结束；RT 控制台仍静默，没有额外调试日志、校验和或二进制帧头。
+ - 命令接收由 RT-Thread 工作线程处理，不占用 LVGL 线程。
++- 每次启动 UART0 命令服务时，主动发送当前配置行，便于确认固件/链路已就绪。
+ 
+ 板端 UART0 为 3.3 V TTL。连接 USB-UART 时交叉连接 TX/RX 并接共地，不要连接 RS-232 电平。D133CBS 板卡 UART0 TX 使用 PA0，PA0 同时连接 UBOOT 按键启动采样；避免在上电时把该线拉低。
+ 
+@@ -13,9 +14,11 @@
+ 
+ | 命令 | 应答 | 含义 |
+ | --- | --- | --- |
+-| `CS000` | `CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911` | 确认当前配置为 CS000；本命令不重启显示链路。 |
+-| `CS001` | `CS001,ERR,NOT_CONFIGURED,ACTIVE=CS000` | CS001 配置和驱动尚未就绪，拒绝切换并报告当前配置。 |
+-| 其他代号 | `<代号>,ERR,UNSUPPORTED_CODE,ACTIVE=CS000` | 当前固件未登记该代号。 |
++| `CS000` | 当前已是 CS000 时：`CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911`；从 CS001 切回：`CS000,OK,REBOOTING,RES=1024x600,TOUCH=GT911` | 将选择写入官方 ENV；需要重启时自动重启。 |
++| `CS001` | 当前已是 CS001 时：`CS001,OK,ACTIVE=CS001,RES=1280x800,TOUCH=DISABLED`；从 CS000 切换：`CS001,OK,REBOOTING,RES=1280x800,TOUCH=DISABLED` | 保存 CS001 到官方 ENV 并重启；当前只启用显示，不启用触摸。 |
++| 其他代号 | `<代号>,ERR,UNSUPPORTED_CODE,ACTIVE=<当前代号>` | 当前固件未登记该代号。 |
++
++启动时发送：`CS000,READY,RES=1024x600,TOUCH=GT911`，或切换后 `CS001,READY,RES=1280x800,TOUCH=DISABLED`。
+ 
+ 示例：
+ 
+@@ -24,38 +27,41 @@
+ 开发板：  CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911\r\n
+ 
+ 电脑发送：CS001
+-开发板：  CS001,ERR,NOT_CONFIGURED,ACTIVE=CS000\r\n
++开发板：  CS001,OK,REBOOTING,RES=1280x800,TOUCH=DISABLED\r\n
++设备重启后：CS001,READY,RES=1280x800,TOUCH=DISABLED\r\n
+ ```
+ 
+-`CS000` 是当前固化的板级配置：1024×600 LVDS、GT911 触摸。v1.0.22 的正式配置启用 UART0 驱动，但 RT 控制台仍绑定静默设备；命令应答是 UART0 上唯一的 HMI 文本协议输出。这里的编译结果尚未在开发板上验证。
++`CS000` 为 1024×600 LVDS/GT911。CS001 选择 1280×800 LVDS，并在重启时由 panel probe 读取官方 ENV；实际切换需要重启，不会热插拔 LVDS 时钟。CS001 暂不启动触摸输入；切回 CS000 会恢复 GT911。UART0 命令应答和启动状态行是正式 HMI 配置唯一的 RT 输出。
+ 
+-## CS001 新资料核对
++## CS001 显示配置与资料边界
+ 
+ 新资料的封面把产品规格号列为 `EK79202DA`、客户料号 `ICEK7920321XXXXXXX01`；正文是 EK79202D 2052 通道 source driver/TCON 芯片的 preliminary datasheet。它补充了 1280×800 LVDS 输入的候选时序，但不是完整的 LCD 模组接线规格。
+ 
+-芯片 datasheet 的 1280×800、60 Hz HV mode 表给出：像素时钟典型值 72.4 MHz（范围 66.3–78.9 MHz）、每行 1440 DCLK（显示区 1280）、含同步脉冲的 HBP 88 DCLK、HFP 72 DCLK、HSYNC 脉宽 2–40 DCLK；每帧 838 行（显示区 800）、含同步脉冲的 VBP 23 行、VFP 15 行、VSYNC 脉宽 2–20 行。由典型时钟和总尺寸计算约为 60 Hz。这些是芯片允许的输入 timing，脉宽典型值和模组实际配置未由资料确定。
++芯片 datasheet 的 1280×800、60 Hz HV mode 表给出：像素时钟典型值 72.4 MHz（范围 66.3–78.9 MHz）、每行 1440 DCLK（显示区 1280）、含同步脉冲的 HBP 88 DCLK、HFP 72 DCLK、HSYNC 脉宽 2–40 DCLK；每帧 838 行（显示区 800）、含同步脉冲的 VBP 23 行、VFP 15 行、VSYNC 脉宽 2–20 行。工程使用 20 DCLK/2 行作为同步宽度，剩余 porch 分别为 68/21；按典型值计算约为 60 Hz。脉宽具体配置和模组实测值仍需上板确认。
++
++同一芯片资料说明支持 LVDS 6/8-bit，并以 `IFSEL[1:0]`、`LNSW[1:0]`、`PNSW`、`RES[2:0]`、`LVFMT`、`LVBIT` 等 pin strap 选择接口、lane/polarity mapping、分辨率与数据格式；它列出 1280×800 的 RES 编码，但没有给出该客户模组实际 strap 电阻/连接器到 D133 LVDS lane 对应表。D133 SDK 原版 `panel_simple.c` 只有 1024×600、1920×1080 和 custom descriptor，`aicfb_probe()` 在设备初始化时只选一次 panel，LVGL 随后按 framebuffer 创建单一 display。
+ 
+-同一芯片资料说明支持 LVDS 6/8-bit，且以 `IFSEL[1:0]`、`LNSW[1:0]`、`PNSW`、`RES[2:0]`、`LVFMT`、`LVBIT` 等 pin strap 选择接口、lane/polarity mapping、分辨率与数据格式；它列出 1280×800 的 RES 编码，但没有给出该客户模组的实际 strap 电阻/连接器到 D133 LVDS lane 对应表。D133 当前 `panel_simple.c` 只在 `aicfb_probe()` 时静态选择 panel，LVGL 初始化时读取一次 framebuffer 尺寸；SDK 没有现成的运行时屏幕/触摸切换接口。
++触摸方面，先前的 LCJ0010R1EA0Y16CP100 样件确认资料提到 ATMXT1066TD、I²C/3.3 V 和 1280×800 触摸分辨率；新 EK79202D PDF 没有 ATMXT1066TD 寄存器/对象表或 CTP 接线资料。按用户要求，v1.0.23 的 CS001 仅初始化显示，跳过 LVGL 触摸输入；SDK 的 `bsp/peripheral/touch/Kconfig` 没有 ATMXT1066TD 项，也没有对应驱动源码。
+ 
+-触摸方面，先前的 LCJ0010R1EA0Y16CP100 样件确认资料提到 ATMXT1066TD、I²C/3.3 V 和 1280×800 触摸分辨率；新 EK79202D PDF 没有 ATMXT1066TD 寄存器/对象表或 CTP 接线资料。当前 SDK 的 `bsp/peripheral/touch/Kconfig` 有 GT911 等选择项，没有 ATMXT1066TD 项，也没有对应驱动源码。
++v1.0.23 已加入 CS001 的 1280×800 LVDS 候选 timing，并使用 D133 当前单链路 LVDS/8-bit VESA 和低有效同步设置。仍需在目标板确认实际模组 strap/lane/polarity 与像素颜色。如果图像异常，串口发 `CS000` 可写回原 profile 并重启。进一步确认显示硬件还需要：
+ 
+-要把 CS001 做成真正可用的显示与触摸配置，还需要：
++1. `ICEK7920321XXXXXXX01` 模组接口/排线图，特别是 LVDS 单/双链路、D0–D3/clock lane 对应、极性、VESA/JEIDA、HV/DE 模式，以及上电、复位和背光时序/引脚。
++2. EK79202DA 模组实际的 `IFSEL/LNSW/PNSW/RES/LVFMT/LVBIT` strap 设置或供应商已验证的接口配置。
+ 
+-1. `ICEK7920321XXXXXXX01` 完整模组接口/排线图，特别是 LVDS 单/双链路、D0–D3/clock lane 对应、极性、VESA/JEIDA、HV/DE 模式，以及上电、复位和背光时序/引脚。
+-2. EK79202DA 模组实际的 `IFSEL/LNSW/PNSW/RES/LVFMT/LVBIT` strap 设置或供应商已验证的接口配置，确认采用上述 1280×800 时序。
+-3. ATMXT1066TD 的 RT-Thread 驱动/初始化配置，或控制器完整协议、I²C 地址、板端 I²C/IRQ/RESET 接线、报告格式和坐标方向。
++恢复触摸时还需要 ATMXT1066TD 的 RT-Thread 驱动/初始化配置，或控制器完整协议、I²C 地址、板端 I²C/IRQ/RESET 接线、报告格式和坐标方向。
+ 
+-因此当前代码仍将 `CS001` 安全地返回 `NOT_CONFIGURED`，不会只凭通用芯片 timing 就切换。拿到模组与触摸资料后，需要添加项目级 CS001 panel profile 和触摸驱动，并把 profile 选择接入显示驱动初始化流程；再编译和检查失败回退。不要直接改写 Flash 地址。
++启动选择由项目 overlay 在 `aicfb_probe()` 前从 `hmi_screen` ENV 读取，串口切换通过官方 `fw_env_write/fw_env_flush` 保存并重启。为此 FAL init 使用 RT-Thread init level 2.9，确保面板 probe 前可读取 ENV；没有直接改写 Flash 地址。CS001 的触摸保持禁用，避免把 GT911 驱动当作 ATMXT1066 驱动。
+ 
+ ## 串口无应答排查
+ 
+-串口助手设为 UART0 115200/8N1、ASCII 发送 `CS001` 是正确格式。v1.0.22 工厂 IMG 中包含 UART0 协议服务，但该 IMG 只在 SDK 构建并发布，本工程没有代用户烧录开发板；v1.0.21 正式固件关闭了 UART0 驱动，因此运行旧固件时发命令不会收到应答。先在系统信息确认固件版本：v1.0.22 应对 `CS000` 和 `CS001` 都返回一行；若已确认运行 v1.0.22 仍无应答，再检查 UART0 的 TX/RX 交叉、共地和板端接线。
++用户已手动烧录 v1.0.22，但该版本存在 UART0 接收无应答问题。v1.0.23 改为按串口回调提供的字节数读取，并在服务启动时打印 `READY` 行。若启动行和命令应答仍都没有，检查板端 UART0 RX=PA1 是否接到 USB-UART TX、TX/RX 是否交叉且共地；若只看到 BootROM/SPL 输出，确认新 OS 是否启动到系统页面。上电时不要拉低 PA0/UBOOT。
+ 
+ ## 验收步骤
+ 
+ 1. 使用 3.3 V USB-UART 连接 UART0，设为 115200/8N1。
+-2. 发送 `CS000`，期望返回 `OK`、`ACTIVE=CS000`、`1024x600` 和 `GT911`。
+-3. 发送 `CS001`，期望返回 `NOT_CONFIGURED`，当前值仍为 `CS000`。
+-4. 发送其他 5 字节代号，期望返回 `UNSUPPORTED_CODE`。
++2. 上电后应先收到当前 profile 的 `READY` 行。
++3. 发送 `CS000`，期望返回当前 1024×600/GT911；如果当前为 CS001，应返回 `REBOOTING`，重启后回到 CS000。
++4. 发送 `CS001`，期望返回 `REBOOTING`，重启后显示 1280×800；触摸当前关闭。
++5. 发送其他 5 字节代号，期望返回 `UNSUPPORTED_CODE`。
+ 
+-以上是协议预期结果。实际串口收发、屏幕切换和触摸仍需在目标板验证；目前 CS001 应当保持拒绝状态。
++以上是协议预期结果。v1.0.23 只完成 SDK 构建，实际串口收发、1280×800 画面、切换回退和 strap 兼容性仍需在目标板验证；CS001 触摸按当前范围暂不启用。
+diff --git a/docs/故障排查.md b/docs/故障排查.md
+index d1e1d34..874742b 100644
+--- a/docs/故障排查.md
++++ b/docs/故障排查.md
+@@ -11,10 +11,11 @@
+ | TCP 已上传但未确认 | 开发板需在 60 秒内允许；端口会在升级后重启期间断开。重新连接后检查运行版本、OS槽和 health 状态。 |
+ | 新系统看门狗复位 | 看 UART0 日志；确认 LVGL GUI线程启动、GT911设备名、`/rodata` 和 `/data` 挂载以及两者槽位匹配。Bootloader 连续试启动失败后应同步回退 OS/RODATA。 |
+ | 旧系统启动但资源异常 | 检查 ENV 的 `osAB_now/next` 与 `rodataAB_now/next`；回退实现必须成对切换。确认 RODATA A/B 的 FATFS 容量均大于镜像。 |
+-| 开机仍显示旧色块测试画面 | 旧 v1.0.0 SDK 配置启用了 `AIC_DISP_COLOR_BLOCK`。工厂镜像已更新为 `downloads/d13x_d133cbv-hmi-nor_v1.0.22.img`；用户需手动用 AiBurn 烧录。若仍看到色块，先确认 AiBurn 选择的镜像路径和烧录结果，再查看显示配置是否为 `AIC_DISP_BLACK_SCREEN=y`、`AIC_DISP_COLOR_BLOCK` 未启用。 |
++| 开机仍显示旧色块测试画面 | 旧 v1.0.0 SDK 配置启用了 `AIC_DISP_COLOR_BLOCK`。当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.23.img`；用户需手动用 AiBurn 烧录。若仍看到色块，先确认 AiBurn 选择的镜像路径和烧录结果，再查看显示配置是否为 `AIC_DISP_BLACK_SCREEN=y`、`AIC_DISP_COLOR_BLOCK` 未启用。 |
+ | 中文显示为空白或方框 | 检查 `/rodata/hmi/fonts/NotoSansSC-HMI.ttf` 是否存在、RODATA 槽是否为与 OS 配对的版本，以及 defconfig 是否启用了 `LPKG_USING_FREETYPE`。字体加载失败会阻止健康确认，使 Bootloader 执行 A/B 回退。 |
+-| SD 图片无法预览、偏色或内存不足 | v1.0.22 中 BMP 只分配屏幕可视窗口缓冲并逐行读取；JPG/JPEG、PNG 使用 SDK MPP 裁剪窗口，保留原始像素尺寸，不缩放。JPEG/PNG 压缩输入上限为 4 MiB，PNG 受 SDK 800 万像素和硬件解码范围约束。BMP 支持 16/24/32 位 BI_RGB 及 16/32 位 BI_BITFIELDS。确认 SD 卡挂载到 `/sdcard`、文件实际格式与扩展名一致；正式固件不输出 `[image_preview]` 日志。当前尚未板上验证颜色、裁剪边缘及 CMA 余量。 |
+-| 屏幕代号串口没有应答 | 确认使用 UART0 3.3 V TTL、115200/8N1，TX/RX 交叉连接并共地。发送 `CS000` 应返回当前 1024×600/GT911；发送 `CS001` 应返回 `NOT_CONFIGURED`，不是成功切换。串口协议只在 v1.0.22 OS 编译，暂未板上验证。 |
++| SD 图片无法预览、偏色或内存不足 | v1.0.23 中 BMP 只分配屏幕可视窗口缓冲并逐行读取；JPG/JPEG、PNG 使用 SDK MPP 裁剪窗口，保留原始像素尺寸，不缩放。JPEG/PNG 压缩输入上限为 4 MiB，PNG 受 SDK 800 万像素和硬件解码范围约束。BMP 支持 16/24/32 位 BI_RGB 及 16/32 位 BI_BITFIELDS。确认 SD 卡挂载到 `/sdcard`、文件实际格式与扩展名一致；正式固件不输出 `[image_preview]` 日志。当前尚未板上验证颜色、裁剪边缘及 CMA 余量。 |
++| 屏幕代号串口没有应答 | v1.0.22 已知 RX 线程按固定块读取可能没有消费短帧；v1.0.23 改为按 RX 回调字节数读取，并在 UART0 启动时打印 `READY` profile 行。确认系统信息显示 v1.0.23，USB-UART 为 3.3 V TTL、115200/8N1，电脑 TX 接 UART0 RX/PA1，TX/RX 交叉并共地。发送命令后 CS001 会重启；若看不到启动行，仍需确认 OS 是否启动及 UART0 RX 接线。 |
++| CS001 重启后黑屏/颜色异常 | `hmi_screen=CS001` 选择 1280×800 EK79202DA 候选时序。确认模组 strap 实际选择 LVDS、RES=1280×800、8-bit mapping 与 D133 单链路 lane/polarity 一致；必要时串口发 `CS000` 恢复并重启。CS001 触摸暂未启用。当前时序和映射尚未板测。 |
+ | 1 秒启动目标未达到 | 本版关闭 Bootloader 预启动黑屏、将 ULOG 降为 Warning、复用 FreeType 字体，并关闭 HMI 未用的 CAN/音频/TSEN/GPAI 驱动。仍须实测；UART `[boot_time]` 仅记录 RT-Thread app 初始化到首帧/flush，不含 BootROM、SPL 和 Bootloader。请从上电沿测到首页可触摸，并连续冷启动 10 次。QSPI 保持 100 MHz、CPU 480 MHz、AXI/AHB 200 MHz；未核实 NOR 料号并做边界测试前不要超频。 |
+ | SDK 命令行出现 `python3 not recognized` | 通过工程 `scripts/build.ps1` 构建；该脚本把 SDK Python38、RISC-V 工具链和 SDK host utilities 放入 PATH。 |
+ | `scons -j8` 在 Windows 挂起 | 检查 pywin32 worker 警告和遗留 `cp.exe/echo.exe` 子进程；保留输出后用 `-Jobs 1` 重建。 |
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 97a7c42..6bdf57f 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.22
++D133-控制终端 1.0.23
+diff --git a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+index 844937e..38faf6f 100644
+--- a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
++++ b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+@@ -2,6 +2,7 @@
+ #include "hmi_serial_log.h"
+ #include "system_manager.h"
+ #include "ota_package.h"
++#include "display_profile_manager.h"
+ #include <stdio.h>
+ #include <rtthread.h>
+ #include <rtdevice.h>
+@@ -30,8 +31,10 @@ static void monitor(void *arg)
+     if(!watchdog_ok)system_manager_log("看门狗未能启动，已阻止新系统健康确认");
+     while(1){
+         boot_status_t snapshot;boot_manager_get(&snapshot);
++        display_profile_info_t profile;display_profile_get_active(&profile);
+         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata"),*data=dfs_filesystem_lookup("/data");
+-        int ok=watchdog_ok && rt_device_find("gt911") && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
++        int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
++        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
+         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
+         rt_thread_mdelay(1000);
+     }
+@@ -57,4 +60,3 @@ int boot_manager_init(void)
+ 
+ 
+ 
+-
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+index ac55d3a..43622de 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -3,6 +3,8 @@
+ 
+ #include <rtthread.h>
+ #include <rtdevice.h>
++#include <rthw.h>
++#include <env.h>
+ #include <ctype.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -10,17 +12,63 @@
+ #define DISPLAY_PROFILE_UART_NAME "uart0"
+ #define DISPLAY_PROFILE_UART_BAUD 115200
+ #define DISPLAY_PROFILE_RX_CHUNK 32
++#define DISPLAY_PROFILE_RX_QUEUE 8
+ #define DISPLAY_PROFILE_THREAD_STACK 3072
+ 
++typedef struct {
++    rt_device_t device;
++    rt_size_t size;
++} profile_rx_message_t;
++
+ static struct rt_mutex profile_lock;
+-static rt_sem_t rx_sem;
++static rt_mq_t rx_messages;
+ static rt_device_t profile_uart;
+ static int profile_lock_ready;
+ static int manager_ready;
+ static display_profile_info_t active_profile = {
+-    "CS000", 1024, 600, "LVDS-1024x600", "GT911"
++    "CS000", 1024, 600, "LVDS-1024x600", "GT911", 1
+ };
+ 
++static int profile_info_from_code(const char *code, display_profile_info_t *profile)
++{
++    if (!code || !profile)
++        return -1;
++    memset(profile, 0, sizeof(*profile));
++    if (strcmp(code, "CS000") == 0) {
++        rt_snprintf(profile->code, sizeof(profile->code), "CS000");
++        profile->width = 1024;
++        profile->height = 600;
++        rt_snprintf(profile->panel, sizeof(profile->panel), "LVDS-1024x600");
++        rt_snprintf(profile->touch, sizeof(profile->touch), "GT911");
++        profile->touch_enabled = 1;
++        return 0;
++    }
++    if (strcmp(code, "CS001") == 0) {
++        /* 1280x800 为 EK79202DA 芯片资料给出的候选显示配置；触摸暂未接入。 */
++        rt_snprintf(profile->code, sizeof(profile->code), "CS001");
++        profile->width = 1280;
++        profile->height = 800;
++        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-LVDS");
++        rt_snprintf(profile->touch, sizeof(profile->touch), "DISABLED");
++        profile->touch_enabled = 0;
++        return 0;
++    }
++    return -1;
++}
++
++static void profile_load_from_env(void)
++{
++    char *code;
++    display_profile_info_t profile;
++
++    if (fw_env_open() != 0)
++        return;
++    code = fw_getenv("hmi_screen");
++    if (code && profile_info_from_code(code, &profile) == 0)
++        active_profile = profile;
++    fw_env_close();
++}
++
+ static void profile_uart_send(const char *text)
+ {
+     size_t length;
+@@ -36,6 +84,7 @@ static void profile_command_reply(const char *command)
+ {
+     char response[128];
+     display_profile_info_t active;
++    display_profile_info_t target;
+     display_profile_result_t result;
+ 
+     result = display_profile_apply(command);
+@@ -44,10 +93,25 @@ static void profile_command_reply(const char *command)
+         rt_snprintf(response, sizeof(response),
+                     "%s,OK,ACTIVE=%s,RES=%ux%u,TOUCH=%s\r\n",
+                     command, active.code, active.width, active.height, active.touch);
++    } else if (result == DISPLAY_PROFILE_REBOOT_REQUIRED &&
++               profile_info_from_code(command, &target) == 0) {
++        rt_snprintf(response, sizeof(response),
++                    "%s,OK,REBOOTING,RES=%ux%u,TOUCH=%s\r\n",
++                    command, target.width, target.height, target.touch);
++        profile_uart_send(response);
++        /* 给 UART 发完应答的时间，再重启让早期 panel probe 采用新 timing。 */
++        rt_thread_mdelay(100);
++        rt_hw_cpu_reset();
++        while (1)
++            rt_thread_mdelay(1000);
+     } else if (result == DISPLAY_PROFILE_ERR_NOT_CONFIGURED) {
+         rt_snprintf(response, sizeof(response),
+                     "%s,ERR,NOT_CONFIGURED,ACTIVE=%s\r\n",
+                     command, active.code);
++    } else if (result == DISPLAY_PROFILE_ERR_ENV) {
++        rt_snprintf(response, sizeof(response),
++                    "%s,ERR,ENV_WRITE_FAILED,ACTIVE=%s\r\n",
++                    command, active.code);
+     } else {
+         rt_snprintf(response, sizeof(response),
+                     "%s,ERR,UNSUPPORTED_CODE,ACTIVE=%s\r\n",
+@@ -58,10 +122,13 @@ static void profile_command_reply(const char *command)
+ 
+ static rt_err_t profile_uart_rx_indicate(rt_device_t device, rt_size_t size)
+ {
+-    RT_UNUSED(device);
+-    RT_UNUSED(size);
+-    rt_sem_release(rx_sem);
+-    return RT_EOK;
++    profile_rx_message_t message;
++
++    if (!rx_messages || !size)
++        return RT_EOK;
++    message.device = device;
++    message.size = size;
++    return rt_mq_send(rx_messages, &message, sizeof(message));
+ }
+ 
+ /* 代号为固定 5 字节 ASCII，因此既支持直接发送，也支持 CR/LF 结尾。 */
+@@ -95,6 +162,7 @@ static void display_profile_uart_thread(void *parameter)
+ {
+     struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT;
+     uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
++    profile_rx_message_t message;
+     rt_device_t device;
+ 
+     RT_UNUSED(parameter);
+@@ -111,31 +179,66 @@ static void display_profile_uart_thread(void *parameter)
+     }
+ 
+     profile_uart = device;
+-    rt_device_set_rx_indicate(profile_uart, profile_uart_rx_indicate);
++    if (rt_device_set_rx_indicate(profile_uart, profile_uart_rx_indicate) != RT_EOK) {
++        system_manager_log("屏幕配置串口 UART0 接收回调注册失败");
++        return;
++    }
+     system_manager_log("屏幕配置串口已启动：UART0 115200 8N1");
++    {
++        display_profile_info_t active;
++        char response[128];
+ 
+-    while (1) {
+-        rt_size_t received;
++        display_profile_get_active(&active);
++        rt_snprintf(response, sizeof(response),
++                    "%s,READY,RES=%ux%u,TOUCH=%s\r\n",
++                    active.code, active.width, active.height, active.touch);
++        profile_uart_send(response);
++    }
+ 
+-        rt_sem_take(rx_sem, RT_WAITING_FOREVER);
+-        do {
++    while (1) {
++        if (rt_mq_recv(rx_messages, &message, sizeof(message), RT_WAITING_FOREVER) != RT_EOK)
++            continue;
++        while (message.size > 0) {
+             rt_size_t index;
+-            received = rt_device_read(profile_uart, 0, bytes, sizeof(bytes));
++            rt_size_t request = message.size > sizeof(bytes) ? sizeof(bytes) : message.size;
++            rt_size_t received = rt_device_read(message.device, 0, bytes, request);
++            if (!received)
++                break;
+             for (index = 0; index < received; index++)
+                 profile_uart_consume_byte((char)bytes[index]);
+-        } while (received == sizeof(bytes));
++            message.size -= received;
++        }
+     }
+ }
+ 
+ display_profile_result_t display_profile_apply(const char *code)
+ {
++    display_profile_info_t target;
++
+     if (!code)
+         return DISPLAY_PROFILE_ERR_ARGUMENT;
+-    if (strcmp(code, "CS000") == 0)
++    if (strcmp(code, active_profile.code) == 0)
+         return DISPLAY_PROFILE_OK;
+-    if (strcmp(code, "CS001") == 0)
++    if (strcmp(code, "CS000") != 0 && strcmp(code, "CS001") != 0)
++        return DISPLAY_PROFILE_ERR_ARGUMENT;
++    if (profile_info_from_code(code, &target) != 0)
+         return DISPLAY_PROFILE_ERR_NOT_CONFIGURED;
+-    return DISPLAY_PROFILE_ERR_ARGUMENT;
++
++    if (fw_env_open() != 0)
++        return DISPLAY_PROFILE_ERR_ENV;
++    {
++        char env_value[DISPLAY_PROFILE_CODE_LENGTH];
++        int ret;
++
++        rt_snprintf(env_value, sizeof(env_value), "%s", code);
++        ret = fw_env_write("hmi_screen", env_value);
++        if (!ret)
++            ret = fw_env_flush();
++        fw_env_close();
++        if (ret)
++            return DISPLAY_PROFILE_ERR_ENV;
++    }
++    return DISPLAY_PROFILE_REBOOT_REQUIRED;
+ }
+ 
+ display_profile_result_t display_profile_get_active(display_profile_info_t *profile)
+@@ -159,8 +262,10 @@ int display_profile_manager_init(void)
+     if (rt_mutex_init(&profile_lock, "dspcfg", RT_IPC_FLAG_PRIO) != RT_EOK)
+         return -1;
+     profile_lock_ready = 1;
+-    rx_sem = rt_sem_create("dsp_rx", 0, RT_IPC_FLAG_FIFO);
+-    if (!rx_sem)
++    profile_load_from_env();
++    rx_messages = rt_mq_create("dsp_rx", sizeof(profile_rx_message_t),
++                               DISPLAY_PROFILE_RX_QUEUE, RT_IPC_FLAG_FIFO);
++    if (!rx_messages)
+         return -2;
+     thread = rt_thread_create("dsp_cfg", display_profile_uart_thread, NULL,
+                               DISPLAY_PROFILE_THREAD_STACK, 27, 10);
+@@ -171,3 +276,12 @@ int display_profile_manager_init(void)
+     manager_ready = 1;
+     return 0;
+ }
++
++int display_profile_touch_enabled(void)
++{
++    display_profile_info_t active;
++
++    if (display_profile_get_active(&active) != DISPLAY_PROFILE_OK)
++        return 0;
++    return active.touch_enabled;
++}
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.h b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+index 3eb4e72..a8c068c 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+@@ -10,9 +10,11 @@
+ 
+ typedef enum {
+     DISPLAY_PROFILE_OK = 0,
++    DISPLAY_PROFILE_REBOOT_REQUIRED = 1,
+     DISPLAY_PROFILE_ERR_ARGUMENT = -1,
+     DISPLAY_PROFILE_ERR_NOT_CONFIGURED = -2,
+-    DISPLAY_PROFILE_ERR_SERIAL = -3
++    DISPLAY_PROFILE_ERR_SERIAL = -3,
++    DISPLAY_PROFILE_ERR_ENV = -4
+ } display_profile_result_t;
+ 
+ typedef struct {
+@@ -21,12 +23,15 @@ typedef struct {
+     uint16_t height;
+     char panel[DISPLAY_PROFILE_PANEL_LENGTH];
+     char touch[DISPLAY_PROFILE_TOUCH_LENGTH];
++    uint8_t touch_enabled;
+ } display_profile_info_t;
+ 
+ /* 启动 UART0 屏幕代号服务；串口只发送协议应答，不承载控制台日志。 */
+ int display_profile_manager_init(void);
+-/* 当前固件只固化 CS000；未配置的代号会返回明确错误，不会假切换。 */
++/* 更新官方 ENV 选择项；切换显示模式需要重启后由 panel probe 读取。 */
+ display_profile_result_t display_profile_apply(const char *code);
+ display_profile_result_t display_profile_get_active(display_profile_info_t *profile);
++/* CS001 暂不启用触摸；健康检查和 LVGL 输入适配按此状态处理。 */
++int display_profile_touch_enabled(void);
+ 
+ #endif
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index fa24e79..ae349e4 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -11,6 +11,7 @@
+ #include "network_manager.h"
+ #include "system_manager.h"
+ #include "image_preview.h"
++#include "display_profile_manager.h"
+ #include "hmi_logo.h"
+ #include <stdio.h>
+ #include <string.h>
+@@ -638,8 +639,18 @@ static void screen(unsigned number)
+     static const unsigned file_operations[] = {
+         100, 101, 102, ST_MKDIR, ST_COPY, ST_RENAME, ST_DELETE
+     };
++    display_profile_info_t display_profile;
++    char display_info[96];
+     unsigned i;
+ 
++    if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK) {
++        snprintf(display_info, sizeof(display_info), "%s  %ux%u LVDS  触摸：%s",
++                 display_profile.code, display_profile.width, display_profile.height,
++                 display_profile.touch_enabled ? display_profile.touch : "未启用");
++    } else {
++        snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
++    }
++
+     if (number >= 7)
+         return;
+     page = number;
+@@ -727,9 +738,11 @@ static void screen(unsigned number)
+               "硬件版本：" HMI_HARDWARE "\n"
+               "固件版本：" HMI_VERSION "\n"
+               "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
+-              "图形库：LVGL 9.1 | 显示：1024 × 600 LVDS\n"
+-              "启动存储：16 MiB SPI NOR | DATA：单分区",
++              "图形库：LVGL 9.1\n",
+               32, 28, 920);
++        label(content, display_info, 32, 158, 920);
++        label(content, "启动存储：16 MiB SPI NOR | DATA：单分区",
++              32, 190, 920);
+         panel(content, 16, 270, 960, 180, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+         label(content, "当前网络、A/B 槽位、健康状态和运行时间请查看设备总览。",
+               32, 294, 920);
+@@ -769,10 +782,13 @@ static void screen(unsigned number)
+               "固件版本：" HMI_VERSION "\n"
+               "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
+               "图形界面：LVGL 9.1\n"
+-              "显示屏：1024 × 600 LVDS\n"
++              "屏幕配置：",
++              540, 68, 410);
++        label(content, display_info, 540, 222, 410);
++        label(content,
+               "启动存储：16 MiB SPI NOR\n"
+               "DATA：单分区",
+-              540, 68, 410);
++              540, 254, 410);
+     }
+ }
+ 
+diff --git a/source/bsp/artinchip/drv/display/panel/panel_com.c b/source/bsp/artinchip/drv/display/panel/panel_com.c
+new file mode 100644
+index 0000000..1afb00b
+--- /dev/null
++++ b/source/bsp/artinchip/drv/display/panel/panel_com.c
+@@ -0,0 +1,613 @@
++/*
++ * Copyright (C) 2023-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include <aic_core.h>
++#include <aic_hal.h>
++
++#include "panel_com.h"
++
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++#include <env.h>
++#include <string.h>
++#endif
++
++static struct aic_panel *panels[] = {
++#if defined(AIC_DISP_RGB) && defined(AIC_SIMPLE_PANEL)
++    &aic_panel_rgb,
++#endif
++#if defined(AIC_DISP_LVDS) && defined(AIC_SIMPLE_PANEL)
++    &aic_panel_lvds,
++#endif
++#ifdef AIC_DSI_SIMPLE_PANEL
++    &dsi_simple,
++#endif
++#ifdef AIC_PANEL_DSI_XM91080
++    &dsi_xm91080,
++#endif
++#ifdef AIC_PANEL_DSI_ST7797
++    &dsi_st7797,
++#endif
++#ifdef AIC_PANEL_DSI_ST7703
++    &dsi_st7703,
++#endif
++#ifdef AIC_PANEL_DSI_ILI9881C
++    &dsi_ili9881c,
++#endif
++#ifdef AIC_PANEL_DSI_HX8394
++    &dsi_hx8394,
++#endif
++#ifdef AIC_PANEL_DSI_JD9365
++    &dsi_jd9365,
++#endif
++#ifdef AIC_PANEL_DSI_AXS15231B
++    &dsi_axs15231b,
++#endif
++#ifdef AIC_PANEL_DSI_NV3051
++    &dsi_nv3051,
++#endif
++#ifdef AIC_PANEL_DSI_FL7707
++    &dsi_fl7707,
++#endif
++#ifdef AIC_PANEL_DSI_FT8201
++    &dsi_ft8201,
++#endif
++#ifdef AIC_PANEL_DSI_ST7701S
++    &dsi_st7701s,
++#endif
++#ifdef AIC_PANEL_DSI_JD9366TC
++    &dsi_jd9366tc,
++#endif
++#ifdef AIC_PANEL_DSI_EK79007AD
++    &dsi_ek79007ad,
++#endif
++#ifdef AIC_PANEL_DSI_GC9703
++    &dsi_gc9703,
++#endif
++#ifdef AIC_PANEL_DSI_ST7102
++    &dsi_st7102,
++#endif
++#ifdef AIC_PANEL_DSI_EDP_LT9811EXB
++    &dsi_edp_lt9811exb,
++#endif
++#ifdef AIC_PANEL_DSI_SVC1K26
++    &dsi_svc1k26,
++#endif
++#ifdef AIC_PANEL_DBI_ILI9488
++    &dbi_ili9488,
++#endif
++#ifdef AIC_PANEL_DBI_ILI9486L
++    &dbi_ili9486l,
++#endif
++#ifdef AIC_PANEL_DBI_ST7789
++    &dbi_st7789,
++#endif
++#ifdef AIC_PANEL_DBI_ILI9341
++    &dbi_ili9341,
++#endif
++#ifdef AIC_PANEL_DBI_ILI9327
++    &dbi_ili9327,
++#endif
++#ifdef AIC_PANEL_DBI_ST77903
++    &dbi_st77903,
++#endif
++#ifdef AIC_PANEL_DBI_ST7789T3
++    &dbi_st7789t3,
++#endif
++#ifdef AIC_PANEL_DBI_ST77916
++    &dbi_st77916,
++#endif
++#ifdef AIC_PANEL_DBI_ST77912
++    &dbi_st77912,
++#endif
++#ifdef AIC_PANEL_RGB_ST7701S
++    &rgb_st7701s,
++#endif
++#ifdef AIC_PANEL_RGB_ST77916
++    &rgb_st77916,
++#endif
++#ifdef AIC_PANEL_RGB_JD9855
++    &rgb_jd9855,
++#endif
++#ifdef AIC_PANEL_RGB_GC9A01A
++    &rgb_gc9a01a,
++#endif
++#ifdef AIC_PANEL_RGB_NT35560
++    &rgb_nt35560,
++#endif
++#ifdef AIC_PANEL_RGB_ST77922
++    &rgb_st77922,
++#endif
++#ifdef AIC_PANEL_RGB_ST7102
++    &rgb_st7102,
++#endif
++#ifdef AIC_PANEL_SRGB_HX8238
++    &srgb_hx8238,
++#endif
++#ifdef AIC_PANEL_BRIDGE_LT8911
++    &bridge_lt8911,
++#endif
++#ifdef AIC_PANEL_LCOS_HX7033
++    &lcos_hx7033,
++#endif
++#ifdef AIC_PANEL_DBI_ST7789V
++    &dbi_st7789v,
++#endif
++#ifdef AIC_PANEL_DBI_CO5300
++    &dbi_co5300,
++#endif
++#ifdef AIC_PANEL_SPI_GENERAL
++    &spi_general,
++#endif
++#ifdef AIC_PANEL_DBI_GC9108
++    &dbi_gc9108,
++#endif
++#ifdef AIC_PANEL_DBI_GC9B72NA
++    &dbi_gc9b72na,
++#endif
++#ifdef AIC_PANEL_DBI_AXS15231E
++    &dbi_axs15231e,
++#endif
++#ifdef AIC_PANEL_DBI_IL79400A
++    &dbi_il79400a,
++#endif
++};
++
++struct aic_panel *aic_find_panel(u32 connector_type)
++{
++    int i;
++
++    for (i = 0; i < ARRAY_SIZE(panels); i++) {
++        if (panels[i]->connector_type == connector_type) {
++            break;
++        }
++    }
++
++    if (i >= ARRAY_SIZE(panels))
++        return NULL;
++
++#if defined(HMI_DISPLAY_PROFILE_SERIAL) && defined(AIC_DISP_LVDS)
++    if (panels[i]->connector_type == AIC_LVDS_COM) {
++        int cs001 = 0;
++
++        /* FAL/ENV 在 panel probe 前初始化，启动时从冗余 ENV 读取屏幕代号。 */
++        if (fw_env_open() == 0) {
++            char *profile = fw_getenv("hmi_screen");
++            cs001 = profile && strcmp(profile, "CS001") == 0;
++            fw_env_close();
++        }
++        aic_panel_lvds_select_profile(cs001);
++    }
++#endif
++
++    pr_debug("find panel driver : %s\n", panels[i]->name);
++
++    return panels[i];
++}
++
++/* The follow functions are defined for panel driver */
++
++/* Enable the display interface */
++void panel_di_enable(struct aic_panel *panel, u32 ms)
++{
++    if (panel && panel->callbacks.di_enable)
++        panel->callbacks.di_enable();
++
++    if (ms)
++        aic_delay_ms(ms);
++}
++
++/* Disable the display interface */
++void panel_di_disable(struct aic_panel *panel, u32 ms)
++{
++    if (panel && panel->callbacks.di_disable)
++        panel->callbacks.di_disable();
++
++    if (ms)
++        aic_delay_ms(ms);
++}
++
++void panel_de_timing_enable(struct aic_panel *panel, u32 ms)
++{
++    if (panel && panel->callbacks.timing_enable)
++        panel->callbacks.timing_enable();
++
++    if (ms)
++        aic_delay_ms(ms);
++}
++
++void panel_de_timing_disable(struct aic_panel *panel, u32 ms)
++{
++    if (panel && panel->callbacks.timing_disable)
++        panel->callbacks.timing_disable();
++
++    if (ms)
++        aic_delay_ms(ms);
++}
++
++void panel_backlight_enable(struct aic_panel *panel, u32 ms)
++{
++#ifdef AIC_PM_INDEPENDENT_POWER_KEY
++    if (panel && panel->independent_pwkey)
++        return;
++#endif
++#ifdef AIC_PANEL_ENABLE_GPIO
++    unsigned int g, p;
++    long pin;
++
++    pin = hal_gpio_name2pin(AIC_PANEL_ENABLE_GPIO);
++
++    g = GPIO_GROUP(pin);
++    p = GPIO_GROUP_PIN(pin);
++
++    hal_gpio_direction_output(g, p);
++
++#ifndef AIC_PANEL_ENABLE_GPIO_LOW
++    hal_gpio_set_output(g, p);
++#else
++    hal_gpio_clr_output(g, p);
++#endif
++#endif /* AIC_PANEL_ENABLE_GPIO */
++
++#if defined(KERNEL_RTTHREAD) && defined(AIC_PWM_BACKLIGHT_CHANNEL)
++    struct rt_device_pwm *pwm_dev;
++
++    pwm_dev = (struct rt_device_pwm *)rt_device_find("pwm");
++
++#ifndef AIC_PWM_BACKLIGHT_BYPASS
++    /* pwm frequency: 1KHz = 1000000ns */
++    rt_pwm_set(pwm_dev, AIC_PWM_BACKLIGHT_CHANNEL,
++            1000000, 10000 * AIC_PWM_BRIGHTNESS_LEVEL);
++#endif
++    rt_pwm_enable(pwm_dev, AIC_PWM_BACKLIGHT_CHANNEL);
++#endif
++}
++
++void panel_backlight_disable(struct aic_panel *panel, u32 ms)
++{
++#ifdef AIC_PM_INDEPENDENT_POWER_KEY
++    if (panel && panel->independent_pwkey)
++        return;
++#endif
++#ifdef AIC_PANEL_ENABLE_GPIO
++    unsigned int g, p;
++    long pin;
++
++    pin = hal_gpio_name2pin(AIC_PANEL_ENABLE_GPIO);
++
++    g = GPIO_GROUP(pin);
++    p = GPIO_GROUP_PIN(pin);
++
++#ifndef AIC_PANEL_ENABLE_GPIO_LOW
++    hal_gpio_clr_output(g, p);
++#else
++    hal_gpio_set_output(g, p);
++#endif
++#endif /* AIC_PANEL_ENABLE_GPIO */
++
++#if defined(KERNEL_RTTHREAD) && defined(AIC_PWM_BACKLIGHT_CHANNEL)
++    struct rt_device_pwm *pwm_dev;
++
++    pwm_dev = (struct rt_device_pwm *)rt_device_find("pwm");
++    rt_pwm_disable(pwm_dev, AIC_PWM_BACKLIGHT_CHANNEL);
++#endif
++}
++
++int panel_default_prepare(void)
++{
++#ifdef AIC_SIMPLE_PANEL_POWER_GPIO
++    unsigned int g, p;
++    long pin;
++
++    pin = hal_gpio_name2pin(AIC_SIMPLE_PANEL_POWER_GPIO_PIN);
++
++    g = GPIO_GROUP(pin);
++    p = GPIO_GROUP_PIN(pin);
++
++    hal_gpio_set_func(g, p, 1);
++    hal_gpio_set_bias_pull(g, p, 0);
++    hal_gpio_set_drive_strength(g, p, 3);
++    hal_gpio_direction_output(g, p);
++
++#ifdef AIC_SIMPLE_PANEL_POWER_GPIO_LOW_ACTIVE
++    hal_gpio_clr_output(g, p);
++#else
++    hal_gpio_set_output(g, p);
++#endif
++
++    aic_delay_ms(AIC_SIMPLE_PANEL_POWER_DELAY_MS);
++#endif /* AIC_SIMPLE_PANEL_POWER_GPIO */
++    return 0;
++}
++
++int panel_default_unprepare(void)
++{
++#ifdef AIC_SIMPLE_PANEL_POWER_GPIO
++    unsigned int g, p;
++    long pin;
++
++    pin = hal_gpio_name2pin(AIC_SIMPLE_PANEL_POWER_GPIO_PIN);
++
++    g = GPIO_GROUP(pin);
++    p = GPIO_GROUP_PIN(pin);
++
++#ifdef AIC_SIMPLE_PANEL_POWER_GPIO_LOW_ACTIVE
++    hal_gpio_set_output(g, p);
++#else
++    hal_gpio_clr_output(g, p);
++#endif
++#endif /* AIC_SIMPLE_PANEL_POWER_GPIO */
++    return 0;
++}
++
++int panel_default_enable(struct aic_panel *panel)
++{
++    panel_di_enable(panel, 0);
++    panel_de_timing_enable(panel, 60);
++    panel_backlight_enable(panel, 0);
++    return 0;
++}
++
++int panel_default_disable(struct aic_panel *panel)
++{
++    panel_backlight_disable(panel, 0);
++    panel_di_disable(panel, 0);
++    panel_de_timing_disable(panel, 0);
++    return 0;
++}
++
++int panel_register_callback(struct aic_panel *panel,
++                struct aic_panel_callbacks *pcallback)
++{
++    panel->callbacks.di_enable = pcallback->di_enable;
++    panel->callbacks.di_disable = pcallback->di_disable;
++    panel->callbacks.di_send_cmd = pcallback->di_send_cmd;
++    panel->callbacks.di_set_videomode = pcallback->di_set_videomode;
++    panel->callbacks.timing_enable = pcallback->timing_enable;
++    panel->callbacks.timing_disable = pcallback->timing_disable;
++    return 0;
++}
++
++void panel_send_command(u8 *para_cmd, u32 size, struct aic_panel *panel)
++{
++    u8 *p;
++    u8 num, code;
++
++    for (p = para_cmd; p < (para_cmd + size);) {
++        num  = *p++ - 1;
++        code = *p++;
++
++        if (num == 0)
++            aic_delay_ms((u32)code);
++        else
++            panel->callbacks.di_send_cmd((u32)code, 0, p, num);
++
++        p += num;
++    }
++}
++
++void panel_get_gpio(struct gpio_desc *desc, char *name)
++{
++    long pin;
++
++    if (!desc || !name) {
++        pr_err("Invalid parameter\n");
++        return;
++    }
++
++    pin = hal_gpio_name2pin(name);
++    if (pin < 0) {
++        pr_err("Failed to get GPIO %s\n", name);
++        return;
++    }
++
++    desc->g = GPIO_GROUP(pin);
++    desc->p = GPIO_GROUP_PIN(pin);
++
++    hal_gpio_direction_output(desc->g, desc->p);
++}
++
++void panel_gpio_set_value(struct gpio_desc *desc, u32 value)
++{
++    if (!desc) {
++        pr_err("Invalid parameter\n");
++        return;
++    }
++
++    if (value)
++        hal_gpio_set_output(desc->g, desc->p);
++    else
++        hal_gpio_clr_output(desc->g, desc->p);
++}
++
++#ifdef AIC_PANEL_SPI_EMULATION
++static struct panel_spi_device spi = { 0 };
++static bool panel_spi_emulation = false;
++
++static inline void panel_spi_set_scl(u32 value)
++{
++    panel_gpio_set_value(&spi.scl, value);
++}
++
++static inline void panel_spi_set_sdi(u32 value)
++{
++    panel_gpio_set_value(&spi.sdi, value);
++}
++
++static inline void panel_spi_set_cs(u32 value)
++{
++    panel_gpio_set_value(&spi.cs, value);
++}
++
++static inline void panel_spi_set_dc(u32 value)
++{
++    panel_gpio_set_value(&spi.dc, value);
++}
++
++#ifndef AIC_SPI_EMULATION_WITH_DC
++void panel_spi_cmd_wr(u8 cmd)
++{
++    u32 i;
++
++    if (!panel_spi_emulation)
++        return;
++
++    panel_spi_set_cs(0);
++
++    panel_spi_set_sdi(0);
++    panel_spi_set_scl(0);
++
++    aic_delay_us(1);
++    panel_spi_set_scl(1);
++
++    aic_delay_us(1);
++    panel_spi_set_scl(0);
++
++    for (i = 0; i < 8; i++) {
++        if ((cmd & 0x80) == 0x80)
++            panel_spi_set_sdi(1);
++        else
++            panel_spi_set_sdi(0);
++
++        aic_delay_us(1);
++        panel_spi_set_scl(1);
++        aic_delay_us(1);
++        panel_spi_set_scl(0);
++        aic_delay_us(1);
++        cmd = cmd << 1;
++    }
++
++    panel_spi_set_cs(1);
++    panel_spi_set_sdi(0);
++    panel_spi_set_scl(0);
++    aic_delay_us(1);
++}
++
++void panel_spi_data_wr(u8 data)
++{
++    u32 i;
++
++    if (!panel_spi_emulation)
++        return;
++
++    panel_spi_set_cs(0);
++    panel_spi_set_scl(0);
++    panel_spi_set_sdi(1);
++
++    aic_delay_us(1);
++    panel_spi_set_scl(1);
++
++    aic_delay_us(1);
++    panel_spi_set_scl(0);
++
++    for (i = 0; i < 8; i++) {
++        if ((data & 0x80) == 0x80)
++            panel_spi_set_sdi(1);
++        else
++            panel_spi_set_sdi(0);
++
++        aic_delay_us(1);
++        panel_spi_set_scl(1);
++        aic_delay_us(1);
++        panel_spi_set_scl(0);
++        aic_delay_us(1);
++        data = data << 1;
++    }
++    panel_spi_set_cs(1);
++    panel_spi_set_scl(0);
++    panel_spi_set_sdi(0);
++    aic_delay_us(1);
++}
++
++void panel_spi_device_emulation(char *cs, char *sdi, char *scl)
++{
++    panel_get_gpio(&spi.cs, cs);
++    panel_get_gpio(&spi.scl, scl);
++    panel_get_gpio(&spi.sdi, sdi);
++
++    panel_spi_set_cs(1);
++    panel_spi_set_scl(0);
++    panel_spi_set_sdi(0);
++    aic_delay_us(1);
++
++    panel_spi_emulation = true;
++}
++#else
++void panel_spi_cmd_wr(u8 cmd)
++{
++    u32 i;
++
++    if (!panel_spi_emulation)
++        return;
++
++    aic_delay_us(1);
++    panel_spi_set_cs(0);
++    aic_delay_us(1);
++    panel_spi_set_dc(0);
++
++    for (i = 0; i < 8; i++) {
++        if ((cmd & 0x80) == 0x80)
++            panel_spi_set_sdi(1);
++        else
++            panel_spi_set_sdi(0);
++
++        cmd = cmd << 1;
++        aic_delay_us(1);
++        panel_spi_set_scl(1);
++        aic_delay_us(1);
++        panel_spi_set_scl(0);
++    }
++
++    aic_delay_us(1);
++    panel_spi_set_cs(1);
++    aic_delay_us(1);
++}
++
++void panel_spi_data_wr(u8 data)
++{
++    u32 i;
++
++    if (!panel_spi_emulation)
++        return;
++
++    aic_delay_us(1);
++    panel_spi_set_cs(0);
++    aic_delay_us(1);
++    panel_spi_set_dc(1);
++
++    for (i = 0; i < 8; i++) {
++        if ((data & 0x80) == 0x80)
++            panel_spi_set_sdi(1);
++        else
++            panel_spi_set_sdi(0);
++
++        data = data << 1;
++        aic_delay_us(1);
++        panel_spi_set_scl(1);
++        aic_delay_us(1);
++        panel_spi_set_scl(0);
++    }
++
++    aic_delay_us(1);
++    panel_spi_set_cs(1);
++    aic_delay_us(1);
++}
++void panel_spi_device_emulation(char *cs, char *sdi, char *scl, char *dc)
++{
++    panel_get_gpio(&spi.cs, cs);
++    panel_get_gpio(&spi.scl, scl);
++    panel_get_gpio(&spi.sdi, sdi);
++    panel_get_gpio(&spi.dc, dc);
++
++    panel_spi_set_cs(1);
++    panel_spi_set_scl(0);
++    panel_spi_set_sdi(1);
++    panel_spi_set_dc(1);
++    aic_delay_us(1);
++
++    panel_spi_emulation = true;
++}
++#endif
++#endif
+diff --git a/source/bsp/artinchip/drv/display/panel/panel_com.h b/source/bsp/artinchip/drv/display/panel/panel_com.h
+new file mode 100644
+index 0000000..e6e7cf6
+--- /dev/null
++++ b/source/bsp/artinchip/drv/display/panel/panel_com.h
+@@ -0,0 +1,144 @@
++/*
++ * Copyright (C) 2023-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#ifndef _PANEL_COM_H_
++#define _PANEL_COM_H_
++
++#include "../drv_fb.h"
++
++struct gpio_desc {
++    unsigned int g;
++    unsigned int p;
++};
++
++struct aic_panel_callbacks;
++
++struct aic_panel *aic_find_panel(u32 connector_type);
++
++extern struct aic_panel aic_panel_rgb;
++extern struct aic_panel aic_panel_lvds;
++#ifdef AIC_DISP_LVDS
++/* 根据 ENV 屏幕代号选择已编入的 LVDS panel descriptor。 */
++void aic_panel_lvds_select_profile(int cs001);
++#endif
++
++/*
++ * MIPI-DSI Panel
++ */
++extern struct aic_panel dsi_simple;
++extern struct aic_panel dsi_xm91080;
++extern struct aic_panel dsi_st7797;
++extern struct aic_panel dsi_st7703;
++extern struct aic_panel dsi_ili9881c;
++extern struct aic_panel dsi_hx8394;
++extern struct aic_panel dsi_jd9365;
++extern struct aic_panel dsi_axs15231b;
++extern struct aic_panel dsi_nv3051;
++extern struct aic_panel dsi_fl7707;
++extern struct aic_panel dsi_ft8201;
++extern struct aic_panel dsi_st7701s;
++extern struct aic_panel dsi_jd9366tc;
++extern struct aic_panel dsi_gc9703;
++extern struct aic_panel dsi_st7102;
++extern struct aic_panel dsi_edp_lt9811exb;
++extern struct aic_panel dsi_ek79007ad;
++extern struct aic_panel dsi_svc1k26;
++
++/*
++ * MIPI-DBI Type B I8080 Panel
++ */
++extern struct aic_panel dbi_ili9488;
++extern struct aic_panel dbi_ili9486l;
++extern struct aic_panel dbi_st7789;
++extern struct aic_panel dbi_gc9b72na;
++extern struct aic_panel dbi_axs15231e;
++
++/*
++ * MIPI-DBI Type C SPI Panel
++ */
++extern struct aic_panel dbi_ili9341;
++extern struct aic_panel dbi_st77903;
++extern struct aic_panel dbi_st7789t3;
++extern struct aic_panel dbi_st7789v;
++extern struct aic_panel dbi_ili9327;
++extern struct aic_panel dbi_co5300;
++extern struct aic_panel dbi_st77916;
++extern struct aic_panel dbi_gc9108;
++extern struct aic_panel dbi_st77912;
++extern struct aic_panel dbi_il79400a;
++extern struct aic_panel spi_general;
++
++/*
++ * RGB Panel SPI Init
++ */
++extern struct aic_panel rgb_st7701s;
++extern struct aic_panel rgb_gc9a01a;
++extern struct aic_panel rgb_nt35560;
++extern struct aic_panel rgb_st77922;
++extern struct aic_panel rgb_st77916;
++extern struct aic_panel rgb_jd9855;
++extern struct aic_panel rgb_st7102;
++
++/*
++ * SRGB Panel
++ */
++extern struct aic_panel srgb_hx8238;
++
++/*
++ * Bridge Panel
++ */
++extern struct aic_panel bridge_lt8911;
++extern struct aic_panel lcos_hx7033;
++
++void panel_di_enable(struct aic_panel *panel, u32 ms);
++void panel_di_disable(struct aic_panel *panel, u32 ms);
++void panel_de_timing_enable(struct aic_panel *panel, u32 ms);
++void panel_de_timing_disable(struct aic_panel *panel, u32 ms);
++
++int panel_default_prepare(void);
++int panel_default_unprepare(void);
++int panel_default_enable(struct aic_panel *panel);
++int panel_default_disable(struct aic_panel *panel);
++int panel_register_callback(struct aic_panel *panel,
++                struct aic_panel_callbacks *pcallback);
++
++void panel_backlight_enable(struct aic_panel *panel, u32 ms);
++
++void panel_backlight_disable(struct aic_panel *panel, u32 ms);
++
++void panel_send_command(u8 *para_cmd, u32 size, struct aic_panel *panel);
++
++void panel_get_gpio(struct gpio_desc *desc, char *name);
++
++void panel_gpio_set_value(struct gpio_desc *desc, u32 value);
++
++#ifdef AIC_PANEL_SPI_EMULATION
++struct panel_spi_device {
++    struct gpio_desc cs;
++    struct gpio_desc sdi;
++    struct gpio_desc scl;
++    struct gpio_desc dc;
++};
++
++void panel_spi_data_wr(u8 data);
++void panel_spi_cmd_wr(u8 cmd);
++#ifndef AIC_SPI_EMULATION_WITH_DC
++void panel_spi_device_emulation(char *cs, char *sdi, char *scl);
++#else
++void panel_spi_device_emulation(char *cs, char *sdi, char *scl, char *dc);
++#endif
++
++#define panel_spi_send_seq(command, seq...) do {                    \
++        static const u8 d[] = { seq };                              \
++        int i;                                                      \
++        panel_spi_cmd_wr(command);                                  \
++        for (i = 0; i < ARRAY_SIZE(d); i++)                         \
++            panel_spi_data_wr(d[i]);                                \
++    } while (0)
++#endif
++
++#endif /* _PANEL_COM_H_ */
++
+diff --git a/source/bsp/artinchip/drv/display/panel/panel_simple.c b/source/bsp/artinchip/drv/display/panel/panel_simple.c
+new file mode 100644
+index 0000000..c8a8e42
+--- /dev/null
++++ b/source/bsp/artinchip/drv/display/panel/panel_simple.c
+@@ -0,0 +1,261 @@
++/*
++ * Copyright (c) 2023-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include "panel_com.h"
++
++#ifndef LVDS_PANEL_MATCH_ID
++#define LVDS_PANEL_MATCH_ID 0
++#endif
++
++#ifndef RGB_PANEL_MATCH_ID
++#define RGB_PANEL_MATCH_ID 0
++#endif
++
++#ifndef PANEL_PIXELCLOCK
++#define PANEL_PIXELCLOCK  52
++#endif
++
++#ifndef PANEL_HACTIVE
++#define PANEL_HACTIVE   1024
++#endif
++
++#ifndef PANEL_HBP
++#define PANEL_HBP       160
++#endif
++
++#ifndef PANEL_HFP
++#define PANEL_HFP       160
++#endif
++
++#ifndef PANEL_HSW
++#define PANEL_HSW       20
++#endif
++
++#ifndef PANEL_VACTIVE
++#define PANEL_VACTIVE   600
++#endif
++
++#ifndef PANEL_VBP
++#define PANEL_VBP       12
++#endif
++
++#ifndef PANEL_VFP
++#define PANEL_VFP       20
++#endif
++
++#ifndef PANEL_VSW
++#define PANEL_VSW       2
++#endif
++
++static struct aic_panel_funcs simple_funcs = {
++    .prepare = panel_default_prepare,
++    .enable = panel_default_enable,
++    .disable = panel_default_disable,
++    .unprepare = panel_default_unprepare,
++    .register_callback = panel_register_callback,
++};
++
++static struct display_timing timing_custom = {
++    .pixelclock   = PANEL_PIXELCLOCK * 1000000,
++
++    .hactive      = PANEL_HACTIVE,
++    .hback_porch  = PANEL_HBP,
++    .hfront_porch = PANEL_HFP,
++    .hsync_len    = PANEL_HSW,
++
++    .vactive      = PANEL_VACTIVE,
++    .vback_porch  = PANEL_VBP,
++    .vfront_porch = PANEL_VFP,
++    .vsync_len    = PANEL_VSW,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++
++#ifdef AIC_DISP_RGB
++static struct display_timing timing_480_272 = {
++    .pixelclock   = 10 * 1000000,
++
++    .hactive      = 480,
++    .hback_porch  = 43,
++    .hfront_porch = 8,
++    .hsync_len    = 1,
++
++    .vactive      = 272,
++    .vback_porch  = 12,
++    .vfront_porch = 4,
++    .vsync_len    = 10,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++
++static struct display_timing timing_800_480 = {
++    .pixelclock   = 28 * 1000000,
++
++    .hactive      = 800,
++    .hback_porch  = 20,
++    .hfront_porch = 50,
++    .hsync_len    = 20,
++
++    .vactive      = 480,
++    .vback_porch  = 32,
++    .vfront_porch = 12,
++    .vsync_len    = 3,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++#endif
++
++#if defined(AIC_DISP_RGB) || defined(AIC_DISP_LVDS)
++static struct display_timing timing_1024_600 = {
++    .pixelclock   = 52 * 1000000,
++
++    .hactive      = 1024,
++    .hback_porch  = 160,
++    .hfront_porch = 160,
++    .hsync_len    = 20,
++
++    .vactive      = 600,
++    .vback_porch  = 12,
++    .vfront_porch = 20,
++    .vsync_len    = 2,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++#endif
++
++#ifdef AIC_DISP_LVDS
++static struct display_timing timing_1920_1080 = {
++    .pixelclock   = 142 * 1000000,
++
++    .hactive      = 1920,
++    .hback_porch  = 80,
++    .hfront_porch = 120,
++    .hsync_len    = 20,
++
++    .vactive      = 1080,
++    .vback_porch  = 20,
++    .vfront_porch = 20,
++    .vsync_len    = 10,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++
++/* EK79202DA 1280x800 HV mode：保持单链路 LVDS 和驱动默认低有效同步。 */
++static struct display_timing timing_cs001_1280_800 = {
++    .pixelclock   = 72 * 1000000 + 400000,
++
++    .hactive      = 1280,
++    /* 数据手册 HBP 含同步脉宽；采用 SDK 常见 20 DCLK HSYNC。 */
++    .hback_porch  = 68,
++    .hfront_porch = 72,
++    .hsync_len    = 20,
++
++    .vactive      = 800,
++    /* 数据手册 VBP 含同步脉宽；采用 SDK 1024x600 的 2 行 VSYNC。 */
++    .vback_porch  = 21,
++    .vfront_porch = 15,
++    .vsync_len    = 2,
++
++    .flags        = AIC_DISPLAY_FLAGS,
++};
++#endif
++
++#ifdef AIC_DISP_RGB
++static struct panel_rgb rgb = {
++    .mode = AIC_RGB_MODE,
++    .format = AIC_RGB_FORMAT,
++    .clock_phase = AIC_RGB_CLK_CTL,
++    .data_order = AIC_RGB_DATA_ORDER,
++    .data_mirror = AIC_RGB_DATA_MIRROR,
++};
++
++static struct panel_desc rgb_desc[] = {
++    [0] = {
++        .name = "1024x600",
++        .rgb = &rgb,
++        .timings = &timing_1024_600,
++        .funcs = &simple_funcs,
++    },
++    [1] = {
++        .name = "800x480",
++        .rgb = &rgb,
++        .timings = &timing_800_480,
++        .funcs = &simple_funcs,
++    },
++    [2] = {
++        .name = "480x272",
++        .rgb = &rgb,
++        .timings = &timing_480_272,
++        .funcs = &simple_funcs,
++    },
++    [3] = {
++        .name = "custom",
++        .rgb = &rgb,
++        .timings = &timing_custom,
++        .funcs = &simple_funcs,
++    },
++};
++
++struct aic_panel aic_panel_rgb = {
++    .name = "panel-rgb",
++    .desc = rgb_desc,
++    .match_num = ARRAY_SIZE(rgb_desc),
++    .match_id = RGB_PANEL_MATCH_ID,
++    .connector_type = AIC_RGB_COM,
++};
++#endif
++
++#ifdef AIC_DISP_LVDS
++static struct panel_lvds lvds = {
++    .mode      = AIC_LVDS_MODE,
++    .link_mode = AIC_LVDS_LINK_MODE,
++    .link_swap = AIC_LVDS_LINK_SWAP_EN,
++    .lanes     = { AIC_LVDS_LINK0_LANES, AIC_LVDS_LINK1_LANES },
++    .pols      = { AIC_LVDS_LINK0_POL, AIC_LVDS_LINK1_POL },
++};
++
++static struct panel_desc lvds_desc[] = {
++    [0] = {
++        .name = "1024x600",
++        .lvds = &lvds,
++        .timings = &timing_1024_600,
++        .funcs = &simple_funcs,
++    },
++    [1] = {
++        .name = "1920x1080",
++        .lvds = &lvds,
++        .timings = &timing_1920_1080,
++        .funcs = &simple_funcs,
++    },
++    [2] = {
++        .name = "custom",
++        .lvds = &lvds,
++        .timings = &timing_custom,
++        .funcs = &simple_funcs,
++    },
++    [3] = {
++        .name = "CS001-EK79202DA-1280x800",
++        .lvds = &lvds,
++        .timings = &timing_cs001_1280_800,
++        .funcs = &simple_funcs,
++    },
++};
++
++struct aic_panel aic_panel_lvds = {
++    .name = "panel-lvds",
++    .desc = lvds_desc,
++    .match_num = ARRAY_SIZE(lvds_desc),
++    .match_id = LVDS_PANEL_MATCH_ID,
++    .connector_type = AIC_LVDS_COM,
++};
++
++/* 启动时根据官方 ENV 选择 LVDS panel descriptor。 */
++void aic_panel_lvds_select_profile(int cs001)
++{
++    aic_panel_lvds.match_id = cs001 ? 3 : LVDS_PANEL_MATCH_ID;
++}
++#endif
++
+diff --git a/source/bsp/artinchip/drv/spinor/spinor_fal.c b/source/bsp/artinchip/drv/spinor/spinor_fal.c
+new file mode 100644
+index 0000000..9b72a4e
+--- /dev/null
++++ b/source/bsp/artinchip/drv/spinor/spinor_fal.c
+@@ -0,0 +1,225 @@
++/*
++ * Copyright (c) 2023-2026, Artinchip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors: xuan.wen <xuan.wen@artinchip.com>
++ */
++
++#include <rtdevice.h>
++#include <aic_log.h>
++#include <rtconfig.h>
++
++#if defined(RT_USING_FAL)
++#include <fal.h>
++#include <sfud.h>
++#include <spi_flash_sfud.h>
++
++/**
++ * @brief Get the number of SFUD flash devices.
++ * @return Number of SFUD flash devices detected.
++ */
++extern rt_uint32_t spinor_sfud_port_get_flash_count(void);
++
++/**
++ * @brief Get SFUD flash device name by index.
++ * @param idx Flash device index.
++ * @return Pointer to flash device name string.
++ */
++extern const char *spinor_sfud_port_get_flash_name(rt_uint32_t idx);
++
++/** FAL flash device table, dynamically allocated */
++struct fal_flash_dev *fal_flash_table = NULL;
++/** Pointer array to FAL flash devices, each element points to one flash device in fal_flash_table */
++struct fal_flash_dev **fal_flash_table_ptr = NULL;
++
++/** Number of flash devices in the table */
++size_t fal_flash_devices_count = 0;
++
++/**
++ * @brief Initialize FAL flash device by finding SFUD device.
++ *
++ * This function locates the SFUD device by name, caches it in
++ * user_data, and updates chip info in fal_flash_dev.
++ *
++ * @param dev Pointer to FAL flash device structure.
++ * @return 0 on success, -1 on failure.
++ */
++static int fal_sfud_flash_init(struct fal_flash_dev *dev)
++{
++    sfud_flash_t sfud_dev = rt_sfud_flash_find_by_dev_name(dev->name);
++
++    if (sfud_dev == NULL) {
++        log_e("SFUD device '%s' not found", dev->name);
++        return -1;
++    }
++
++    dev->user_data  = sfud_dev;
++    dev->blk_size   = sfud_dev->chip.eraser[0].size;
++    dev->len        = sfud_dev->chip.capacity;
++    dev->addr       = 0;
++    dev->write_gran = 256;
++
++    return 0;
++}
++
++/**
++ * @brief Read data from flash via SFUD library.
++ *
++ * @param dev Pointer to FAL flash device structure.
++ * @param offset Read offset address within flash device.
++ * @param buf Buffer to store read data.
++ * @param size Number of bytes to read.
++ * @return Number of bytes read on success, -1 on failure.
++ */
++static int fal_sfud_flash_read(const struct fal_flash_dev *dev, long offset, uint8_t *buf,
++                               size_t size)
++{
++    sfud_flash_t sfud_dev = dev->user_data;
++
++    assert(sfud_dev);
++    sfud_read(sfud_dev, dev->addr + offset, size, buf);
++    return size;
++}
++
++/**
++ * @brief Write data to flash via SFUD library.
++ *
++ * @param dev Pointer to FAL flash device structure.
++ * @param offset Write offset address within flash device.
++ * @param buf Buffer containing data to write.
++ * @param size Number of bytes to write.
++ * @return Number of bytes written on success, -1 on failure.
++ */
++static int fal_sfud_flash_write(const struct fal_flash_dev *dev, long offset, const uint8_t *buf,
++                                size_t size)
++{
++    sfud_flash_t sfud_dev = dev->user_data;
++
++    assert(sfud_dev);
++    if (sfud_write(sfud_dev, dev->addr + offset, size, buf)
++        != SFUD_SUCCESS)
++        return -1;
++    return size;
++}
++
++/**
++ * @brief Erase flash region via SFUD library.
++ *
++ * @param dev Pointer to FAL flash device structure.
++ * @param offset Erase offset address within flash device.
++ * @param size Number of bytes to erase.
++ * @return Number of bytes erased on success, -1 on failure.
++ */
++static int fal_sfud_flash_erase(const struct fal_flash_dev *dev, long offset, size_t size)
++{
++    sfud_flash_t sfud_dev = dev->user_data;
++
++    assert(sfud_dev);
++    if (sfud_erase(sfud_dev, dev->addr + offset, size)
++        != SFUD_SUCCESS)
++        return -1;
++    return size;
++}
++
++/**
++ * @brief Prepare FAL flash device table from SFUD devices.
++ *
++ * This function queries the number of SFUD flash devices,
++ * allocates memory for FAL flash table, and initializes
++ * each device with shared SFUD operations.
++ *
++ * @return 0 on success, -1 on failure.
++ */
++static int prepare_fal_flash(void)
++{
++    rt_uint32_t cnt, i;
++    const char *flash_name;
++
++    /* Get number of SFUD flash devices detected on SPI buses */
++    cnt = spinor_sfud_port_get_flash_count();
++    if (cnt == 0)
++        return -1;
++
++    /* Allocate pointer array for external access to flash devices */
++    fal_flash_table_ptr = (void *)rt_malloc(cnt * sizeof(void *));
++    if (fal_flash_table_ptr == NULL)
++        return -1;
++    rt_memset(fal_flash_table_ptr, 0, (cnt * sizeof(void *)));
++
++    /* Allocate contiguous memory block for flash device structures */
++    fal_flash_table = (void *)rt_malloc(cnt * sizeof(struct fal_flash_dev));
++    if (fal_flash_table == NULL) {
++        /* Free previously allocated pointer array on failure */
++        rt_free(fal_flash_table_ptr);
++        fal_flash_table_ptr = NULL;
++        return -1;
++    }
++    rt_memset(fal_flash_table, 0, (cnt * sizeof(struct fal_flash_dev)));
++    fal_flash_devices_count = cnt;
++
++    /* Initialize each flash device with name and SFUD operations */
++    for (i = 0; i < cnt; i++) {
++        flash_name = spinor_sfud_port_get_flash_name(i);
++        rt_strcpy(fal_flash_table[i].name, flash_name);
++        fal_flash_table[i].ops.init = fal_sfud_flash_init;
++        fal_flash_table[i].ops.write = fal_sfud_flash_write;
++        fal_flash_table[i].ops.read = fal_sfud_flash_read;
++        fal_flash_table[i].ops.erase = fal_sfud_flash_erase;
++        /* Set pointer array element to point to corresponding device */
++        fal_flash_table_ptr[i] = &fal_flash_table[i];
++    }
++
++    return 0;
++}
++
++/**
++ * @brief Initialize FAL subsystem with SFUD flash support.
++ *
++ * This is the main entry point for FAL initialization. It prepares
++ * the flash device table, initializes FAL core, and creates RT-Thread
++ * MTD and block devices for each FAL partition.
++ *
++ * @return 0 on success, negative error code on failure.
++ */
++static int fal_with_sfud_flash_init(void)
++{
++    const struct fal_partition *parts;
++    struct rt_device *flash_dev;
++    int result = 0;
++    size_t i, len;
++
++    result = prepare_fal_flash();
++    if (result)
++        return result;
++
++    fal_init();
++
++    parts = fal_get_partition_table(&len);
++    if (!parts) {
++        pr_info("No FAL partitions.\n");
++        return result;
++    }
++
++    for (i = 0; i < len; i++) {
++        flash_dev = fal_mtd_nor_device_create(parts[i].name);
++        if (flash_dev == NULL) {
++            pr_err("Can't create a mtd device on '%s' partition.", parts[i].name);
++            result = -1;
++            break;
++        }
++
++        flash_dev = fal_blk_device_create(parts[i].name);
++        if (flash_dev == NULL) {
++            pr_err("Can't create a blk device on '%s' partition.", parts[i].name);
++            result = -1;
++            break;
++        }
++    }
++
++    return result;
++}
++
++/* 在 aicfb 的 INIT_DEVICE panel probe 前初始化分区表，供屏幕 profile 读取 ENV。 */
++INIT_EXPORT(fal_with_sfud_flash_init, "2.9");
++#endif
+diff --git a/source/bsp/peripheral/touch/gt911/src/gt911.c b/source/bsp/peripheral/touch/gt911/src/gt911.c
+new file mode 100644
+index 0000000..ed4c77b
+--- /dev/null
++++ b/source/bsp/peripheral/touch/gt911/src/gt911.c
+@@ -0,0 +1,576 @@
++/*
++ * Copyright (c) 2006-2018, RT-Thread Development Team
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Change Logs:
++ * Date           Author       Notes
++ * 2021-01-13     RiceChen     the first version
++ * 2023-04-30     Geo          modified for ArtInChip
++ */
++
++#include <rtthread.h>
++#include <rtdevice.h>
++#include <string.h>
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++#include <env.h>
++#endif
++#include "touch_common.h"
++#include "gt911.h"
++
++#define DBG_TAG "gt911"
++#define DBG_LVL DBG_INFO
++#include <rtdbg.h>
++
++static struct rt_i2c_client gt911_client;
++
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++/* CS001 暂时没有触摸驱动，避免把 ATMXT 控制器当成 GT911 初始化。 */
++static int hmi_profile_uses_gt911(void)
++{
++    char *profile;
++    int use_gt911 = 1;
++
++    if (fw_env_open() != 0)
++        return use_gt911;
++    profile = fw_getenv("hmi_screen");
++    if (profile && strcmp(profile, "CS001") == 0)
++        use_gt911 = 0;
++    fw_env_close();
++    return use_gt911;
++}
++#endif
++
++/* hardware section */
++static rt_uint8_t GT911_CFG_TBL[] = {
++    0x6b, 0x00, 0x04, 0x58, 0x02, 0x05, 0x0d, 0x00, 0x01, 0x0f, 0x28, 0x0f,
++    0x50, 0x32, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x8a, 0x2a, 0x0c, 0x45, 0x47, 0x0c, 0x08, 0x00, 0x00,
++    0x00, 0x40, 0x03, 0x2c, 0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0x64, 0x32,
++    0x00, 0x00, 0x00, 0x28, 0x64, 0x94, 0xd5, 0x02, 0x07, 0x00, 0x00, 0x04,
++    0x95, 0x2c, 0x00, 0x8b, 0x34, 0x00, 0x82, 0x3f, 0x00, 0x7d, 0x4c, 0x00,
++    0x7a, 0x5b, 0x00, 0x7a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00, 0x18, 0x16, 0x14, 0x12, 0x10, 0x0e, 0x0c, 0x0a,
++    0x08, 0x06, 0x04, 0x02, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x18,
++    0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x24, 0x13, 0x12, 0x10, 0x0f,
++    0x0a, 0x08, 0x06, 0x04, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0x00, 0x00, 0x00, 0x79, 0x01,
++};
++
++static rt_err_t gt911_write_reg(struct rt_i2c_client *dev, rt_uint8_t *data,
++                                rt_uint8_t len)
++{
++    struct rt_i2c_msg msgs;
++
++    msgs.addr = dev->client_addr;
++    msgs.flags = RT_I2C_WR;
++    msgs.buf = data;
++    msgs.len = len;
++
++    if (rt_i2c_transfer(dev->bus, &msgs, 1) == 1) {
++        return RT_EOK;
++    } else {
++        return -RT_ERROR;
++    }
++}
++
++static rt_err_t gt911_read_regs(struct rt_i2c_client *dev, rt_uint8_t *reg,
++                                rt_uint8_t *data, rt_uint8_t len)
++{
++    struct rt_i2c_msg msgs[2];
++
++    msgs[0].addr = dev->client_addr;
++    msgs[0].flags = RT_I2C_WR;
++    msgs[0].buf = reg;
++    msgs[0].len = GT911_REGITER_LEN;
++
++    msgs[1].addr = dev->client_addr;
++    msgs[1].flags = RT_I2C_RD;
++    msgs[1].buf = data;
++    msgs[1].len = len;
++
++    if (rt_i2c_transfer(dev->bus, msgs, 2) == 2) {
++        return RT_EOK;
++    } else {
++        return -RT_ERROR;
++    }
++}
++
++static rt_err_t gt911_get_product_id(struct rt_i2c_client *dev,
++                                     rt_uint8_t *data, rt_uint8_t len)
++{
++    rt_uint8_t reg[2];
++
++    reg[0] = (rt_uint8_t)(GT911_PRODUCT_ID >> 8);
++    reg[1] = (rt_uint8_t)(GT911_PRODUCT_ID & 0xff);
++
++    if (gt911_read_regs(dev, reg, data, len) != RT_EOK) {
++        LOG_E("read id failed");
++        return -RT_ERROR;
++    }
++    return RT_EOK;
++}
++
++static rt_err_t gt911_get_info(struct rt_i2c_client *dev, struct rt_touch_device *touch,
++                               struct rt_touch_info *info)
++{
++    rt_uint8_t reg[2];
++    rt_uint8_t out_info[7];
++    rt_uint8_t out_len = 7;
++    uint16_t angle = 0;
++
++    reg[0] = (rt_uint8_t)(GT911_CONFIG_REG >> 8);
++    reg[1] = (rt_uint8_t)(GT911_CONFIG_REG & 0xFF);
++
++    if (gt911_read_regs(dev, reg, out_info, out_len) != RT_EOK) {
++        LOG_E("read info failed");
++        return -RT_ERROR;
++    }
++
++    info->range_x = (out_info[2] << 8) | out_info[1];
++    info->range_y = (out_info[4] << 8) | out_info[3];
++
++    rt_device_control((rt_device_t)touch, RT_TOUCH_CTRL_GET_DYNAMIC_ROTATE, &angle);
++    if (angle == 90 || angle == 270) {
++        info->range_x = (rt_int16_t)AIC_TOUCH_REPORT_Y_COORDINATE;
++        info->range_y = (rt_int16_t)AIC_TOUCH_REPORT_X_COORDINATE;
++    } else {
++        info->range_x = (rt_int16_t)AIC_TOUCH_REPORT_X_COORDINATE;
++        info->range_y = (rt_int16_t)AIC_TOUCH_REPORT_Y_COORDINATE;
++    }
++
++    info->point_num = out_info[5] & 0x0f;
++    if (info->point_num > GT911_MAX_TOUCH) {
++        info->point_num = GT911_MAX_TOUCH;
++        rt_kprintf("Warning,tp support more than 5 points, limited to 5 points\n");
++    }
++
++    return RT_EOK;
++}
++
++static void gt911_gpio_init(struct rt_touch_config *cfg)
++{
++    // rst output 0
++    rt_pin_mode(cfg->rst_pin, PIN_MODE_OUTPUT);
++    rt_pin_write(cfg->rst_pin, PIN_LOW);
++    rt_thread_delay(10);
++
++    // irq output 0
++    rt_pin_mode(cfg->irq_pin.pin, PIN_MODE_OUTPUT);
++    rt_pin_write(cfg->irq_pin.pin, PIN_LOW);
++
++    rt_thread_delay(2);
++    // rst output 1
++    rt_pin_mode(cfg->rst_pin, PIN_MODE_OUTPUT);
++    rt_pin_write(cfg->rst_pin, PIN_HIGH);
++
++    rt_thread_delay(5);
++    // rst input
++    rt_pin_mode(cfg->rst_pin, PIN_MODE_INPUT);
++
++    //irq output 0
++    rt_pin_mode(cfg->irq_pin.pin, PIN_MODE_OUTPUT);
++    rt_pin_write(cfg->irq_pin.pin, PIN_LOW);
++
++    rt_thread_delay(50);
++
++    rt_pin_mode(cfg->irq_pin.pin, PIN_MODE_INPUT);
++}
++
++static rt_err_t gt911_power_down(struct rt_touch_device *touch)
++{
++    rt_device_control((rt_device_t)touch, RT_TOUCH_CTRL_DISABLE_INT, RT_NULL);
++    /* Pull down irq pin */
++    rt_pin_mode(touch->config.irq_pin.pin, PIN_MODE_OUTPUT);
++    rt_pin_write(touch->config.irq_pin.pin, PIN_LOW);
++    rt_thread_mdelay(10);
++
++    return RT_EOK;
++}
++
++static rt_err_t gt911_power_up(struct rt_touch_device *touch)
++{
++    /* Pull up irq pin */
++    rt_pin_mode(touch->config.irq_pin.pin, PIN_MODE_OUTPUT);
++    rt_pin_write(touch->config.irq_pin.pin, PIN_HIGH);
++    rt_thread_mdelay(10);
++    rt_pin_mode(touch->config.irq_pin.pin, PIN_MODE_INPUT);
++
++    if (touch->parent.open_flag & RT_DEVICE_OFLAG_OPEN)
++        rt_device_control((rt_device_t)touch, RT_TOUCH_CTRL_ENABLE_INT, RT_NULL);
++
++    return RT_EOK;
++}
++
++static int16_t pre_x[GT911_MAX_TOUCH] = { -1, -1, -1, -1, -1 };
++static int16_t pre_y[GT911_MAX_TOUCH] = { -1, -1, -1, -1, -1 };
++static int16_t pre_w[GT911_MAX_TOUCH] = { -1, -1, -1, -1, -1 };
++static rt_uint8_t s_tp_dowm[GT911_MAX_TOUCH];
++static struct rt_touch_data *read_data;
++
++static void gt911_touch_up(void *buf, int8_t id)
++{
++    read_data = (struct rt_touch_data *)buf;
++
++    if (s_tp_dowm[id] == 1) {
++        s_tp_dowm[id] = 0;
++        read_data[id].event = RT_TOUCH_EVENT_UP;
++    } else {
++        read_data[id].event = RT_TOUCH_EVENT_NONE;
++    }
++
++    read_data[id].timestamp = rt_touch_get_ts();
++    read_data[id].width = pre_w[id];
++    read_data[id].x_coordinate = pre_x[id];
++    read_data[id].y_coordinate = pre_y[id];
++    read_data[id].track_id = id;
++
++    pre_x[id] = -1; /* last point is none */
++    pre_y[id] = -1;
++    pre_w[id] = -1;
++}
++
++static void gt911_touch_down(void *buf, int8_t id, int16_t x, int16_t y,
++                             int16_t w)
++{
++    read_data = (struct rt_touch_data *)buf;
++
++    if (s_tp_dowm[id] == 1) {
++        read_data[id].event = RT_TOUCH_EVENT_MOVE;
++    } else {
++        read_data[id].event = RT_TOUCH_EVENT_DOWN;
++        s_tp_dowm[id] = 1;
++    }
++
++    read_data[id].timestamp = rt_touch_get_ts();
++    read_data[id].width = w;
++    read_data[id].x_coordinate = x;
++    read_data[id].y_coordinate = y;
++    read_data[id].track_id = id;
++
++    pre_x[id] = x; /* save last point */
++    pre_y[id] = y;
++    pre_w[id] = w;
++}
++
++static rt_size_t gt911_read_point(struct rt_touch_device *touch, void *buf,
++                                  rt_size_t read_num)
++{
++    rt_uint8_t point_status = 0;
++    rt_uint8_t touch_num = 0;
++    rt_uint8_t write_buf[3];
++    rt_uint8_t cmd[2];
++    rt_uint8_t read_buf[8 * GT911_MAX_TOUCH] = { 0 };
++    rt_uint8_t read_index;
++    int8_t read_id = 0;
++    int16_t input_x = 0;
++    int16_t input_y = 0;
++    int16_t input_w = 0;
++
++    static rt_uint8_t pre_touch = 0;
++    static int8_t pre_id[GT911_MAX_TOUCH] = { 0 };
++
++    rt_memset(buf, 0, sizeof(struct rt_touch_data) * read_num);
++
++    /* point status register */
++    cmd[0] = (rt_uint8_t)((GT911_READ_STATUS >> 8) & 0xFF);
++    cmd[1] = (rt_uint8_t)(GT911_READ_STATUS & 0xFF);
++
++    if (gt911_read_regs(&gt911_client, cmd, &point_status, 1) != RT_EOK) {
++        LOG_D("read point failed\n");
++        read_num = 0;
++        goto exit_;
++    }
++
++    if (point_status == 0) /* no data */
++    {
++        read_num = 0;
++        goto exit_;
++    }
++
++    if ((point_status & 0x80) == 0) /* data is not ready */
++    {
++        read_num = 0;
++        goto exit_;
++    }
++
++    touch_num = point_status & 0x0f; /* get point num */
++
++    if (touch_num > GT911_MAX_TOUCH) /* point num is not correct */
++    {
++        read_num = 0;
++        goto exit_;
++    }
++
++    cmd[0] = (rt_uint8_t)((GT911_POINT1_REG >> 8) & 0xFF);
++    cmd[1] = (rt_uint8_t)(GT911_POINT1_REG & 0xFF);
++
++    /* read point num is touch_num */
++    if (gt911_read_regs(&gt911_client, cmd, read_buf,
++                        read_num * GT911_POINT_INFO_NUM) != RT_EOK) {
++        LOG_D("read point failed\n");
++        read_num = 0;
++        goto exit_;
++    }
++
++    if (pre_touch > touch_num) /* point up */
++    {
++        for (read_index = 0; read_index < pre_touch; read_index++) {
++            rt_uint8_t j;
++
++            for (j = 0; j < touch_num; j++) /* this time touch num */
++            {
++                read_id = read_buf[j * 8] & 0x0F;
++
++                if (pre_id[read_index] == read_id) /* this id is not free */
++                    break;
++
++                if (j >= touch_num - 1) {
++                    rt_uint8_t up_id;
++                    up_id = pre_id[read_index];
++                    gt911_touch_up(buf, up_id);
++                }
++            }
++        }
++    }
++
++    if (touch_num) /* point down */
++    {
++        rt_uint8_t off_set;
++        rt_uint8_t dynamic_flag = 0;
++        rt_uint8_t osd_flag = 0;
++
++        rt_device_control((rt_device_t)touch, RT_TOUCH_CTRL_GET_DYNAMIC_FLAG, &dynamic_flag);
++        rt_device_control((rt_device_t)touch, RT_TOUCH_CTRL_GET_OSD_FLAG, &osd_flag);
++
++        for (read_index = 0; read_index < touch_num; read_index++) {
++            off_set = read_index * 8;
++            read_id = read_buf[off_set] & 0x0f;
++            pre_id[read_index] = read_id;
++            input_x =
++                read_buf[off_set + 1] | (read_buf[off_set + 2] << 8); /* x */
++            input_y =
++                read_buf[off_set + 3] | (read_buf[off_set + 4] << 8); /* y */
++            input_w =
++                read_buf[off_set + 5] | (read_buf[off_set + 6] << 8); /* size */
++
++            // Step 1: Perform coordinate transformations only when osd mode is disabled
++            if (!osd_flag) {
++                aic_touch_flip(&input_x, &input_y);
++                aic_touch_rotate(&input_x, &input_y);
++                aic_touch_scale(&input_x, &input_y);
++
++                if (dynamic_flag) {
++                    // Apply dynamic rotation for dynamic mode
++                    aic_touch_dynamic_rotate(touch, &input_x, &input_y);
++                } else {
++                    // Apply static cropping; skip further processing if out of bounds
++                    if (!aic_touch_crop(&input_x, &input_y))
++                        continue;
++                }
++            }
++            // Step 2: Apply dynamic cropping check for dynamic mode
++            if (dynamic_flag) {
++                // Skip further processing if out of bounds
++                if (aic_touch_dynamic_crop(touch, &input_x, &input_y) == RT_EINVAL)
++                        continue;
++            }
++
++            gt911_touch_down(buf, read_id, input_x, input_y, input_w);
++        }
++    } else if (pre_touch) {
++        for (read_index = 0; read_index < pre_touch; read_index++) {
++            gt911_touch_up(buf, pre_id[read_index]);
++        }
++    }
++
++    pre_touch = touch_num;
++
++exit_:
++    write_buf[0] = (rt_uint8_t)((GT911_READ_STATUS >> 8) & 0xFF);
++    write_buf[1] = (rt_uint8_t)(GT911_READ_STATUS & 0xFF);
++    write_buf[2] = 0x00;
++    gt911_write_reg(&gt911_client, write_buf, 3);
++
++    return read_num;
++}
++
++static rt_err_t gt911_modify_firmware(struct rt_touch_device *touch, int cmd, void *arg)
++{
++    rt_uint8_t buf[4] = {0};
++    rt_uint8_t i = 0;
++    rt_uint8_t *config;
++
++    config = (rt_uint8_t *)rt_calloc(1, sizeof(GT911_CFG_TBL) + GT911_REGITER_LEN);
++    if (config == RT_NULL) {
++        LOG_D("malloc config memory failed\n");
++        return -RT_ERROR;
++    }
++
++    config[0] = (rt_uint8_t)((GT911_CONFIG_REG >> 8) & 0xFF);
++    config[1] = (rt_uint8_t)(GT911_CONFIG_REG & 0xFF);
++
++    memcpy(&config[2], GT911_CFG_TBL, sizeof(GT911_CFG_TBL));
++
++    switch (cmd) {
++        case RT_TOUCH_CTRL_SET_X_RANGE: {
++            rt_uint16_t x_range;
++
++            x_range = *(rt_uint16_t *)arg;
++            config[4] = (rt_uint8_t)(x_range >> 8);
++            config[3] = (rt_uint8_t)(x_range & 0xff);
++
++            GT911_CFG_TBL[2] = config[4];
++            GT911_CFG_TBL[1] = config[3];
++            break;
++        }
++        case RT_TOUCH_CTRL_SET_Y_RANGE: {
++            rt_uint16_t y_range;
++
++            y_range = *(rt_uint16_t *)arg;
++            config[6] = (rt_uint8_t)(y_range >> 8);
++            config[5] = (rt_uint8_t)(y_range & 0xff);
++
++            GT911_CFG_TBL[4] = config[6];
++            GT911_CFG_TBL[3] = config[5];
++            break;
++        }
++        case RT_TOUCH_CTRL_SET_X_TO_Y: {
++            config[8] ^= (1 << 3);
++            break;
++        }
++        case RT_TOUCH_CTRL_SET_MODE: {
++            rt_uint16_t trig_type;
++            trig_type = *(rt_uint16_t *)arg;
++
++            switch (trig_type) {
++                case RT_DEVICE_FLAG_INT_RX:
++                    config[8] &= 0xFC;
++                    break;
++                case RT_DEVICE_FLAG_RDONLY:
++                    config[8] &= 0xFC;
++                    config[8] |= 0x02;
++                    break;
++                default:
++                    break;
++            }
++            break;
++        }
++        default: {
++            break;
++        }
++    }
++
++    if (gt911_write_reg(&gt911_client, config,
++                        sizeof(GT911_CFG_TBL) + GT911_ADDR_LEN) != RT_EOK) {
++        LOG_D("send config failed");
++        return -1;
++    }
++
++    buf[0] = (rt_uint8_t)((GT911_CHECK_SUM >> 8) & 0xFF);
++    buf[1] = (rt_uint8_t)(GT911_CHECK_SUM & 0xFF);
++    buf[2] = 0;
++
++    for (i = GT911_ADDR_LEN; i < sizeof(GT911_CFG_TBL) + GT911_ADDR_LEN; i++)
++        buf[GT911_ADDR_LEN] += config[i];
++
++    buf[2] = (~buf[2]) + 1;
++    buf[3] = 1;
++
++    gt911_write_reg(&gt911_client, buf, 4);
++    rt_free(config);
++
++    return RT_EOK;
++}
++
++static rt_err_t gt911_control(struct rt_touch_device *touch, int cmd, void *arg)
++{
++    if (cmd == RT_TOUCH_CTRL_GET_ID)
++        return gt911_get_product_id(&gt911_client, arg, 6);
++
++    if (cmd == RT_TOUCH_CTRL_GET_INFO)
++        return gt911_get_info(&gt911_client, touch, arg);
++
++    if (cmd == RT_TOUCH_CTRL_POWER_OFF)
++        return gt911_power_down(touch);
++
++    if (cmd == RT_TOUCH_CTRL_POWER_ON)
++        return gt911_power_up(touch);
++
++    gt911_modify_firmware(touch, cmd , arg);
++
++    return RT_EOK;
++}
++
++static struct rt_touch_ops gt911_touch_ops = {
++    .touch_readpoint = gt911_read_point,
++    .touch_control = gt911_control,
++};
++
++static int rt_hw_gt911_init(const char *name, struct rt_touch_config *cfg)
++{
++    struct rt_touch_device *touch_device = RT_NULL;
++
++    touch_device =
++        (struct rt_touch_device *)rt_malloc(sizeof(struct rt_touch_device));
++    if (touch_device == RT_NULL) {
++        LOG_E("touch device malloc fail");
++        return -RT_ERROR;
++    }
++    rt_memset((void *)touch_device, 0, sizeof(struct rt_touch_device));
++
++    gt911_gpio_init(cfg);
++
++    gt911_client.bus = (struct rt_i2c_bus_device *)rt_device_find(cfg->dev_name);
++
++    if (gt911_client.bus == RT_NULL) {
++        LOG_E("Can't find %s device", cfg->dev_name);
++        return -RT_ERROR;
++    }
++
++    if (rt_device_open((rt_device_t)gt911_client.bus, RT_DEVICE_FLAG_RDWR) !=
++        RT_EOK) {
++        LOG_E("open %s device failed", cfg->dev_name);
++        return -RT_ERROR;
++    }
++
++    gt911_client.client_addr = GT911_ADDRESS_HIGH;
++
++    /* register touch device */
++    touch_device->info.type = RT_TOUCH_TYPE_CAPACITANCE;
++    touch_device->info.vendor = RT_TOUCH_VENDOR_GT;
++    rt_memcpy(&touch_device->config, cfg, sizeof(struct rt_touch_config));
++    touch_device->ops = &gt911_touch_ops;
++
++    if (RT_EOK != rt_hw_touch_register(touch_device, name, RT_DEVICE_FLAG_INT_RX, RT_NULL)) {
++        LOG_E("touch device gt911 init failed !!!");
++        return -RT_ERROR;
++    }
++
++    LOG_I("touch device gt911 init success");
++    return RT_EOK;
++}
++
++static int rt_hw_gt911_port(void)
++{
++    struct rt_touch_config cfg = {0};
++
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++    if (!hmi_profile_uses_gt911())
++        return 0;
++#endif
++    cfg.dev_name = AIC_TOUCH_PANEL_I2C_CHAN;
++    cfg.irq_pin.pin = drv_pin_get(AIC_TOUCH_PANEL_INT_PIN);
++    cfg.irq_pin.mode = PIN_MODE_INPUT;
++    cfg.rst_pin = drv_pin_get(AIC_TOUCH_PANEL_RST_PIN);
++
++    rt_hw_gt911_init("gt911", &cfg);
++
++    return 0;
++}
++
++INIT_DEVICE_EXPORT(rt_hw_gt911_port);
+diff --git a/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_port_disp.c b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_port_disp.c
+new file mode 100644
+index 0000000..2d1832c
+--- /dev/null
++++ b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_port_disp.c
+@@ -0,0 +1,461 @@
++/*
++ * Copyright (c) 2024-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors:  Ning Fang <ning.fang@artinchip.com>
++ */
++
++#include <aic_core.h>
++#include <stdbool.h>
++#include <getopt.h>
++#include <string.h>
++
++#ifdef LPKG_MPP
++#include "lvgl.h"
++#include "lv_port_disp.h"
++#include "lv_tpc_run.h"
++#include "lv_draw_ge2d.h"
++#include "lv_mpp_dec.h"
++
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++/* 由 HMI profile 服务返回当前屏幕是否已配置触摸输入。 */
++extern int display_profile_touch_enabled(void);
++#endif
++
++#if LV_DISP_FB_DUMP
++static char g_save_path[128] = { 0 };
++static bool g_dump_flag = false;
++
++static inline void lv_disp_buf_dump(lv_display_t *disp)
++{
++    if (g_dump_flag) {
++        g_dump_flag = false;
++        lv_fs_res_t res = LV_FS_RES_OK;
++        lv_color_format_t cf = lv_display_get_color_format(disp);
++        uint32_t h = lv_display_get_vertical_resolution(disp);
++        uint32_t w = lv_display_get_horizontal_resolution(disp);
++        uint32_t stride = lv_draw_buf_width_to_stride(w, cf);
++        lv_draw_buf_t *disp_buf = lv_display_get_buf_active(disp);
++        lv_fs_file_t file_save;
++        uint32_t data_write = 0;
++        char src[128];
++
++        snprintf(src, 127, "L:%s", g_save_path);
++        res = lv_fs_open(&file_save, src, LV_FS_MODE_WR);
++        if(res != LV_FS_RES_OK) {
++            LV_LOG_ERROR("open %s failed", src);
++            return;
++        }
++        lv_fs_write(&file_save, disp_buf->data, h * stride, &data_write);
++        lv_fs_close(&file_save);
++        printf("save %s ok\n", g_save_path);
++    }
++}
++
++static void lv_fb_dump(int argc, char **argv)
++{
++    int ret;
++    const char sopts[] = "u:o:";
++    const struct option lopts[] = {
++        {"usage",   no_argument, NULL, 'u'},
++        {"output",  required_argument, NULL, 'o'},
++        {0, 0, 0, 0}
++    };
++
++    optind = 0;
++    while ((ret = getopt_long(argc, argv, sopts, lopts, NULL)) != -1) {
++        switch (ret) {
++        case 'o':
++            strcpy(g_save_path, optarg);
++            break;
++        case 'u':
++            printf("Usage: %s [Options]: \n", argv[0]);
++            printf("\t-o, --output  image path\n");
++            printf("\tfor example:\n");
++            printf("\tlv_fb_dump -o /sdcard/out.bin\n");
++            return;
++        default:
++            LV_LOG_ERROR("Invalid parameter: %#x\n", ret);
++            return;
++        }
++    }
++
++    if (strlen(g_save_path)) {
++        g_dump_flag = true;
++    } else {
++        printf("please check output path:%s\n", g_save_path);
++    }
++    return;
++}
++
++MSH_CMD_EXPORT_ALIAS(lv_fb_dump, lv_dump, lvgl dump display buffer);
++#endif
++
++#ifndef LV_USE_SPI_REPLACE_MIPI_DBI
++static void display_cal_frame_rate(aic_disp_t *aic_disp)
++{
++#if DISP_SHOW_FPS == 1
++    static int start_cal = 0;
++    static int frame_cnt = 0;
++    static u64 start_us, end_us;
++    int interval = 1000 * 1000;
++    int time_diff = 0;
++
++    if (start_cal == 0) {
++        start_cal = 1;
++        start_us = (long)aic_get_time_us();
++    }
++
++    end_us = (long)aic_get_time_us();
++    time_diff = (int)(end_us - start_us);
++    if (time_diff >= interval) {
++        aic_disp->fps = frame_cnt;
++        frame_cnt = 0;
++        start_cal = 0;
++    } else {
++        frame_cnt++;
++    }
++#else
++    (void)aic_disp;
++#endif
++    return;
++}
++
++static inline void *get_fb_buf_by_id(aic_disp_t *aic_disp, int id)
++{
++    if (id == 1)
++        return (void *)(aic_disp->info.framebuffer + aic_disp->fb_size);
++    else
++        return (void *)aic_disp->info.framebuffer;
++}
++
++#if LV_USE_OS && defined(AIC_PAN_DISPLAY)
++static inline void wait_sync_ready(aic_disp_t *aic_disp)
++{
++    while (aic_disp->sync_ready == false) {
++        if (aic_disp->exit_status)
++            break;
++
++        lv_thread_sync_wait(&aic_disp->sync_notify);
++    }
++}
++#endif
++
++static inline void disp_do_blit(aic_disp_t *aic_disp, lv_display_t *disp, lv_draw_buf_t *disp_buf)
++{
++    void *dest_buf = get_fb_buf_by_id(aic_disp, aic_disp->buf_id);
++    int32_t hor_res = lv_display_get_horizontal_resolution(disp);
++    int32_t ver_res = lv_display_get_vertical_resolution(disp);
++    lv_color_format_t cf = lv_display_get_color_format(disp);
++    int32_t src_stride = lv_draw_buf_width_to_stride(hor_res, cf);
++    int32_t dst_stride = (int32_t)aic_disp->info.stride;
++    lv_display_rotation_t rotation = lv_display_get_rotation(disp);
++
++#if LV_USE_DRAW_GE2D
++    lv_draw_ge2d_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
++                        src_stride, dst_stride, rotation, cf);
++#else
++    lv_draw_sw_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
++                      src_stride, dst_stride, rotation, cf);
++#endif
++}
++
++static inline void display_power_on(aic_disp_t *aic_disp)
++{
++#ifndef AIC_DISP_COLOR_BLOCK
++    static bool first_frame = true;
++    if (first_frame) {
++        mpp_fb_ioctl(aic_disp->fb, AICFB_POWERON, 0);
++        first_frame = false;
++    }
++#else
++    (void)aic_disp;
++#endif
++}
++
++static inline void disp_draw_buf_flush(aic_disp_t *aic_disp, lv_display_t *disp, lv_draw_buf_t *disp_buf)
++{
++#if LV_USE_OS && defined(AIC_PAN_DISPLAY)
++    wait_sync_ready(aic_disp);
++    aic_disp->sync_ready = false;
++    disp_do_blit(aic_disp, disp, disp_buf);
++    mpp_fb_ioctl(aic_disp->fb, AICFB_PAN_DISPLAY , &aic_disp->buf_id);
++
++    display_power_on(aic_disp);
++    aic_disp->flush_act = true;
++    lv_thread_sync_signal(&aic_disp->sync);
++#else
++#ifdef AIC_PAN_DISPLAY
++    disp_do_blit(aic_disp, disp, disp_buf);
++    mpp_fb_ioctl(aic_disp->fb, AICFB_PAN_DISPLAY , &aic_disp->buf_id);
++
++    display_power_on(aic_disp);
++    mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
++#else
++    display_power_on(aic_disp);
++    mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
++    disp_do_blit(aic_disp, disp, disp_buf);
++#endif // AIC_PAN_DISPLAY
++#endif
++}
++
++static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
++{
++    aic_disp_t *aic_disp = (aic_disp_t *)lv_display_get_user_data(disp);
++
++    lv_draw_buf_t *disp_buf = lv_display_get_buf_active(disp);
++    (void)px_map;
++
++    if (lv_disp_flush_is_last(disp)) {
++#if LV_DISP_FB_DUMP
++        // dump frame buffer
++        lv_disp_buf_dump(disp);
++#endif
++        if (disp_buf->data == aic_disp->buf_aligned) {
++#ifdef AIC_PAN_DISPLAY
++            aic_disp->buf_id  =  aic_disp->buf_id > 0 ? 0 : 1;
++#else
++            aic_disp->buf_id = 0;
++#endif
++            // flush cache
++            aicos_dcache_clean_invalid_range((ulong *)disp_buf->data, (ulong)ALIGN_UP(aic_disp->buf_size, CACHE_LINE_SIZE));
++            disp_draw_buf_flush(aic_disp, disp, disp_buf);
++        } else {
++            // flush cache
++            aicos_dcache_clean_invalid_range((ulong *)disp_buf->data, (ulong)ALIGN_UP(aic_disp->fb_size, CACHE_LINE_SIZE));
++#ifdef AIC_PAN_DISPLAY
++            int index;
++            if(disp_buf->data == aic_disp->info.framebuffer) {
++                index = 0;
++            } else {
++                index = 1;
++            }
++
++            // send framebuffer to display
++            mpp_fb_ioctl(aic_disp->fb, AICFB_PAN_DISPLAY , &index);
++            display_power_on(aic_disp);
++            // wait vsync
++            mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
++#endif
++        }
++
++        display_cal_frame_rate(aic_disp);
++    }
++
++    lv_display_flush_ready(disp);
++}
++
++static lv_color_format_t lv_display_fmt(enum mpp_pixel_format cf)
++{
++    lv_color_format_t fmt = LV_COLOR_FORMAT_ARGB8888;
++    switch(cf) {
++        case MPP_FMT_RGB_565:
++            fmt = LV_COLOR_FORMAT_RGB565;
++            break;
++        case MPP_FMT_RGB_888:
++            fmt = LV_COLOR_FORMAT_RGB888;
++            break;
++        case MPP_FMT_ARGB_8888:
++            fmt = LV_COLOR_FORMAT_ARGB8888;
++            break;
++        case MPP_FMT_XRGB_8888:
++            fmt = LV_COLOR_FORMAT_XRGB8888;
++            break;
++        default:
++            LV_LOG_ERROR("unsupported format:%d", cf);
++            break;
++    }
++    return fmt;
++}
++
++#if LV_USE_OS && defined(AIC_PAN_DISPLAY) && defined(LV_DISPLAY_ROTATE_EN)
++static void aic_display_thread(void *ptr)
++{
++    aic_disp_t *aic_disp = (aic_disp_t *)ptr;
++
++    while(1) {
++        while (aic_disp->flush_act == false) {
++            if(aic_disp->exit_status)
++                break;
++
++            lv_thread_sync_wait(&aic_disp->sync);
++        }
++
++        aic_disp->flush_act = false;
++        mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
++        aic_disp->sync_ready = true;
++        lv_thread_sync_signal(&aic_disp->sync_notify);
++
++        if (aic_disp->exit_status) {
++            LV_LOG_INFO("Ready to exit aic display thread.");
++            break;
++        }
++    }
++
++    lv_thread_sync_delete(&aic_disp->sync);
++    lv_thread_sync_delete(&aic_disp->sync_notify);
++    LV_LOG_INFO("Exit aic display thread.");
++}
++#endif
++
++#if defined(LV_DISPLAY_ROTATE_EN)
++static uint8_t *create_draw_buf(aic_disp_t *aic_disp, int w, int h, lv_color_format_t cf)
++{
++    int bpp = lv_color_format_get_bpp(cf) / 8;
++    int buf_size = ALIGN_UP(w, 8) * ALIGN_UP(h, 8) * bpp;
++
++    aic_disp->buf = (uint8_t *)aicos_malloc_try_cma(buf_size + CACHE_LINE_SIZE - 1);
++    if (!aic_disp->buf) {
++        return NULL;
++    } else {
++        unsigned int align_addr = (unsigned int)ALIGN_UP((ulong) aic_disp->buf, CACHE_LINE_SIZE);
++        aic_disp->buf_aligned = (uint8_t *)(ulong)align_addr;
++        aicos_dcache_clean_invalid_range((ulong *)(ulong)align_addr, ALIGN_UP(buf_size, CACHE_LINE_SIZE));
++    }
++
++    aic_disp->buf_size = ALIGN_UP(buf_size, CACHE_LINE_SIZE);
++    return aic_disp->buf_aligned;
++}
++#endif
++
++static int lv_de_display_init()
++{
++    void *buf1;
++    void *buf2;
++    aic_disp_t *aic_disp;
++    int fb_size;
++    int width;
++    int height;
++    int stride;
++    lv_color_format_t cf;
++
++    aic_disp = (aic_disp_t *)lv_malloc_zeroed(sizeof(aic_disp_t));
++    if (!aic_disp) {
++        LV_LOG_ERROR("malloc aic display failed");
++        return -1;
++    }
++
++    aic_disp->fb = mpp_fb_open();
++    if (aic_disp->fb) {
++        mpp_fb_ioctl(aic_disp->fb, AICFB_GET_SCREENINFO, &aic_disp->info);
++        width = aic_disp->info.width;
++        height = aic_disp->info.height;
++        stride = aic_disp->info.stride;
++        fb_size = height * stride;
++        aic_disp->fb_size = fb_size;
++
++#ifdef AIC_PAN_DISPLAY
++        buf1 = (void *)(aic_disp->info.framebuffer + fb_size);
++        buf2 = (void *)aic_disp->info.framebuffer;
++#else
++        buf1 = (void *)aic_disp->info.framebuffer;
++        buf2 = NULL;
++#endif
++    } else {
++        LV_LOG_ERROR("get device fb info failed");
++        lv_free(aic_disp);
++        return -1;
++    }
++
++    cf = lv_display_fmt(aic_disp->info.format);
++#if defined(LV_DISPLAY_ROTATE_EN)
++    if (!create_draw_buf(aic_disp, width, height, cf)) {
++        LV_LOG_ERROR("create draw buffer failed");
++        mpp_fb_close(aic_disp->fb);
++        lv_free(aic_disp);
++        return -1;
++    } else {
++        buf1 = (void *)aic_disp->buf_aligned;
++        buf2 = NULL;
++        aic_disp->buf_id = 0;
++    }
++#endif
++
++    lv_display_t *disp = lv_display_create(width, height);
++    lv_display_set_color_format(disp, cf);
++    lv_display_set_flush_cb(disp, disp_flush);
++    lv_display_set_user_data(disp, aic_disp);
++
++#if defined(LV_DISPLAY_ROTATE_EN) && defined(LV_ROTATE_DEGREE)
++    lv_display_set_buffers(disp, buf1, buf2, aic_disp->buf_size, LV_DISPLAY_RENDER_MODE_DIRECT);
++    lv_display_set_rotation(disp, LV_ROTATE_DEGREE / 90);
++#else
++    lv_display_set_buffers(disp, buf1, buf2, fb_size, LV_DISPLAY_RENDER_MODE_DIRECT);
++#endif
++
++#if LV_USE_OS && defined(AIC_PAN_DISPLAY) && defined(LV_DISPLAY_ROTATE_EN)
++    aic_disp->sync_ready = true;
++    lv_thread_sync_init(&aic_disp->sync);
++    lv_thread_sync_init(&aic_disp->sync_notify);
++    lv_thread_init(&aic_disp->thread, LV_THREAD_PRIO_HIGH, aic_display_thread, 4 * 1024, aic_disp);
++#endif
++    return 0;
++}
++#endif /* LV_USE_SPI_REPLACE_MIPI_DBI */
++
++static int lv_port_disp_info(struct aicfb_screeninfo *fb_info)
++{
++    struct mpp_fb *fb = mpp_fb_open();
++    if (!fb) {
++        LV_LOG_ERROR("get device fb info failed");
++        return -1;
++    }
++
++    if (mpp_fb_ioctl(fb, AICFB_GET_SCREENINFO, fb_info) < 0) {
++        LV_LOG_ERROR("get device fb info failed");
++        return -1;
++    }
++    mpp_fb_close(fb);
++    return 0;
++}
++
++void lv_port_disp_init(void)
++{
++    struct aicfb_screeninfo fb_info = {0};
++
++#if LV_USE_MPP_DEC
++    lv_mpp_dec_init();
++#endif
++
++#if LV_USE_DRAW_GE2D
++    lv_draw_ge2d_init();
++#endif
++
++    lv_port_disp_info(&fb_info);
++
++#ifndef LV_USE_SPI_REPLACE_MIPI_DBI
++    if (lv_de_display_init() < 0) {
++        LV_LOG_ERROR("init de display failed");
++        return;
++    }
++#endif
++
++#if defined(AIC_LVGL_DOUBLE_DISP_DEMO) || defined(LV_USE_SPI_REPLACE_MIPI_DBI) || defined(AIC_LVGL_AI_EYES_DEMO)  || defined(AIC_LVGL_FIVE_DISP_DEMO)
++    int use_frame_buffer = 0;
++#if defined(LV_USE_SPI_REPLACE_MIPI_DBI) && !defined(AIC_LVGL_FIVE_DISP_DEMO)
++    use_frame_buffer = 1;
++#endif
++    extern int lv_spi_display_init(int use_frame_buffer);
++    if (lv_spi_display_init(use_frame_buffer) < 0) {
++        LV_LOG_ERROR("init spi display failed");
++        return;
++    }
++#endif
++
++#ifndef AIC_MONKEY_TEST
++#if defined(KERNEL_RTTHREAD) && defined(AIC_USING_TOUCH)
++    int touch_enabled = 1;
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++    touch_enabled = display_profile_touch_enabled();
++#endif
++    if (touch_enabled) {
++        int result = tpc_run(AIC_TOUCH_PANEL_NAME, fb_info.width, fb_info.height);
++        if (result)
++            LV_LOG_INFO("can't find touch panel\n");
++    }
++#endif
++#endif
++}
++
++#endif // LPKG_MPP
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 397c715..e51e558 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -141,7 +141,7 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.22"
++CONFIG_HMI_FW_VERSION="1.0.23"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 8c9171b..428bc15 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -139,7 +139,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.22"
++CONFIG_HMI_FW_VERSION="1.0.23"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/env.txt b/source/target/d13x/d133cbv-hmi-nor/pack/env.txt
+index 7846c5b..fec17ad 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/env.txt
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/env.txt
+@@ -7,6 +7,7 @@ dataAB_now=A
+ upgrade_available=0
+ bootlimit=5
+ bootcount=0
++hmi_screen=CS000
+ rodata_partname=blk_rodata
+ rodata_partname_r=blk_rodata_r
+ data_partname=blk_data
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index ef0efff..a0e6218 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.22",
++            "version": "1.0.23",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,

@@ -11,6 +11,7 @@
 #include "network_manager.h"
 #include "system_manager.h"
 #include "image_preview.h"
+#include "display_profile_manager.h"
 #include "hmi_logo.h"
 #include <stdio.h>
 #include <string.h>
@@ -638,7 +639,17 @@ static void screen(unsigned number)
     static const unsigned file_operations[] = {
         100, 101, 102, ST_MKDIR, ST_COPY, ST_RENAME, ST_DELETE
     };
+    display_profile_info_t display_profile;
+    char display_info[96];
     unsigned i;
+
+    if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK) {
+        snprintf(display_info, sizeof(display_info), "%s  %ux%u LVDS  触摸：%s",
+                 display_profile.code, display_profile.width, display_profile.height,
+                 display_profile.touch_enabled ? display_profile.touch : "未启用");
+    } else {
+        snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
+    }
 
     if (number >= 7)
         return;
@@ -727,9 +738,11 @@ static void screen(unsigned number)
               "硬件版本：" HMI_HARDWARE "\n"
               "固件版本：" HMI_VERSION "\n"
               "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
-              "图形库：LVGL 9.1 | 显示：1024 × 600 LVDS\n"
-              "启动存储：16 MiB SPI NOR | DATA：单分区",
+              "图形库：LVGL 9.1\n",
               32, 28, 920);
+        label(content, display_info, 32, 158, 920);
+        label(content, "启动存储：16 MiB SPI NOR | DATA：单分区",
+              32, 190, 920);
         panel(content, 16, 270, 960, 180, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
         label(content, "当前网络、A/B 槽位、健康状态和运行时间请查看设备总览。",
               32, 294, 920);
@@ -769,10 +782,13 @@ static void screen(unsigned number)
               "固件版本：" HMI_VERSION "\n"
               "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
               "图形界面：LVGL 9.1\n"
-              "显示屏：1024 × 600 LVDS\n"
+              "屏幕配置：",
+              540, 68, 410);
+        label(content, display_info, 540, 222, 410);
+        label(content,
               "启动存储：16 MiB SPI NOR\n"
               "DATA：单分区",
-              540, 68, 410);
+              540, 254, 410);
     }
 }
 
