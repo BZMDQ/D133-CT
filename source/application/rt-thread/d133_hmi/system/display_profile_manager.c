@@ -152,6 +152,9 @@ static int display_profile_uart_open(void)
         system_manager_log("屏幕配置串口未找到 uart0");
         return -1;
     }
+    /* 保留 SDK 扩展端口号、时钟及工作模式，默认模板的端口号是无效值 15。 */
+    if (rt_device_control(device, RT_SERIAL_GET_CONFIG, &config) != RT_EOK)
+        return -3;
     config.baud_rate = DISPLAY_PROFILE_UART_BAUD;
     if (rt_device_control(device, RT_DEVICE_CTRL_CONFIG, &config) != RT_EOK ||
         rt_device_open(device, RT_DEVICE_OFLAG_RDWR) != RT_EOK) {

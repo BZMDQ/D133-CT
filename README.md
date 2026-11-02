@@ -4,16 +4,16 @@
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.26 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.27 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
 
-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.26 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.26 尚未上板测量，1 秒目标未达成。
+启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.27 尚未上板测量，1 秒目标未达成。
 
 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
-.\scripts\build.ps1 -Target OS -LogName stage_touch_device_health_v1.0.26_build.log
-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_touch_device_health_v1.0.26_ota_build.log
+.\scripts\build.ps1 -Target OS -LogName stage_uart_config_v1.0.27_build.log
+.\scripts\build.ps1 -Target OtaCandidate -LogName stage_touch_device_health_v1.0.27_ota_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
 
@@ -28,15 +28,15 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
 - [屏幕代号串口协议](docs/屏幕代号串口协议.md)
 - [故障排查](docs/故障排查.md)
-- [v1.0.26 触摸设备名健康检查修复构建日志](docs/stage_touch_device_health_v1.0.26_build.log)
-- [v1.0.26 看门狗健康检查源码差异](docs/v1.0.26_touch_health_source.patch)
+- [v1.0.27 触摸设备名健康检查修复构建日志](docs/stage_uart_config_v1.0.27_build.log)
+- [v1.0.27 看门狗健康检查源码差异](docs/v1.0.26_touch_health_source.patch)
 - [v1.0.22 图片预览与屏幕串口源码差异](docs/panel_serial_images_v1.0.22_source.patch)
 - [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
 - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.26 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.26.img)，大小 4,270,592 字节，SHA-256 2946ce672651c73b1b287f0b2715fe0acbb59fb0d827917e77194bf9acde88ac。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。未生成日常 OTA 包。/data 持久化与 15 秒复位停止仍待板上验证。
+当前工厂镜像为 [v1.0.27 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.27.img)，大小 4,270,592 字节，SHA-256 b245f77962319f19835cad7a9d65a7cb30014ebce0bb703e68f3a2b0599c0bca。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。未生成日常 OTA 包。/data 持久化与 15 秒复位停止仍待板上验证。
 
 ## 仓库内容
 
@@ -63,3 +63,5 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.23 保持静默 RT 控制台、FinSH/MSH 和 ULOG 关闭，同时用 UART0 接收代号并输出启动 profile。此次启动耗时尚未上板测量，QSPI/NOR 时钟保持不变。
 
 板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
+
+v1.0.27 修复 UART0 配置覆盖：先用 RT_SERIAL_GET_CONFIG 读取 SDK 注册配置，再修改波特率，避免默认模板 uart_index=15 导致打开失败。SDK 编译与板上验收分别记录；硬件结果仍需确认。
