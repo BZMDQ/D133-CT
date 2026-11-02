@@ -143,24 +143,6 @@ static struct display_timing timing_1920_1080 = {
     .flags        = AIC_DISPLAY_FLAGS,
 };
 
-/* EK79202DA 1280x800 HV mode：保持单链路 LVDS 和驱动默认低有效同步。 */
-static struct display_timing timing_cs001_1280_800 = {
-    .pixelclock   = 72 * 1000000 + 400000,
-
-    .hactive      = 1280,
-    /* 数据手册 HBP 含同步脉宽；采用 SDK 常见 20 DCLK HSYNC。 */
-    .hback_porch  = 68,
-    .hfront_porch = 72,
-    .hsync_len    = 20,
-
-    .vactive      = 800,
-    /* 数据手册 VBP 含同步脉宽；采用 SDK 1024x600 的 2 行 VSYNC。 */
-    .vback_porch  = 21,
-    .vfront_porch = 15,
-    .vsync_len    = 2,
-
-    .flags        = AIC_DISPLAY_FLAGS,
-};
 #endif
 
 #ifdef AIC_DISP_RGB
@@ -236,12 +218,6 @@ static struct panel_desc lvds_desc[] = {
         .timings = &timing_custom,
         .funcs = &simple_funcs,
     },
-    [3] = {
-        .name = "CS001-EK79202DA-1280x800",
-        .lvds = &lvds,
-        .timings = &timing_cs001_1280_800,
-        .funcs = &simple_funcs,
-    },
 };
 
 struct aic_panel aic_panel_lvds = {
@@ -252,10 +228,5 @@ struct aic_panel aic_panel_lvds = {
     .connector_type = AIC_LVDS_COM,
 };
 
-/* 启动时根据官方 ENV 选择 LVDS panel descriptor。 */
-void aic_panel_lvds_select_profile(int cs001)
-{
-    aic_panel_lvds.match_id = cs001 ? 3 : LVDS_PANEL_MATCH_ID;
-}
 #endif
 

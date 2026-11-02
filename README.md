@@ -1,18 +1,18 @@
 # D133-控制终端
 
-工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread、16 MiB SPI NOR 和 1024×600 LVDS。板级方案保留官方 demo88-nor 的驱动与 pinmux，在独立目标 d133cbv-hmi-nor 中配置分区和应用。
+工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（1280×800 MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.23 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.24 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
 
-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.23 继续使用静默 RT 控制台、关闭 FinSH Shell 和 ULOG 输出，UART0 用于屏幕代号协议和当前 profile 启动行。RT 控制台仍绑定 `hmi_quiet`，BootROM/SPL 输出保持。独立诊断 profile 保留逐项计时。v1.0.20 热复位实测 1.632 秒；v1.0.23 尚未上板测量，1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
+启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.24 继续使用静默 RT 控制台、关闭 FinSH Shell 和 ULOG 输出，UART0 用于屏幕代号协议和当前 profile 启动行。RT 控制台仍绑定 hmi_quiet，BootROM/SPL 输出保持。独立诊断 profile 保留逐项计时。v1.0.20 热复位实测 1.632 秒；v1.0.24 尚未上板测量，1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
 
 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
-.\scripts\build.ps1 -Target OS -LogName stage_cs001_display_serial_v1.0.23_build.log
+.\scripts\build.ps1 -Target OS -LogName stage_cs001_mipi_v1.0.24_build.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName stage_cs001_display_serial_v1.0.23_ota_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
@@ -21,22 +21,22 @@
 
 文件管理页选中 SD 图片并按“打开 / 读取”后，图片按原始像素 1:1 显示：小图居中，大图中心裁去屏幕以外部分；左上角固定“返回”键。BMP 只读取可见区域并申请屏幕大小的 RGB565 输出区，支持 16/24/32 位 BI_RGB 与 16/32 位 BI_BITFIELDS；JPG/JPEG、PNG 使用 SDK MPP 硬件裁剪窗口。JPEG/PNG 压缩输入上限为 4 MiB，PNG 仍遵循 SDK 800 万像素限制，解码硬件与 LVGL 图像描述符上限仍适用。当前只完成编译，需在目标板验证颜色、裁剪和 CMA 余量。
 
-UART0 接收 `CS000`/`CS001` 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为基于 EK79202DA timing 的 1280×800 LVDS 显示 profile，当前触摸输入关闭。启动时串口打印当前代号；完整资料核对和验收边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)。
+UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 EK79202DA 1280×800 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
 
 - [实施与构建说明](docs/实施说明.md)
 - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
 - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
 - [屏幕代号串口协议](docs/屏幕代号串口协议.md)
 - [故障排查](docs/故障排查.md)
-- [v1.0.23 CS001/UART 构建日志](docs/stage_cs001_display_serial_v1.0.23_build.log)
-- [v1.0.23 CS001显示与UART源码差异](docs/cs001_display_serial_v1.0.23_source.patch)
+- [v1.0.24 CS001 MIPI 构建日志](docs/stage_cs001_mipi_v1.0.24_build.log)
+- [v1.0.24 CS001 MIPI 源码差异](docs/cs001_mipi_v1.0.24_source.patch)
 - [v1.0.22 图片预览与屏幕串口源码差异](docs/panel_serial_images_v1.0.22_source.patch)
 - [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
 - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.23 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.23.img)，大小 4,264,448 字节，SHA-256 `0ebcdc7d64cd8e4ca05c849e0759b510a142681d64807c01837be53fdf485479`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。BootROM/SPL 输出保留，RT-Thread/HMI/Shell 控制台静默；UART0 用于 profile 启动行和代号命令。构建已通过 Luban-Lite SCons，实际 UART RX、1280×800 LVDS strap 和画面仍需目标板验收。
+当前工厂镜像为 [v1.0.24 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.24.img)，大小 4,270,592 字节，SHA-256 ea3b6268a188f958e4a9ac81533863fd05f02da27189dacaa6c8d5e37f4409b9。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。未生成日常 OTA 包。BootROM/SPL 输出保留，RT-Thread/HMI/Shell 控制台静默；UART0 用于启动 profile 行和代号命令。Luban-Lite 构建通过，CS001 MIPI 出图、lane strap 和 UART 实收发仍需目标板验收。
 
 ## 仓库内容
 

@@ -48,7 +48,7 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
         rt_snprintf(profile->code, sizeof(profile->code), "CS001");
         profile->width = 1280;
         profile->height = 800;
-        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-LVDS");
+        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-MIPI");
         rt_snprintf(profile->touch, sizeof(profile->touch), "DISABLED");
         profile->touch_enabled = 0;
         return 0;

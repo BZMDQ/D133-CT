@@ -17,13 +17,13 @@ struct gpio_desc {
 struct aic_panel_callbacks;
 
 struct aic_panel *aic_find_panel(u32 connector_type);
+#ifdef HMI_DISPLAY_PROFILE_SERIAL
+/* 从官方 ENV 选择屏幕接口并配置 D133 显示复用引脚。 */
+int aic_display_profile_select(void);
+#endif
 
 extern struct aic_panel aic_panel_rgb;
 extern struct aic_panel aic_panel_lvds;
-#ifdef AIC_DISP_LVDS
-/* 根据 ENV 屏幕代号选择已编入的 LVDS panel descriptor。 */
-void aic_panel_lvds_select_profile(int cs001);
-#endif
 
 /*
  * MIPI-DSI Panel
@@ -44,6 +44,9 @@ extern struct aic_panel dsi_jd9366tc;
 extern struct aic_panel dsi_gc9703;
 extern struct aic_panel dsi_st7102;
 extern struct aic_panel dsi_edp_lt9811exb;
+#ifdef AIC_PANEL_DSI_EK79202D
+extern struct aic_panel dsi_ek79202d;
+#endif
 extern struct aic_panel dsi_ek79007ad;
 extern struct aic_panel dsi_svc1k26;
 

@@ -12,6 +12,7 @@
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
 #include <env.h>
 #include <string.h>
+#include <aic_hal_gpio.h>
 #endif
 
 static struct aic_panel *panels[] = {
@@ -62,6 +63,9 @@ static struct aic_panel *panels[] = {
 #endif
 #ifdef AIC_PANEL_DSI_EK79007AD
     &dsi_ek79007ad,
+#endif
+#ifdef AIC_PANEL_DSI_EK79202D
+    &dsi_ek79202d,
 #endif
 #ifdef AIC_PANEL_DSI_GC9703
     &dsi_gc9703,
@@ -155,6 +159,36 @@ static struct aic_panel *panels[] = {
 #endif
 };
 
+#ifdef HMI_DISPLAY_PROFILE_SERIAL
+int aic_display_profile_select(void)
+{
+    static const char *display_pins[] = {
+        "PD.18", "PD.19", "PD.20", "PD.21", "PD.22",
+        "PD.23", "PD.24", "PD.25", "PD.26", "PD.27"
+    };
+    const char *screen = NULL;
+    int connector = AIC_LVDS_COM;
+    unsigned int i;
+
+    /* 未读到 ENV 时保持 CS000 默认 LVDS，避免误选 MIPI。 */
+    if (fw_env_open() == 0) {
+        screen = fw_getenv("hmi_screen");
+        if (screen && strcmp(screen, "CS001") == 0)
+            connector = AIC_MIPI_COM;
+        fw_env_close();
+    }
+
+    /* 在显示驱动 probe 前按实际接口切换 D133 显示引脚复用。 */
+    for (i = 0; i < ARRAY_SIZE(display_pins); i++) {
+        long pin = hal_gpio_name2pin((char *)display_pins[i]);
+        if (pin >= 0)
+            hal_gpio_set_func(GPIO_GROUP(pin), GPIO_GROUP_PIN(pin),
+                              connector == AIC_MIPI_COM ? 4 : 3);
+    }
+
+    return connector;
+}
+#endif
 struct aic_panel *aic_find_panel(u32 connector_type)
 {
     int i;
@@ -168,19 +202,6 @@ struct aic_panel *aic_find_panel(u32 connector_type)
     if (i >= ARRAY_SIZE(panels))
         return NULL;
 
-#if defined(HMI_DISPLAY_PROFILE_SERIAL) && defined(AIC_DISP_LVDS)
-    if (panels[i]->connector_type == AIC_LVDS_COM) {
-        int cs001 = 0;
-
-        /* FAL/ENV 在 panel probe 前初始化，启动时从冗余 ENV 读取屏幕代号。 */
-        if (fw_env_open() == 0) {
-            char *profile = fw_getenv("hmi_screen");
-            cs001 = profile && strcmp(profile, "CS001") == 0;
-            fw_env_close();
-        }
-        aic_panel_lvds_select_profile(cs001);
-    }
-#endif
 
     pr_debug("find panel driver : %s\n", panels[i]->name);
 

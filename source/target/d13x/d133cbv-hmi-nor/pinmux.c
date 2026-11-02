@@ -210,7 +210,7 @@ struct aic_pinmux aic_pinmux_config[] = {
     {3, PIN_PULL_DIS, 3, "PD.26"},
     {3, PIN_PULL_DIS, 3, "PD.27"},
 #endif
-#ifdef AIC_DISP_MIPI_DSI
+#if defined(AIC_DISP_MIPI_DSI) && !defined(HMI_DISPLAY_PROFILE_SERIAL)
     {4, PIN_PULL_DIS, 3, "PD.18"},
     {4, PIN_PULL_DIS, 3, "PD.19"},
     {4, PIN_PULL_DIS, 3, "PD.20"},

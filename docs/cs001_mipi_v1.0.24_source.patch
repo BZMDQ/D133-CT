@@ -1,0 +1,611 @@
+--- a/bsp/artinchip/SConscript
++++ b/bsp/artinchip/SConscript
+@@ -292,7 +292,8 @@
+ if GetDepend('AIC_PANEL_DSI_EK79007AD'):
+     src += Glob('drv/display/panel/panel_dsi_ek79007ad.c')
+ 
+-
++if GetDepend('AIC_PANEL_DSI_EK79202D'):
+
++    src += Glob('drv/display/panel/panel_dsi_ek79202d.c')
+
+ if GetDepend('AIC_PANEL_DSI_GC9703'):
+     src += Glob('drv/display/panel/panel_dsi_gc9703.c')
+ 
+--- a/bsp/artinchip/drv/display/Kconfig
++++ b/bsp/artinchip/drv/display/Kconfig
+@@ -31,21 +31,19 @@
+ choice
+     prompt "select Display interface"
+     default AIC_DISP_RGB
+-    depends on AIC_DISPLAY_DRV
++    depends on AIC_DISPLAY_DRV && !HMI_DISPLAY_PROFILE_SERIAL
+
+ 
+ config AIC_DISP_RGB
+     bool "Display RGB interface"
+     select AIC_DISP_RGB_DRV
+     depends on AIC_DISP_HW_RGB
+ 
+-config AIC_DISP_LVDS
++config AIC_DISP_LVDS_SINGLE
+
+     bool "Display LVDS interface"
+-    select AIC_DISP_LVDS_DRV
+     depends on AIC_DISP_HW_LVDS
+ 
+-config AIC_DISP_MIPI_DSI
++config AIC_DISP_MIPI_DSI_SINGLE
+
+     bool "Display MIPI-DSI interface"
+-    select AIC_DISP_MIPI_DSI_DRV
+     depends on AIC_DISP_HW_MIPI_DSI
+ 
+ config AIC_DISP_MIPI_DBI
+@@ -53,6 +51,18 @@
+     select AIC_DISP_MIPI_DBI_DRV
+     depends on AIC_DISP_HW_MIPI_DBI
+ endchoice
++
+
++config AIC_DISP_LVDS
+
++    bool
+
++    default y if HMI_DISPLAY_PROFILE_SERIAL || AIC_DISP_LVDS_SINGLE
+
++    depends on AIC_DISP_HW_LVDS
+
++    select AIC_DISP_LVDS_DRV
+
++
+
++config AIC_DISP_MIPI_DSI
+
++    bool
+
++    default y if HMI_DISPLAY_PROFILE_SERIAL || AIC_DISP_MIPI_DSI_SINGLE
+
++    depends on AIC_DISP_HW_MIPI_DSI
+
++    select AIC_DISP_MIPI_DSI_DRV
+
+ 
+ config AIC_DI_TYPE
+     int
+--- a/bsp/artinchip/drv/display/drv_fb.c
++++ b/bsp/artinchip/drv/display/drv_fb.c
+@@ -10,6 +10,7 @@
+ #include <aic_hal_ge.h>
+ #include "drv_fb.h"
+ #include "drv_fb_helper.h"
++#include "panel/panel_com.h"
+
+ #ifdef AIC_FB_ROTATE_EN
+ #include <aic_drv_ge.h>
+ #endif
+@@ -593,6 +594,7 @@
+     size_t fb_size = 0;
+ #endif
+     int ret = -EINVAL;
++    int connector_type = AIC_DI_TYPE;
+
+ 
+     if (aicfb_probed)
+         return 0;
+@@ -605,6 +607,11 @@
+     }
+     memset(fbi, 0x0, sizeof(*fbi));
+ 
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
+
++    /* 启动时按官方 ENV 选择 LVDS 或 MIPI，并在控制器 probe 前配置显示引脚。 */
+
++    connector_type = aic_display_profile_select();
+
++#endif
+
++
+
+     fbi->de = aicfb_find_component(drivers, AIC_DE_COM, ARRAY_SIZE(drivers));
+     if (!fbi->de)
+     {
+@@ -612,14 +619,14 @@
+         goto err;
+     }
+ 
+-    fbi->di = aicfb_find_component(drivers, AIC_DI_TYPE, ARRAY_SIZE(drivers));
++    fbi->di = aicfb_find_component(drivers, connector_type, ARRAY_SIZE(drivers));
+
+     if (!fbi->di)
+     {
+         pr_err("failed to find di component\n");
+         goto err;
+     }
+ 
+-    fbi->panel = aic_find_panel(AIC_DI_TYPE);
++    fbi->panel = aic_find_panel(connector_type);
+
+     if (!fbi->panel)
+     {
+         pr_err("failed to find panel component\n");
+@@ -687,4 +694,3 @@
+     if (fbi->fb_start)
+         aicos_free_align(MEM_CMA, fbi->fb_start);
+ }
+-
+--- a/bsp/artinchip/drv/display/panel/Kconfig
++++ b/bsp/artinchip/drv/display/panel/Kconfig
+@@ -234,7 +234,12 @@
+ endif
+     endchoice
+ 
+-
++if HMI_DISPLAY_PROFILE_SERIAL
+
++config AIC_PANEL_DSI_EK79202D
+
++    bool
+
++    default y
+
++    depends on AIC_DISP_MIPI_DSI
+
++endif
+
+ 
+ config AIC_PANEL_CUSTOM_RESOLUTION
+     bool "Custom Display Timing"
+--- a/bsp/artinchip/drv/display/panel/panel_com.c
++++ b/bsp/artinchip/drv/display/panel/panel_com.c
+@@ -12,6 +12,7 @@
+ #ifdef HMI_DISPLAY_PROFILE_SERIAL
+ #include <env.h>
+ #include <string.h>
++#include <aic_hal_gpio.h>
+
+ #endif
+ 
+ static struct aic_panel *panels[] = {
+@@ -63,6 +64,9 @@
+ #ifdef AIC_PANEL_DSI_EK79007AD
+     &dsi_ek79007ad,
+ #endif
++#ifdef AIC_PANEL_DSI_EK79202D
+
++    &dsi_ek79202d,
+
++#endif
+
+ #ifdef AIC_PANEL_DSI_GC9703
+     &dsi_gc9703,
+ #endif
+@@ -155,6 +159,36 @@
+ #endif
+ };
+ 
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
+
++int aic_display_profile_select(void)
+
++{
+
++    static const char *display_pins[] = {
+
++        "PD.18", "PD.19", "PD.20", "PD.21", "PD.22",
+
++        "PD.23", "PD.24", "PD.25", "PD.26", "PD.27"
+
++    };
+
++    const char *screen = NULL;
+
++    int connector = AIC_LVDS_COM;
+
++    unsigned int i;
+
++
+
++    /* 未读到 ENV 时保持 CS000 默认 LVDS，避免误选 MIPI。 */
+
++    if (fw_env_open() == 0) {
+
++        screen = fw_getenv("hmi_screen");
+
++        if (screen && strcmp(screen, "CS001") == 0)
+
++            connector = AIC_MIPI_COM;
+
++        fw_env_close();
+
++    }
+
++
+
++    /* 在显示驱动 probe 前按实际接口切换 D133 显示引脚复用。 */
+
++    for (i = 0; i < ARRAY_SIZE(display_pins); i++) {
+
++        long pin = hal_gpio_name2pin((char *)display_pins[i]);
+
++        if (pin >= 0)
+
++            hal_gpio_set_func(GPIO_GROUP(pin), GPIO_GROUP_PIN(pin),
+
++                              connector == AIC_MIPI_COM ? 4 : 3);
+
++    }
+
++
+
++    return connector;
+
++}
+
++#endif
+
+ struct aic_panel *aic_find_panel(u32 connector_type)
+ {
+     int i;
+@@ -168,19 +202,6 @@
+     if (i >= ARRAY_SIZE(panels))
+         return NULL;
+ 
+-#if defined(HMI_DISPLAY_PROFILE_SERIAL) && defined(AIC_DISP_LVDS)
+-    if (panels[i]->connector_type == AIC_LVDS_COM) {
+-        int cs001 = 0;
+-
+-        /* FAL/ENV 在 panel probe 前初始化，启动时从冗余 ENV 读取屏幕代号。 */
+-        if (fw_env_open() == 0) {
+-            char *profile = fw_getenv("hmi_screen");
+-            cs001 = profile && strcmp(profile, "CS001") == 0;
+-            fw_env_close();
+-        }
+-        aic_panel_lvds_select_profile(cs001);
+-    }
+-#endif
+ 
+     pr_debug("find panel driver : %s\n", panels[i]->name);
+ 
+--- a/bsp/artinchip/drv/display/panel/panel_com.h
++++ b/bsp/artinchip/drv/display/panel/panel_com.h
+@@ -17,13 +17,13 @@
+ struct aic_panel_callbacks;
+ 
+ struct aic_panel *aic_find_panel(u32 connector_type);
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
+
++/* 从官方 ENV 选择屏幕接口并配置 D133 显示复用引脚。 */
+
++int aic_display_profile_select(void);
+
++#endif
+
+ 
+ extern struct aic_panel aic_panel_rgb;
+ extern struct aic_panel aic_panel_lvds;
+-#ifdef AIC_DISP_LVDS
+-/* 根据 ENV 屏幕代号选择已编入的 LVDS panel descriptor。 */
+-void aic_panel_lvds_select_profile(int cs001);
+-#endif
+ 
+ /*
+  * MIPI-DSI Panel
+@@ -44,6 +44,9 @@
+ extern struct aic_panel dsi_gc9703;
+ extern struct aic_panel dsi_st7102;
+ extern struct aic_panel dsi_edp_lt9811exb;
++#ifdef AIC_PANEL_DSI_EK79202D
+
++extern struct aic_panel dsi_ek79202d;
+
++#endif
+
+ extern struct aic_panel dsi_ek79007ad;
+ extern struct aic_panel dsi_svc1k26;
+ 
+--- a/bsp/artinchip/drv/display/panel/panel_simple.c
++++ b/bsp/artinchip/drv/display/panel/panel_simple.c
+@@ -143,24 +143,6 @@
+     .flags        = AIC_DISPLAY_FLAGS,
+ };
+ 
+-/* EK79202DA 1280x800 HV mode：保持单链路 LVDS 和驱动默认低有效同步。 */
+-static struct display_timing timing_cs001_1280_800 = {
+-    .pixelclock   = 72 * 1000000 + 400000,
+-
+-    .hactive      = 1280,
+-    /* 数据手册 HBP 含同步脉宽；采用 SDK 常见 20 DCLK HSYNC。 */
+-    .hback_porch  = 68,
+-    .hfront_porch = 72,
+-    .hsync_len    = 20,
+-
+-    .vactive      = 800,
+-    /* 数据手册 VBP 含同步脉宽；采用 SDK 1024x600 的 2 行 VSYNC。 */
+-    .vback_porch  = 21,
+-    .vfront_porch = 15,
+-    .vsync_len    = 2,
+-
+-    .flags        = AIC_DISPLAY_FLAGS,
+-};
+ #endif
+ 
+ #ifdef AIC_DISP_RGB
+@@ -236,12 +218,6 @@
+         .timings = &timing_custom,
+         .funcs = &simple_funcs,
+     },
+-    [3] = {
+-        .name = "CS001-EK79202DA-1280x800",
+-        .lvds = &lvds,
+-        .timings = &timing_cs001_1280_800,
+-        .funcs = &simple_funcs,
+-    },
+ };
+ 
+ struct aic_panel aic_panel_lvds = {
+@@ -252,10 +228,5 @@
+     .connector_type = AIC_LVDS_COM,
+ };
+ 
+-/* 启动时根据官方 ENV 选择 LVDS panel descriptor。 */
+-void aic_panel_lvds_select_profile(int cs001)
+-{
+-    aic_panel_lvds.match_id = cs001 ? 3 : LVDS_PANEL_MATCH_ID;
+-}
+-#endif
+-
++#endif
+
++
+
+--- a/target/d13x/d133cbv-hmi-nor/pinmux.c
++++ b/target/d13x/d133cbv-hmi-nor/pinmux.c
+@@ -210,7 +210,7 @@
+     {3, PIN_PULL_DIS, 3, "PD.26"},
+     {3, PIN_PULL_DIS, 3, "PD.27"},
+ #endif
+-#ifdef AIC_DISP_MIPI_DSI
++#if defined(AIC_DISP_MIPI_DSI) && !defined(HMI_DISPLAY_PROFILE_SERIAL)
+
+     {4, PIN_PULL_DIS, 3, "PD.18"},
+     {4, PIN_PULL_DIS, 3, "PD.19"},
+     {4, PIN_PULL_DIS, 3, "PD.20"},
+--- /dev/null
++++ b/bsp/artinchip/drv/display/panel/panel_dsi_ek79202d.c
+@@ -0,0 +1,61 @@
++/*
+
++ * D133 CS001 面板驱动
+
++ * EK79202D 1280x800 MIPI-DSI 模式，使用标准 DCS 初始化命令。
+
++ * 时序与 lane strap 仍需按模组 FPC 和硬件配置进行实板确认。
+
++ */
+
++
+
++#include "panel_com.h"
+
++#include "panel_dsi.h"
+
++
+
++static int ek79202d_panel_enable(struct aic_panel *panel)
+
++{
+
++    panel_di_enable(panel, 0);
+
++    panel_dsi_send_perpare(panel);
+
++
+
++    /* 芯片资料列出标准 DCS 软件复位、退出休眠和显示打开命令。 */
+
++    panel_dsi_dcs_send_seq(panel, 0x01);
+
++    aic_delay_ms(10);
+
++    panel_dsi_dcs_send_seq(panel, 0x11);
+
++    aic_delay_ms(120);
+
++    panel_dsi_dcs_send_seq(panel, 0x29);
+
++    aic_delay_ms(20);
+
++
+
++    panel_dsi_setup_realmode(panel);
+
++    panel_de_timing_enable(panel, 0);
+
++    panel_backlight_enable(panel, 0);
+
++    return 0;
+
++}
+
++
+
++static struct aic_panel_funcs ek79202d_panel_funcs = {
+
++    .prepare = panel_default_prepare,
+
++    .enable = ek79202d_panel_enable,
+
++    .disable = panel_default_disable,
+
++    .unprepare = panel_default_unprepare,
+
++    .register_callback = panel_register_callback,
+
++};
+
++
+
++static struct display_timing ek79202d_timing = {
+
++    .pixelclock = 72400000,
+
++    .hactive = 1280,
+
++    .hback_porch = 68,
+
++    .hfront_porch = 72,
+
++    .hsync_len = 20,
+
++    .vactive = 800,
+
++    .vback_porch = 21,
+
++    .vfront_porch = 15,
+
++    .vsync_len = 2,
+
++};
+
++
+
++static struct panel_dsi ek79202d_dsi = {
+
++    .mode = DSI_MOD_VID_PULSE,
+
++    .format = DSI_FMT_RGB888,
+
++    .lane_num = 4,
+
++};
+
++
+
++struct aic_panel dsi_ek79202d = {
+
++    .name = "panel-ek79202d-mipi-1280x800",
+
++    .timings = &ek79202d_timing,
+
++    .funcs = &ek79202d_panel_funcs,
+
++    .dsi = &ek79202d_dsi,
+
++    .connector_type = AIC_MIPI_COM,
+
++};--- a/application/rt-thread/d133_hmi/assets/version.txt
++++ b/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.23
++D133-控制终端 1.0.24
+
+--- a/application/rt-thread/d133_hmi/system/display_profile_manager.c
++++ b/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -48,7 +48,7 @@
+         rt_snprintf(profile->code, sizeof(profile->code), "CS001");
+         profile->width = 1280;
+         profile->height = 800;
+-        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-LVDS");
++        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-MIPI");
+
+         rt_snprintf(profile->touch, sizeof(profile->touch), "DISABLED");
+         profile->touch_enabled = 0;
+         return 0;
+--- a/target/configs/d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig
+@@ -11,7 +11,7 @@
+ CONFIG_AIC_DEV_QSPI0_MAX_SRC_FREQ_HZ=100000000
+ CONFIG_AIC_QSPI0_BUS_WIDTH_4=y
+ CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
+-CONFIG_AIC_DISP_LVDS=y
++CONFIG_AIC_DISP_LVDS_SINGLE=y
+
+ CONFIG_AICFB_RGB565=y
+ # CONFIG_AIC_DISP_BOOTUP_LOGO is not set
+ # CONFIG_AIC_DISP_COLOR_BLOCK is not set
+--- a/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -28,7 +28,7 @@
+ # CONFIG_AIC_USING_TSEN_GPAI is not set
+ # CONFIG_AIC_USING_GPAI is not set
+ # CONFIG_AIC_USING_GPAI7 is not set
+-CONFIG_AIC_DISP_LVDS=y
++CONFIG_AIC_DISP_LVDS_SINGLE=y
+
+ CONFIG_AICFB_RGB565=y
+ CONFIG_AIC_PAN_DISPLAY=y
+ CONFIG_AIC_DISP_BOOTUP_LOGO=y
+@@ -141,7 +141,7 @@
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.23"
++CONFIG_HMI_FW_VERSION="1.0.24"
+
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+--- a/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -28,7 +28,7 @@
+ # CONFIG_AIC_USING_TSEN_GPAI is not set
+ # CONFIG_AIC_USING_GPAI is not set
+ # CONFIG_AIC_USING_GPAI7 is not set
+-CONFIG_AIC_DISP_LVDS=y
++CONFIG_AIC_DISP_LVDS_SINGLE=y
+
+ CONFIG_AICFB_RGB565=y
+ CONFIG_AIC_PAN_DISPLAY=y
+ CONFIG_AIC_DISP_BOOTUP_LOGO=y
+@@ -139,7 +139,7 @@
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.23"
++CONFIG_HMI_FW_VERSION="1.0.24"
+
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+--- a/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+@@ -29,7 +29,7 @@
+ # CONFIG_AIC_USING_TSEN_GPAI is not set
+ # CONFIG_AIC_USING_GPAI is not set
+ # CONFIG_AIC_USING_GPAI7 is not set
+-CONFIG_AIC_DISP_LVDS=y
++CONFIG_AIC_DISP_LVDS_SINGLE=y
+
+ CONFIG_AICFB_RGB565=y
+ CONFIG_AIC_PAN_DISPLAY=y
+ CONFIG_AIC_DISP_BOOTUP_LOGO=y
+@@ -147,4 +147,3 @@
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+ 
+-
+--- a/target/configs/d13x_d133cbv-hmi-nor_rt-thread_helloworld_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_helloworld_defconfig
+@@ -25,7 +25,7 @@
+ CONFIG_AIC_USING_TSEN_GPAI=y
+ CONFIG_AIC_USING_GPAI=y
+ CONFIG_AIC_USING_GPAI7=y
+-CONFIG_AIC_DISP_LVDS=y
++CONFIG_AIC_DISP_LVDS_SINGLE=y
+
+ CONFIG_AICFB_RGB565=y
+ CONFIG_AIC_PAN_DISPLAY=y
+ CONFIG_AIC_STARTUP_UI_SHOW=y
+--- a/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.23",
++            "version": "1.0.24",
+
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
