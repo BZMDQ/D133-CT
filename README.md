@@ -27,13 +27,13 @@
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.16.img`，大小 4,569,600 字节，SHA-256 见同名 `.sha256` 文件。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。已签名 OTA v1.0.9 低于该镜像版本，不应安装到 v1.0.16 系统。本仓库只跟踪当前工厂镜像，不提交旧 OTA 包。
+当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.16.img`，大小 4,569,600 字节，SHA-256 见同名 `.sha256` 文件。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。针对 v1.0.16 的日常升级包 v1.0.17 已在 [GitHub Release](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.17) 发布，包含 CPIO、配套签名和校验文件。OTA 包通过主机侧 CPIO 白名单、版本、SHA-256 与 RSA 签名验证；尚未完成板上升级与回滚验收。该包使用本地开发测试密钥签名，不用于量产。工厂镜像用于首次部署，OTA CPIO 用于日常升级，两者不可混用。
 
 ## 仓库内容
 
 仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码，以及当前工厂镜像。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份、历史固件和预编译的完整研发工具箱。
 
-开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。当前 OTA 候选配置为 v1.0.17，本仓库未包含已签名的 v1.0.17 OTA 包。
+开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。v1.0.17 OTA 作为 Release 附件发布，不写入 Git 历史；当前 Release 使用开发测试密钥，量产前必须替换为受控密钥并完成目标板验收。
 
 ## 从仓库构建
 

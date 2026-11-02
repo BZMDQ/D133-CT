@@ -1,1 +1,3 @@
 aa7d1298667b577b90b2e5ba1f6e20ae9f10ead5b2229ae21886c9388d81b4ca  d13x_d133cbv-hmi-nor_v1.0.16.img
+1afeacc25a3db43bdc4885697662d3ceec0bbe1acc753bf8d648e836a5b3c51b  d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
+c4ddf5147684dbcedfcd56bd7ef683a6e13962efd6235d90e72a6aa60a8ad54a  d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sig
