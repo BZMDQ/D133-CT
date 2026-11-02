@@ -8,7 +8,7 @@
 
 启动优化取消了配套 Bootloader 的预启动黑屏显示；OS 保留 LVDS 预热。Info 日志降为 Warning，并关闭当前 HMI 未使用的 CAN、音频、TSEN、GPAI 外设。HMI 复用一个中文字体实例，并增加首帧时间标记。1 秒目标尚未实机测量；标记不能代表从上电开始的完整时间。详见 [启动优化与实测](docs/启动优化与实测.md)。
 
-本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 0.8.35 源码在 `toolbox/Source/`，GitHub 源码仓库和更新发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
+本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 0.8.36 源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
@@ -32,7 +32,7 @@
 
 ## 仓库内容
 
-仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码、当前工厂镜像和 v1.0.18 OTA 包及签名。工具箱的完整 0.8.35 便携包、自定义目录安装程序和 GitHub 原位更新包位于 `downloads/`。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
+仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码、当前工厂镜像和 v1.0.18 OTA 包及签名。工具箱 0.8.36 完整便携包、自定义目录安装程序和手动覆盖包位于 `downloads/`；工具箱界面不自动检查或安装更新。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
 
 开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。当前跟踪的 v1.0.18 OTA、签名与元数据位于 `downloads/`，Release 页面链接这些仓库文件；当前 Release 使用开发测试密钥，量产前必须替换为受控密钥并完成目标板验收。
 
