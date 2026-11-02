@@ -9,6 +9,7 @@ unsigned int app_manager_boot_elapsed_ms(void)
 }
 #include "storage_manager.h"
 #include "system_manager.h"
+#include "device_event_manager.h"
 #include "boot_manager.h"
 #include "ota_manager.h"
 #ifdef HMI_NETWORK
@@ -18,7 +19,7 @@ unsigned int app_manager_boot_elapsed_ms(void)
 int app_manager_init(void)
 {
     boot_start_ms=rt_tick_get_millisecond();
-    if(system_manager_init()||storage_manager_init()||ota_manager_init())return -1;
+    if(system_manager_init()||device_event_manager_init()||storage_manager_init()||ota_manager_init())return -1;
     if(boot_manager_init())return -2;
 #ifdef HMI_NETWORK
     if(network_manager_init())return -3;
@@ -29,4 +30,5 @@ int app_manager_init(void)
 }
 
 INIT_APP_EXPORT(app_manager_init);
+
 

@@ -18,6 +18,8 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.16.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_v1.0.18.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.18.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.20.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.20.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sig
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.json
@@ -32,3 +34,7 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_ota_initdiag_v1.0.19.cpio.sha256
 !downloads/SHA256SUMS_initdiag_v1.0.19.txt
 !downloads/SHA256SUMS_current.txt
+!downloads/研发工具箱_0.8.37_Manual_Overlay.zip
+!downloads/研发工具箱_0.8.37_Manual_Overlay.zip.sha256
+!downloads/研发工具箱_0.8.37_更新说明.md
+
