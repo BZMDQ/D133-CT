@@ -22,6 +22,8 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.22.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.22.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
@@ -41,4 +43,3 @@ downloads/*
 !downloads/研发工具箱_0.8.37_Manual_Overlay.zip
 !downloads/研发工具箱_0.8.37_Manual_Overlay.zip.sha256
 !downloads/研发工具箱_0.8.37_更新说明.md
-

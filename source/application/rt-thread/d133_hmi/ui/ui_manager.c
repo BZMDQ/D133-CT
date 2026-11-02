@@ -364,25 +364,14 @@ static void image_preview_ui_timer(lv_timer_t *timer_obj)
     }
 
     if (state == IMAGE_PREVIEW_READY && image_area) {
-        uint32_t scale_x;
-        uint32_t scale_y;
-        uint32_t scale;
-
         image_dsc = image_preview_get_image();
         if (image_dsc && !image_object) {
             image_object = lv_image_create(image_area);
             if (image_object) {
                 lv_image_set_src(image_object, image_dsc);
                 lv_image_set_antialias(image_object, false);
-                /* 向上取整并取较大比例，裁边铺满屏幕。 */
-                scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
-                           image_dsc->header.w - 1U) / image_dsc->header.w;
-                scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
-                           image_dsc->header.h - 1U) / image_dsc->header.h;
-                scale = scale_x > scale_y ? scale_x : scale_y;
-                if (scale == 0U)
-                    scale = 1U;
-                lv_image_set_scale(image_object, scale);
+                /* 解码器已按屏幕可视区域裁剪，控件保持 1:1 原始像素显示。 */
+                lv_image_set_scale(image_object, 256U);
                 lv_obj_center(image_object);
             }
         }
@@ -1012,4 +1001,3 @@ void hmi_ui_init(void)
     }
     hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
 }
-

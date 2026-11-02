@@ -11,6 +11,9 @@ unsigned int app_manager_boot_elapsed_ms(void)
 #include "system_manager.h"
 #include "device_event_manager.h"
 #include "hmi_serial_log.h"
+#ifdef HMI_DISPLAY_PROFILE_SERIAL
+#include "display_profile_manager.h"
+#endif
 #include "boot_manager.h"
 #include "ota_manager.h"
 #ifdef HMI_NETWORK
@@ -20,7 +23,12 @@ unsigned int app_manager_boot_elapsed_ms(void)
 int app_manager_init(void)
 {
     boot_start_ms=rt_tick_get_millisecond();
-    if(system_manager_init()||device_event_manager_init()||storage_manager_init()||ota_manager_init())return -1;
+    if(system_manager_init())return -1;
+#ifdef HMI_DISPLAY_PROFILE_SERIAL
+    if(display_profile_manager_init())
+        system_manager_log("屏幕配置串口服务启动失败");
+#endif
+    if(device_event_manager_init()||storage_manager_init()||ota_manager_init())return -1;
     if(boot_manager_init())return -2;
 #ifdef HMI_NETWORK
     if(network_manager_init())return -3;
@@ -31,5 +39,4 @@ int app_manager_init(void)
 }
 
 INIT_APP_EXPORT(app_manager_init);
-
 

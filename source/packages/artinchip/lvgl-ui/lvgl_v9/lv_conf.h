@@ -122,12 +122,12 @@
     #define LV_USE_FREETYPE 0
 #endif
 
-/* HMI 图片预览复用 LVGL BMP 与 ArtInChip MPP 解码器，并限制 JPEG 输出分辨率。 */
+/* HMI 图片预览复用 LVGL BMP 与 ArtInChip MPP 解码器，输出由预览窗口裁剪。 */
 #if defined(HMI_UI)
     #define LV_USE_BMP 1
     #define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
-    #define MPP_JPEG_DEC_MAX_OUT_WIDTH 1024
-    #define MPP_JPEG_DEC_MAX_OUT_HEIGHT 600
+    #define MPP_JPEG_DEC_MAX_OUT_WIDTH 65535
+    #define MPP_JPEG_DEC_MAX_OUT_HEIGHT 65535
 #endif
 
 #define LV_USE_GIF 1

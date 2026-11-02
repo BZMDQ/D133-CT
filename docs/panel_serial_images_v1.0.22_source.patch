@@ -1,0 +1,3175 @@
+diff --git a/.gitignore b/.gitignore
+index 3378286..01f9325 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -22,6 +22,8 @@ downloads/*
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.20.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
++!downloads/d13x_d133cbv-hmi-nor_v1.0.22.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.22.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+ !downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+ !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
+@@ -41,4 +43,3 @@ downloads/*
+ !downloads/研发工具箱_0.8.37_Manual_Overlay.zip
+ !downloads/研发工具箱_0.8.37_Manual_Overlay.zip.sha256
+ !downloads/研发工具箱_0.8.37_更新说明.md
+-
+diff --git a/README.md b/README.md
+index b4f8d87..d0347fa 100644
+--- a/README.md
++++ b/README.md
+@@ -4,37 +4,41 @@
+ 
+ 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
+ 
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.21 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 `AIC_DISP_COLOR_BLOCK`，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.22 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
+ 
+-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.21 正式配置改为静默 RT 控制台、关闭 FinSH Shell、RT UART0 驱动和 ULOG 输出，应用串口诊断调用在正式配置编译为空。空输出设备在 RT-Thread 板级驱动初始化前绑定，因此 RT-Thread、驱动、HMI 串口数据静默；BootROM/SPL 输出保持。独立诊断 profile 保留 UART 和逐项计时。v1.0.20 热复位实测 1.632 秒，v1.0.21 尚未上板测量；1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
++启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.22 继续使用静默 RT 控制台、关闭 FinSH Shell 和 ULOG 输出，并重新启用 UART0 作为屏幕代号协议专用串口。RT 控制台仍绑定 `hmi_quiet`，不输出 RT-Thread/HMI/Shell 日志；BootROM/SPL 输出保持。独立诊断 profile 保留逐项计时。v1.0.20 热复位实测 1.632 秒；v1.0.22 尚未上板测量，1 秒目标未达成。详见 [启动优化与实测](docs/启动优化与实测.md)。
+ 
+ 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
+ 
+ ```powershell
+ .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
+-.\scripts\build.ps1 -Target OS -LogName stage_quiet_startup_v1.0.21_factory_build.log
+-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_quiet_startup_v1.0.21_ota_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_panel_serial_images_v1.0.22_build.log
++.\scripts\build.ps1 -Target OtaCandidate -LogName stage_panel_serial_images_v1.0.22_ota_build.log
+ .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
+ ```
+ 
+ 先生成配套 Bootloader，再生成 OS/工厂镜像。日常 OTA 不包含 SPL、ENV 或 DATA。生成镜像不代表板级验收；本工程没有自动连接开发板或写 Flash。
+ 
+-文件管理页选中 SD 图片并按“打开 / 读取”后，会裁切铺满屏幕显示，左上角固定“返回”键。JPG/JPEG、PNG、BMP 均由 SDK MPP 解码，在工作线程中原位归一到屏幕 RGB565，不额外申请大块图像缓存；PNG 透明像素按预览底色合成。PNG/BMP 最大支持 1024×768。
++文件管理页选中 SD 图片并按“打开 / 读取”后，图片按原始像素 1:1 显示：小图居中，大图中心裁去屏幕以外部分；左上角固定“返回”键。BMP 只读取可见区域并申请屏幕大小的 RGB565 输出区，支持 16/24/32 位 BI_RGB 与 16/32 位 BI_BITFIELDS；JPG/JPEG、PNG 使用 SDK MPP 硬件裁剪窗口。JPEG/PNG 压缩输入上限为 4 MiB，PNG 仍遵循 SDK 800 万像素限制，解码硬件与 LVGL 图像描述符上限仍适用。当前只完成编译，需在目标板验证颜色、裁剪和 CMA 余量。
++
++UART0 接收 `CS000`/`CS001` 屏幕代号并返回状态。`CS000` 返回当前 1024×600 LVDS/GT911 配置；`CS001` 返回 `NOT_CONFIGURED`，不会伪装成切换成功。协议和缺少的 CS001 屏幕电气资料见[屏幕代号串口协议](docs/屏幕代号串口协议.md)。
+ 
+ - [实施与构建说明](docs/实施说明.md)
+ - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
+ - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
++- [屏幕代号串口协议](docs/屏幕代号串口协议.md)
+ - [故障排查](docs/故障排查.md)
++- [v1.0.22 图片预览与屏幕串口源码差异](docs/panel_serial_images_v1.0.22_source.patch)
+ - [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
+ - [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
+ - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
+ - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
+ 
+-当前工厂镜像为 [v1.0.21 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.21.img)，大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此版本未生成日常 OTA 包。v1.0.21 保留 BootROM/SPL 串口输出，静默 RT-Thread/HMI/驱动/Shell 输出；板载 RTL8723DS 暂未启用，依赖说明见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。OS ITB 从 v1.0.20 的 1,392,640 字节降到 1,081,344 字节；按原日志吞吐估算读取数据减少约 6–7 ms，实际启动速度仍需同条件实机测量。
++当前工厂镜像为 [v1.0.22 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.22.img)，大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未发布日常 OTA 包。BootROM/SPL 输出保留，RT-Thread/HMI/Shell 控制台静默；UART0 仅用于屏幕代号指令。当前构建通过 Luban-Lite SCons；未上板验证串口、显示和图像缓冲表现。
+ 
+ ## 仓库内容
+ 
+-仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码和当前工厂镜像。工具箱 0.8.36 完整便携包、自定义目录安装程序和手动覆盖包位于 `downloads/`；设备消息显示更新尚未重新打包到工具箱 EXE。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
++仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码和当前工厂镜像。研发工具箱 0.8.37 手动覆盖包已在 [YF-Tbox Release](https://github.com/BZMDQ/YF-Tbox/releases/tag/v0.8.37) 发布；本地副本和校验文件在 `downloads/`。首次安装仍可用 0.8.36 完整便携包/安装程序。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
+ 
+ 开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。当前跟踪的 v1.0.18 OTA、签名与元数据位于 `downloads/`，Release 页面链接这些仓库文件；当前 Release 使用开发测试密钥，量产前必须替换为受控密钥并完成目标板验收。
+ 
+@@ -54,7 +58,6 @@
+ 
+ 首页采用 5×3 应用网格，仅显示六个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+ 
+-用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.21 生产配置关闭 RT UART0、FinSH/MSH 和 ULOG 输出，并在 RT-Thread 驱动初始化前绑定静默控制台；BootROM/SPL 串口输出不变。OS ITB 减少 311,296 字节，按原吞吐估计 NOR 读取可少约 6–7 ms；新镜像尚未上板测量。QSPI/NOR 时钟保持不变。
++用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.22 保持静默 RT 控制台、FinSH/MSH 和 ULOG 关闭，同时开启 UART0 驱动供代号协议使用；Shell 与诊断输出仍未绑定到该 UART。此次启动耗时尚未上板测量，QSPI/NOR 时钟保持不变。
+ 
+ 板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
+-
+diff --git a/docs/stage_panel_serial_images_v1.0.22_build.log b/docs/stage_panel_serial_images_v1.0.22_build.log
+new file mode 100644
+index 0000000..67dc60b
+--- /dev/null
++++ b/docs/stage_panel_serial_images_v1.0.22_build.log
+@@ -0,0 +1,850 @@
++scons: Reading SConscript files ...
++Newlib version:3.2.0
++scons: done reading SConscript files.
++scons: Building targets ...
++
++scons: warning: you do not seem to have the pywin32 extensions installed;
++	parallel (-j) builds may not work reliably with open Python files.
++File "<string>", line 1, in <module>
++scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
++  CC application\rt-thread\d133_hmi\system\display_profile_manager.c
++  CC application\rt-thread\d133_hmi\ui\image_preview.c
++  CC application\rt-thread\d133_hmi\ui\ui_manager.c
++  CC bsp\artinchip\drv\display\drv_de_core.c
++  CC bsp\artinchip\drv\display\drv_de_ui_layer.c
++  CC bsp\artinchip\drv\display\drv_de_vi_layer.c
++  CC bsp\artinchip\drv\display\drv_fb.c
++  CC bsp\artinchip\drv\display\drv_fb_helper.c
++  CC bsp\artinchip\drv\display\drv_lvds.c
++  CC bsp\artinchip\drv\display\panel\panel_com.c
++  CC bsp\artinchip\drv\display\panel\panel_simple.c
++  CC bsp\artinchip\drv\dma\drv_dma.c
++  CC bsp\artinchip\drv\efuse\drv_efuse.c
++  CC bsp\artinchip\drv\efuse\efuse_cmds.c
++  CC bsp\artinchip\drv\ge\aic_drv_ge.c
++  CC bsp\artinchip\drv\gpio\aic_drv_gpio.c
++bsp/artinchip/drv/efuse/efuse_cmds.c:163:13: warning: 'cmd_efuse_authenticate' defined but not used [-Wunused-function]
++  163 | static void cmd_efuse_authenticate(int argc, char **argv)
++      |             ^~~~~~~~~~~~~~~~~~~~~~
++bsp/artinchip/drv/efuse/efuse_cmds.c:49:13: warning: 'cmd_efuse_dump' defined but not used [-Wunused-function]
++   49 | static void cmd_efuse_dump(int argc, char **argv)
++      |             ^~~~~~~~~~~~~~
++bsp/artinchip/drv/efuse/efuse_cmds.c:28:13: warning: 'cmd_efuse_read' defined but not used [-Wunused-function]
++   28 | static void cmd_efuse_read(int argc, char **argv)
++      |             ^~~~~~~~~~~~~~
++bsp/artinchip/drv/efuse/efuse_cmds.c:13:13: warning: 'cmd_efuse_help' defined but not used [-Wunused-function]
++   13 | static void cmd_efuse_help(void)
++      |             ^~~~~~~~~~~~~~
++  CC bsp\artinchip\drv\i2c\drv_i2c.c
++  CC bsp\artinchip\drv\i2c\drv_soft_i2c.c
++  CC bsp\artinchip\drv\mac\drv_mac.c
++  CC bsp\artinchip\drv\mtop\drv_mtop.c
++  CC bsp\artinchip\drv\psadc\drv_psadc.c
++  CC bsp\artinchip\drv\pwm\drv_pwm.c
++  CC bsp\artinchip\drv\qspi\drv_qspi.c
++  CC bsp\artinchip\drv\rtc\drv_rtc.c
++  CC bsp\artinchip\drv\sdmc\drv_sdcard.c
++  CC bsp\artinchip\drv\sdmc\drv_sdmc.c
++  CC bsp\artinchip\drv\spi\drv_spi.c
++  CC bsp\artinchip\drv\spinor\spinor_fal.c
++  CC bsp\artinchip\drv\spinor\spinor_sfud.c
++  CC bsp\artinchip\drv\syscfg\drv_syscfg.c
++  CC bsp\artinchip\drv\uart\aic_drv_uart.c
++  CC bsp\artinchip\drv\ve\aic_drv_ve.c
++  CC bsp\artinchip\drv\wdt\drv_wdt.c
++  CC bsp\artinchip\drv\wri\drv_wri.c
++  CC bsp\artinchip\hal\audio\hal_audio.c
++  CC bsp\artinchip\hal\cmu\aic_hal_clk.c
++  CC bsp\artinchip\hal\cmu\aic_hal_fixed_rate_clk.c
++  CC bsp\artinchip\hal\cmu\aic_hal_pll_clk.c
++  CC bsp\artinchip\hal\cmu\v1\aic_hal_cpu_clk.c
++  CC bsp\artinchip\hal\cmu\v1\aic_hal_disp_clk.c
++  CC bsp\artinchip\hal\cmu\v1\aic_hal_fixed_parent_clk.c
++  CC bsp\artinchip\hal\cmu\v1\aic_hal_multi_parent_clk.c
++  CC bsp\artinchip\hal\cmu\v1\aic_hal_reset.c
++  CC bsp\artinchip\hal\display\aic_hal_de.c
++  CC bsp\artinchip\hal\dma\hal_dma_def_v1x.c
++  CC bsp\artinchip\hal\efuse\hal_efuse.c
++  CC bsp\artinchip\hal\ge\hal_ge_hw.c
++  CC bsp\artinchip\hal\ge\hal_ge_normal.c
++  CC bsp\artinchip\hal\gpio\aic_hal_gpio.c
++  CC bsp\artinchip\hal\i2c\hal_i2c.c
++  CC bsp\artinchip\hal\mac\aicmac_macaddr.c
++  CC bsp\artinchip\hal\mac\aic_mac.c
++  CC bsp\artinchip\hal\mac\aic_mac_ll.c
++  CC bsp\artinchip\hal\mac\aic_phy.c
++  CC bsp\artinchip\hal\mtop\aic_hal_mtop.c
++  CC bsp\artinchip\hal\psadc\hal_psadc.c
++  CC bsp\artinchip\hal\pwm\hal_pwm.c
++  CC bsp\artinchip\hal\qspi\hal_qspi_slave.c
++  CC bsp\artinchip\hal\qspi\hal_qspi_v1x.c
++  CC bsp\artinchip\hal\qspi\qspi_internal.c
++  CC bsp\artinchip\hal\rtc\hal_rtc.c
++  CC bsp\artinchip\hal\sdmc\bouncebuf.c
++  CC bsp\artinchip\hal\sdmc\hal_sdmc.c
++  CC bsp\artinchip\hal\syscfg\hal_syscfg_v1x.c
++  CC bsp\artinchip\hal\uart\aic_hal_uart.c
++  CC bsp\artinchip\hal\ve\aic_hal_ve.c
++  CC bsp\artinchip\hal\wdt\hal_wdt.c
++  CC bsp\artinchip\hal\wri\hal_wri.c
++  CC bsp\artinchip\hal\wri\hal_wri_v10-12.c
++  CC bsp\artinchip\hal\xspi\hal_xspi.c
++  CC bsp\artinchip\sys\d13x\aic_drv_irq.c
++  CC bsp\artinchip\sys\d13x\aic_hal_clk.c
++  CC bsp\artinchip\sys\d13x\aic_hal_reset.c
++  CC bsp\artinchip\sys\d13x\boot_param.c
++  AS bsp\artinchip\sys\d13x\boot_param_gcc.S
++  CC bsp\artinchip\sys\d13x\boot_res_nand.c
++  CC bsp\artinchip\sys\d13x\isr.c
++  CC bsp\artinchip\sys\d13x\ram_param.c
++  AS bsp\artinchip\sys\d13x\startup_gcc.S
++  CC bsp\artinchip\sys\d13x\system.c
++  CC bsp\artinchip\sys\d13x\sys_freq.c
++  CC bsp\artinchip\sys\d13x\time.c
++  CC bsp\artinchip\sys\d13x\trap_c.c
++  AS bsp\artinchip\sys\d13x\vectors.S
++  CC bsp\common\crc32\crc32.c
++  CC bsp\common\image\image.c
++  CC bsp\common\partition\disk_part.c
++  CC bsp\common\partition\partition.c
++  CC bsp\common\private_param\private_param.c
++  CC bsp\common\utils\hexdump.c
++  CC bsp\common\utils\pinmux_utils.c
++  CC bsp\common\utils\show_speed.c
++  CC bsp\peripheral\spinor_sfud\src\sfud.c
++  CC bsp\peripheral\spinor_sfud\src\sfud_private.c
++  CC bsp\peripheral\spinor_sfud\src\sfud_qe.c
++  CC bsp\peripheral\spinor_sfud\src\sfud_sfdp.c
++  CC bsp\peripheral\touch\common\touch_common.c
++  CC bsp\peripheral\touch\gt911\src\gt911.c
++  CC kernel\rt-thread\src\clock.c
++  CC kernel\rt-thread\src\components.c
++  CC kernel\rt-thread\src\device.c
++  CC kernel\rt-thread\src\idle.c
++  CC kernel\rt-thread\src\ipc.c
++  CC kernel\rt-thread\src\irq.c
++  CC kernel\rt-thread\src\kservice.c
++  CC kernel\rt-thread\src\memheap.c
++  CC kernel\rt-thread\src\mempool.c
++  CC kernel\rt-thread\src\object.c
++  CC kernel\rt-thread\src\scheduler.c
++  CC kernel\rt-thread\src\thread.c
++  CC kernel\rt-thread\src\timer.c
++  AS kernel\rt-thread\libcpu\risc-v\artinchip\e9xx\context_gcc.S
++  CC kernel\rt-thread\libcpu\risc-v\artinchip\e9xx\cpuport.c
++  CC kernel\rt-thread\components\dfs\src\dfs.c
++  CC kernel\rt-thread\components\dfs\src\dfs_file.c
++  CC kernel\rt-thread\components\dfs\src\dfs_fs.c
++  CC kernel\rt-thread\components\dfs\src\dfs_posix.c
++  CC kernel\rt-thread\components\dfs\filesystems\elmfat\dfs_elm.c
++  CC kernel\rt-thread\components\dfs\filesystems\elmfat\dirents_cache.c
++  CC kernel\rt-thread\components\dfs\filesystems\elmfat\ff.c
++  CC kernel\rt-thread\components\dfs\filesystems\elmfat\ffunicode.c
++  CC kernel\rt-thread\components\dfs\filesystems\romfs\dfs_romfs.c
++  CC kernel\rt-thread\components\dfs\filesystems\romfs\romfs.c
++  CC kernel\rt-thread\components\fal\src\fal.c
++  CC kernel\rt-thread\components\fal\src\fal_aic_partition.c
++  CC kernel\rt-thread\components\fal\src\fal_flash.c
++  CC kernel\rt-thread\components\fal\src\fal_partition.c
++  CC kernel\rt-thread\components\fal\src\fal_rtt.c
++  CC kernel\rt-thread\components\libc\compilers\common\cstdio.c
++  CC kernel\rt-thread\components\libc\compilers\common\cstdlib.c
++  CC kernel\rt-thread\components\libc\compilers\common\cstring.c
++  CC kernel\rt-thread\components\libc\compilers\common\ctime.c
++  CC kernel\rt-thread\components\libc\compilers\newlib\syscalls.c
++  CC kernel\rt-thread\components\libc\posix\delay\delay.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_attr.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_barrier.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_cond.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_mutex.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_rwlock.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_spin.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\pthread_tls.c
++  CC kernel\rt-thread\components\libc\posix\pthreads\sched.c
++  CC kernel\rt-thread\components\net\netdev\src\netdev.c
++  CC kernel\rt-thread\components\net\netdev\src\netdev_ipaddr.c
++  CC kernel\rt-thread\components\utilities\ulog\ulog.c
++  CC kernel\rt-thread\components\utilities\ulog\backend\console_be.c
++  CC kernel\common\cmd\aic_axicfg_cmd.c
++  CC kernel\common\cmd\aic_cmd_base.c
++  CC kernel\common\cmd\aic_debug_cmd.c
++  CC kernel\common\cmd\aic_getopt.c
++  CC kernel\common\cmd\aic_memtest_cmd.c
++  CC kernel\common\cmd\aic_reboot_cmd.c
++  CC packages\artinchip\env\absystem_os.c
++  CC packages\artinchip\env\env.c
++  CC packages\artinchip\lvgl-ui\aic_drivers\lv_tpc_rtp.c
++  CC packages\artinchip\lvgl-ui\aic_drivers\lv_tpc_run.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_camera\v9\lv_aic_camera.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_canvas\canvas_image.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\lv_aic_player.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\player_backend\aic_backend_ops.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\player_backend\backend_common.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\player_backend\player_backend_map.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\player_backend\player_backend_ops.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_player\player_backend\png_backend_ops.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\aic_video_window\lv_aic_video_window.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\img_roller\lv_img_roller.c
++  CC packages\artinchip\lvgl-ui\aic_widgets\swipe_v1\lv_swipe_v1.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\aic_lv_ft_cache\aic_lv_ft_cache.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_buf_ge2d.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_ge2d.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_ge2d_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_ge2d_img.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_ge2d_img_scale.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_ge2d\lv_draw_ge2d_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_bmp.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_img_dsc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_stream.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_mpp_dec.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_disp.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_encoder.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_indev.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_mouse.c
++  CC packages\artinchip\lvgl-ui\aic_ui.c
++  CC packages\artinchip\lvgl-ui\lv_demo.c
++  CC packages\artinchip\of\of.c
++  CC packages\artinchip\ota\burn.c
++  CC packages\artinchip\ota\flash.c
++  CC packages\artinchip\ota\ota.c
++  CC packages\artinchip\ota\test_ota.c
++  CC packages\third-party\cpu_usage\cpu_usage.c
++  CC packages\third-party\cpu_usage\cpu_usage_cmd.c
++  CC packages\third-party\littlefs\dfs_lfs.c
++  CC packages\third-party\littlefs\lfs.c
++  CC packages\third-party\littlefs\lfs_crc.c
++  CC packages\third-party\littlefs\lfs_util.c
++  CC kernel\common\osal\aic_osal.c
++  CC target\d13x\d133cbv-hmi-nor\board.c
++  CC target\d13x\d133cbv-hmi-nor\pinmux.c
++  CC target\d13x\d133cbv-hmi-nor\quiet_console.c
++  CC target\d13x\d133cbv-hmi-nor\sys_clk.c
++  CC kernel\rt-thread\components\drivers\audio\audio.c
++  CC kernel\rt-thread\components\drivers\audio\audio_pipe.c
++  CC kernel\rt-thread\components\drivers\i2c\i2c-bit-ops.c
++  CC kernel\rt-thread\components\drivers\i2c\i2c_core.c
++  CC kernel\rt-thread\components\drivers\i2c\i2c_dev.c
++  CC kernel\rt-thread\components\drivers\ipc\completion.c
++  CC kernel\rt-thread\components\drivers\ipc\dataqueue.c
++  CC kernel\rt-thread\components\drivers\ipc\pipe.c
++  CC kernel\rt-thread\components\drivers\ipc\ringblk_buf.c
++  CC kernel\rt-thread\components\drivers\ipc\ringbuffer.c
++  CC kernel\rt-thread\components\drivers\ipc\waitqueue.c
++  CC kernel\rt-thread\components\drivers\ipc\workqueue.c
++  CC kernel\rt-thread\components\drivers\misc\adc.c
++  CC kernel\rt-thread\components\drivers\misc\pin.c
++  CC kernel\rt-thread\components\drivers\misc\rt_drv_pwm.c
++  CC kernel\rt-thread\components\drivers\mtd\mtd_nor.c
++  CC kernel\rt-thread\components\drivers\pm\lptimer.c
++  CC kernel\rt-thread\components\drivers\pm\pm.c
++  CC kernel\rt-thread\components\drivers\rtc\alarm.c
++  CC kernel\rt-thread\components\drivers\rtc\rtc.c
++  CC kernel\rt-thread\components\drivers\sdio\block_dev.c
++  CC kernel\rt-thread\components\drivers\sdio\mmc.c
++  CC kernel\rt-thread\components\drivers\sdio\mmcsd_core.c
++  CC kernel\rt-thread\components\drivers\sdio\sd.c
++  CC kernel\rt-thread\components\drivers\sdio\sdio.c
++  CC kernel\rt-thread\components\drivers\sdio\sdio_mgr.c
++  CC kernel\rt-thread\components\drivers\serial\serial.c
++  CC kernel\rt-thread\components\drivers\spi\qspi_core.c
++  CC kernel\rt-thread\components\drivers\spi\spi_core.c
++  CC kernel\rt-thread\components\drivers\spi\spi_dev.c
++  CC kernel\rt-thread\components\drivers\spi\spi_flash_sfud.c
++  CC kernel\rt-thread\components\drivers\touch\touch.c
++  CC kernel\rt-thread\components\drivers\watchdog\watchdog.c
++  CC packages\third-party\freetype\src\truetype\ttpload.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\env_support\rt-thread\lv_rt_thread_port.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_group.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_class.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_draw.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_event.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_id_builtin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_pos.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_property.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_scroll.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_style.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_style_gen.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_obj_tree.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\core\lv_refr.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\display\lv_display.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_buf.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_image.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_label.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_mask.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_rect.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_triangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_draw_vector.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\lv_image_decoder.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_draw_buf_pxp.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_draw_pxp.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_draw_pxp_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_draw_pxp_img.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_draw_pxp_layer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_pxp_cfg.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_pxp_osa.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\pxp\lv_pxp_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_buf_vglite.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_border.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_img.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_label.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_layer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_draw_vglite_triangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_vglite_buf.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_vglite_matrix.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_vglite_path.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\nxp\vglite\lv_vglite_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_border.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_image.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_label.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_mask_rectangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_triangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\renesas\dave2d\lv_draw_dave2d_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sdl\lv_draw_sdl.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\blend\lv_draw_sw_blend.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\blend\lv_draw_sw_blend_to_argb8888.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\blend\lv_draw_sw_blend_to_rgb565.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\blend\lv_draw_sw_blend_to_rgb888.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_border.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_box_shadow.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_gradient.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_img.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_letter.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_mask.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_mask_rect.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_transform.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_triangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\sw\lv_draw_sw_vector.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_buf_vg_lite.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_border.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_box_shadow.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_fill.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_img.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_label.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_layer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_mask_rect.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_triangle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_draw_vg_lite_vector.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_decoder.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_grad.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_math.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_path.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_pending.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\draw\vg_lite\lv_vg_lite_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\drm\lv_linux_drm.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\fb\lv_linux_fbdev.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\ili9341\lv_ili9341.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\lcd\lv_lcd_generic_mipi.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\st7735\lv_st7735.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\st7789\lv_st7789.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\st7796\lv_st7796.c
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\display\tft_espi\lv_tft_espi.cpp
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\evdev\lv_evdev.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\libinput\lv_libinput.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\libinput\lv_xkb.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_cache.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_entry.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_fbdev.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_image_cache.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_lcd.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_libuv.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_profiler.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\nuttx\lv_nuttx_touchscreen.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\sdl\lv_sdl_keyboard.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\sdl\lv_sdl_mouse.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\sdl\lv_sdl_mousewheel.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\sdl\lv_sdl_window.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\windows\lv_windows_context.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\windows\lv_windows_display.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\windows\lv_windows_input.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\x11\lv_x11_display.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\drivers\x11\lv_x11_input.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_binfont_loader.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_dejavu_16_persian_hebrew.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_fmt_txt.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_10.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_12.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_14.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_16.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_18.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_20.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_22.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_24.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_26.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_28.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_28_compressed.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_30.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_32.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_34.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_36.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_38.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_40.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_42.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_44.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_46.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_48.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_montserrat_8.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_simsun_16_cjk.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_unscii_16.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\font\lv_font_unscii_8.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\indev\lv_indev.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\indev\lv_indev_scroll.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\layouts\flex\lv_flex.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\layouts\grid\lv_grid.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\layouts\lv_layout.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\barcode\code128.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\barcode\lv_barcode.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\bin_decoder\lv_bin_decoder.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\bmp\lv_bmp.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\ffmpeg\lv_ffmpeg.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\freetype\lv_freetype.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\freetype\lv_freetype_glyph.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\freetype\lv_freetype_image.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\freetype\lv_freetype_outline.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\freetype\lv_ftsystem.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_fatfs.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_littlefs.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_memfs.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_posix.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_stdio.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\fsdrv\lv_fs_win32.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\gif\gifdec.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\gif\lv_gif.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\libjpeg_turbo\lv_libjpeg_turbo.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\libpng\lv_libpng.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\lodepng\lodepng.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\lodepng\lv_lodepng.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\lz4\lz4.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\qrcode\lv_qrcode.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\qrcode\qrcodegen.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\rle\lv_rle.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\rlottie\lv_rlottie.c
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgAnimation.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgBezier.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgCanvas.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgCapi.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgCompressor.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgFill.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgInitializer.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgLoader.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgMath.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgPaint.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgPicture.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgRawLoader.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgRender.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSaver.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgScene.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgShape.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgStr.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSvgCssStyle.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSvgLoader.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSvgPath.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSvgSceneBuilder.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSvgUtil.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwCanvas.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwFill.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwImage.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwMath.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwMemPool.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwRaster.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwRenderer.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwRle.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwShape.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgSwStroke.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgTaskScheduler.cpp
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\thorvg\tvgXmlParser.cpp
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\tiny_ttf\lv_tiny_ttf.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\tjpgd\lv_tjpgd.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\libs\tjpgd\tjpgd.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\lv_init.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\cache\_lv_cache_lru_rb.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\cache\lv_cache.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\cache\lv_cache_entry.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\cache\lv_image_cache.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_anim.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_anim_timeline.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_area.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_array.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_async.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_bidi.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_color.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_color_op.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_event.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_fs.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_ll.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_log.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_lru.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_math.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_palette.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_profiler_builtin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_rb.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_style.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_style_gen.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_text.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_text_ap.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_timer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\misc\lv_utils.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_cmsis_rtos2.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_freertos.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_os_none.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_pthread.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_rtthread.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\osal\lv_windows.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\file_explorer\lv_file_explorer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\fragment\lv_fragment.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\fragment\lv_fragment_manager.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\gridnav\lv_gridnav.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\ime\lv_ime_pinyin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\imgfont\lv_imgfont.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\monkey\lv_monkey.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\observer\lv_observer.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\snapshot\lv_snapshot.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\sysmon\lv_sysmon.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\vg_lite_tvg\vg_lite_matrix.c
++  CXX packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\others\vg_lite_tvg\vg_lite_tvg.cpp
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\builtin\lv_mem_core_builtin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\builtin\lv_sprintf_builtin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\builtin\lv_string_builtin.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\builtin\lv_tlsf.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\clib\lv_mem_core_clib.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\clib\lv_sprintf_clib.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\clib\lv_string_clib.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\lv_mem.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\micropython\lv_mem_core_micropython.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\rtthread\lv_mem_core_rtthread.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\rtthread\lv_sprintf_rtthread.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\stdlib\rtthread\lv_string_rtthread.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\themes\default\lv_theme_default.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\themes\lv_theme.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\themes\mono\lv_theme_mono.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\themes\simple\lv_theme_simple.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\tick\lv_tick.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\animimage\lv_animimage.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\arc\lv_arc.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\bar\lv_bar.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\button\lv_button.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\buttonmatrix\lv_buttonmatrix.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\calendar\lv_calendar.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\calendar\lv_calendar_header_arrow.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\calendar\lv_calendar_header_dropdown.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\canvas\lv_canvas.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\chart\lv_chart.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\checkbox\lv_checkbox.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\dropdown\lv_dropdown.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\image\lv_image.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\imagebutton\lv_imagebutton.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\keyboard\lv_keyboard.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\label\lv_label.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\led\lv_led.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\line\lv_line.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\list\lv_list.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\menu\lv_menu.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\msgbox\lv_msgbox.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\roller\lv_roller.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\scale\lv_scale.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\slider\lv_slider.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\span\lv_span.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\spinbox\lv_spinbox.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\spinner\lv_spinner.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\switch\lv_switch.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\table\lv_table.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\tabview\lv_tabview.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\textarea\lv_textarea.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\tileview\lv_tileview.c
++  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\src\widgets\win\lv_win.c
++  CC kernel\rt-thread\components\net\lwip-dhcpd\dhcp_server_raw.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\api_lib.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\api_msg.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\err.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\if_api.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\netbuf.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\netdb.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\netifapi.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\sockets.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\api\tcpip.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\apps\ping\ping.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\altcp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\altcp_alloc.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\altcp_tcp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\def.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\dns.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\inet_chksum.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\init.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ip.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\autoip.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\dhcp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\etharp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\icmp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\igmp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\ip4.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\ip4_addr.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\ipv4\ip4_frag.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\mem.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\memp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\netif.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\pbuf.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\raw.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\stats.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\sys.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\tcp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\tcp_in.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\tcp_out.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\timeouts.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\core\udp.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\netif\ethernet.c
++  CC kernel\rt-thread\components\net\lwip\lwip-2.1.2\src\netif\lowpan6.c
++  CC kernel\rt-thread\components\net\lwip\port\ethernetif.c
++  CC kernel\rt-thread\components\net\lwip\port\sys_arch.c
++  CC packages\third-party\mbedtls\mbedtls\library\aes.c
++  CC packages\third-party\mbedtls\mbedtls\library\aesni.c
++  CC packages\third-party\mbedtls\mbedtls\library\arc4.c
++  CC packages\third-party\mbedtls\mbedtls\library\aria.c
++  CC packages\third-party\mbedtls\mbedtls\library\asn1parse.c
++  CC packages\third-party\mbedtls\mbedtls\library\asn1write.c
++  CC packages\third-party\mbedtls\mbedtls\library\base64.c
++  CC packages\third-party\mbedtls\mbedtls\library\bignum.c
++  CC packages\third-party\mbedtls\mbedtls\library\blowfish.c
++  CC packages\third-party\mbedtls\mbedtls\library\camellia.c
++  CC packages\third-party\mbedtls\mbedtls\library\ccm.c
++  CC packages\third-party\mbedtls\mbedtls\library\certs.c
++  CC packages\third-party\mbedtls\mbedtls\library\chacha20.c
++  CC packages\third-party\mbedtls\mbedtls\library\chachapoly.c
++  CC packages\third-party\mbedtls\mbedtls\library\cipher.c
++  CC packages\third-party\mbedtls\mbedtls\library\cipher_wrap.c
++  CC packages\third-party\mbedtls\mbedtls\library\cmac.c
++  CC packages\third-party\mbedtls\mbedtls\library\constant_time.c
++  CC packages\third-party\mbedtls\mbedtls\library\ctr_drbg.c
++  CC packages\third-party\mbedtls\mbedtls\library\debug.c
++  CC packages\third-party\mbedtls\mbedtls\library\des.c
++  CC packages\third-party\mbedtls\mbedtls\library\dhm.c
++  CC packages\third-party\mbedtls\mbedtls\library\ecdh.c
++  CC packages\third-party\mbedtls\mbedtls\library\ecdsa.c
++  CC packages\third-party\mbedtls\mbedtls\library\ecjpake.c
++  CC packages\third-party\mbedtls\mbedtls\library\ecp.c
++  CC packages\third-party\mbedtls\mbedtls\library\ecp_curves.c
++  CC packages\third-party\mbedtls\mbedtls\library\entropy.c
++  CC packages\third-party\mbedtls\mbedtls\library\entropy_poll.c
++  CC packages\third-party\mbedtls\mbedtls\library\error.c
++  CC packages\third-party\mbedtls\mbedtls\library\gcm.c
++  CC packages\third-party\mbedtls\mbedtls\library\havege.c
++  CC packages\third-party\mbedtls\mbedtls\library\hkdf.c
++  CC packages\third-party\mbedtls\mbedtls\library\hmac_drbg.c
++  CC packages\third-party\mbedtls\mbedtls\library\md.c
++  CC packages\third-party\mbedtls\mbedtls\library\md2.c
++  CC packages\third-party\mbedtls\mbedtls\library\md4.c
++  CC packages\third-party\mbedtls\mbedtls\library\md5.c
++  CC packages\third-party\mbedtls\mbedtls\library\memory_buffer_alloc.c
++  CC packages\third-party\mbedtls\mbedtls\library\mps_reader.c
++  CC packages\third-party\mbedtls\mbedtls\library\mps_trace.c
++  CC packages\third-party\mbedtls\mbedtls\library\nist_kw.c
++  CC packages\third-party\mbedtls\mbedtls\library\oid.c
++  CC packages\third-party\mbedtls\mbedtls\library\padlock.c
++  CC packages\third-party\mbedtls\mbedtls\library\pem.c
++  CC packages\third-party\mbedtls\mbedtls\library\pk.c
++  CC packages\third-party\mbedtls\mbedtls\library\pk_wrap.c
++  CC packages\third-party\mbedtls\mbedtls\library\pkcs11.c
++  CC packages\third-party\mbedtls\mbedtls\library\pkcs12.c
++  CC packages\third-party\mbedtls\mbedtls\library\pkcs5.c
++  CC packages\third-party\mbedtls\mbedtls\library\pkparse.c
++  CC packages\third-party\mbedtls\mbedtls\library\pkwrite.c
++  CC packages\third-party\mbedtls\mbedtls\library\platform.c
++  CC packages\third-party\mbedtls\mbedtls\library\platform_util.c
++  CC packages\third-party\mbedtls\mbedtls\library\poly1305.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_aead.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_cipher.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_client.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_driver_wrappers.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_ecp.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_hash.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_mac.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_rsa.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_se.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_slot_management.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_crypto_storage.c
++  CC packages\third-party\mbedtls\mbedtls\library\psa_its_file.c
++  CC packages\third-party\mbedtls\mbedtls\library\ripemd160.c
++  CC packages\third-party\mbedtls\mbedtls\library\rsa.c
++  CC packages\third-party\mbedtls\mbedtls\library\rsa_internal.c
++  CC packages\third-party\mbedtls\mbedtls\library\sha1.c
++  CC packages\third-party\mbedtls\mbedtls\library\sha256.c
++  CC packages\third-party\mbedtls\mbedtls\library\sha512.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_cache.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_ciphersuites.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_cli.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_cookie.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_msg.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_srv.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_ticket.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_tls.c
++  CC packages\third-party\mbedtls\mbedtls\library\ssl_tls13_keys.c
++  CC packages\third-party\mbedtls\mbedtls\library\threading.c
++  CC packages\third-party\mbedtls\mbedtls\library\timing.c
++  CC packages\third-party\mbedtls\mbedtls\library\version.c
++  CC packages\third-party\mbedtls\mbedtls\library\version_features.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509_create.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509_crl.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509_crt.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509_csr.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509write_crt.c
++  CC packages\third-party\mbedtls\mbedtls\library\x509write_csr.c
++  CC packages\third-party\mbedtls\mbedtls\library\xtea.c
++  CC packages\third-party\mbedtls\ports\src\aes_alt.c
++  CC packages\third-party\mbedtls\ports\src\arc4_alt.c
++  CC packages\third-party\mbedtls\ports\src\des_alt.c
++  CC packages\third-party\mbedtls\ports\src\md5_alt.c
++  CC packages\third-party\mbedtls\ports\src\rsa_alt.c
++  CC packages\third-party\mbedtls\ports\src\sha1_alt.c
++  CC packages\third-party\mbedtls\ports\src\sha256_alt.c
++  CC packages\third-party\mbedtls\ports\src\sha512_alt.c
++  CC packages\third-party\mbedtls\ports\src\timing_alt.c
++  CC packages\third-party\mbedtls\ports\src\tls_certificate.c
++  CC packages\third-party\mbedtls\ports\src\tls_client.c
++  CC packages\third-party\mbedtls\ports\src\tls_hardware.c
++  CC packages\third-party\mbedtls\ports\src\tls_net.c
++  CC packages\artinchip\mpp\base\memory\mpp_mem.c
++  CC packages\artinchip\mpp\base\ringbuf\mpp_ringbuf.c
++  CC packages\artinchip\mpp\base\thread\mpp_thread.c
++  CC packages\artinchip\mpp\fb\mpp_fb.c
++  CC packages\artinchip\mpp\ge\cmdq_ops.c
++  CC packages\artinchip\mpp\ge\mpp_ge.c
++  CC packages\artinchip\mpp\ge\normal_ops.c
++  CC packages\artinchip\mpp\middle_media\audio_decoder\decoder\aic_audio_decoder.c
++  CC packages\artinchip\mpp\middle_media\audio_decoder\decoder\audio_frame_manager.c
++  CC packages\artinchip\mpp\middle_media\audio_decoder\decoder\audio_packet_manager.c
++  CC packages\artinchip\mpp\middle_media\audio_decoder\decoder\mp3\mp3_decoder.c
++  CC packages\artinchip\mpp\middle_media\base\comm\aic_riff.c
++  CC packages\artinchip\mpp\middle_media\base\comm\aic_tag.c
++  CC packages\artinchip\mpp\middle_media\base\message\aic_message.c
++  CC packages\artinchip\mpp\middle_media\base\mix\aic_mix.c
++  CC packages\artinchip\mpp\middle_media\base\parser\aic_parser.c
++  CC packages\artinchip\mpp\middle_media\base\parser\mov\aic_mov_parser.c
++  CC packages\artinchip\mpp\middle_media\base\parser\mov\mov.c
++  CC packages\artinchip\mpp\middle_media\base\parser\mov\mov_tags.c
++  CC packages\artinchip\mpp\middle_media\base\parser\mp3\aic_mp3_parser.c
++  CC packages\artinchip\mpp\middle_media\base\parser\mp3\mp3.c
++  CC packages\artinchip\mpp\middle_media\base\parser\rawdata\aic_raw_parser.c
++  CC packages\artinchip\mpp\middle_media\base\parser\wav\aic_wav_parser.c
++  CC packages\artinchip\mpp\middle_media\base\parser\wav\wav.c
++  CC packages\artinchip\mpp\middle_media\base\render\aic_audio_render_device.c
++  CC packages\artinchip\mpp\middle_media\base\render\aic_audio_render_manager.c
++  CC packages\artinchip\mpp\middle_media\base\render\aic_video_render.c
++  CC packages\artinchip\mpp\middle_media\base\stream\aic_stream.c
++  CC packages\artinchip\mpp\middle_media\base\stream\file\aic_file_stream.c
++  CC packages\artinchip\mpp\middle_media\component\mm_core.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_adec_component.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_audio_render_component.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_clock_component.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_demuxer_component.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_vdec_component.c
++  CC packages\artinchip\mpp\middle_media\component\src\mm_video_render_component.c
++  CC packages\artinchip\mpp\middle_media\mini_audio_player\mini_audio_player.c
++  CC packages\artinchip\mpp\middle_media\mini_audio_player\mini_audio_player_demo.c
++  CC packages\artinchip\mpp\middle_media\player\aic_player.c
++  CC packages\artinchip\mpp\middle_media\player\player_demo.c
++  CC packages\artinchip\mpp\middle_media\player\test\player_video_test.c
++packages/artinchip/mpp/middle_media/mini_audio_player/mini_audio_player_demo.c:276:13: warning: 'audio_player_demo' defined but not used [-Wunused-function]
++  276 | static void audio_player_demo(int argc, char **argv)
++      |             ^~~~~~~~~~~~~~~~~
++  CC packages\artinchip\mpp\ve\common\ve.c
++  CC packages\artinchip\mpp\ve\common\ve_buffer.c
++  CC packages\artinchip\mpp\ve\decoder\frame_manager.c
++  CC packages\artinchip\mpp\ve\decoder\jpeg\jpeg_hal.c
++packages/artinchip/mpp/middle_media/player/player_demo.c:747:12: warning: 'player_cmd' defined but not used [-Wunused-function]
++  747 | static int player_cmd(int argc, char**argv)
++      |            ^~~~~~~~~~
++packages/artinchip/mpp/middle_media/player/player_demo.c:709:12: warning: 'player_demo' defined but not used [-Wunused-function]
++  709 | static int player_demo(int argc, char **argv)
++      |            ^~~~~~~~~~~
++  CC packages\artinchip\mpp\ve\decoder\jpeg\mjpeg_decoder.c
++  CC packages\artinchip\mpp\ve\decoder\mpp_decoder.c
++  CC packages\artinchip\mpp\ve\decoder\packet_manager.c
++  CC packages\artinchip\mpp\ve\decoder\png\png_decoder.c
++  CC packages\artinchip\mpp\ve\decoder\png\png_hal.c
++  CC packages\artinchip\mpp\ve\decoder\zlib\zlib_uncompress.c
++  CC packages\artinchip\mpp\ve\encoder\jpeg\jpeg_enc.c
++  CC packages\artinchip\mpp\ve\encoder\jpeg\jpeg_enc_hal.c
++  CC packages\artinchip\mpp\ve\encoder\mpp_encoder.c
++LINK output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++-rw-r--r-- 1 11673228 Nov  2 15:53 output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++
++riscv64-unknown-elf-objcopy -O binary output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.bin
++riscv64-unknown-elf-size output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
++   text	   data	    bss	    dec	    hex	filename
++1077444	  12884	 475240	1565568	 17e380	output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --clean rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --src D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\application\rt-thread\d133_hmi\assets/ --dst rodata/hmi
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/linked_size.py -m D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.map
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makefatfs.py --fullpart --volab default --cluster 8 --sector 512 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir rodata --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/rodata.fatfs --reserved 50
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makelittlefs.py --pagesize 256 --blocksize 4096 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir data/ --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs --reserved 50
++Info: inputdir data/ is not exist, use a empty one.
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty
++D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/tools/scripts/mklittlefs.exe -c D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty -b 4096 -p 256 -s 1048576 D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs
++Backup raw image: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs.raw
++Trim trailing 0xFF: 1048576 -> 8192
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_private_resource.py -v -l D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.json,D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/partition.json -o D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin
++Generated D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin: 1992 bytes
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/elf_parse.py output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ riscv64-unknown-elf-
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_image.py -v -c D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/image_cfg.json -d D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/usbupg-psram-init.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_ext.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/loader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/bootloader.aic ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_os.itb ...
++	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/env.bin ...
++	Image header is generated.
++	Meta data for image components:
++		Meta for image.updater.psram       offset in file 0x1a00     size in file 0x5b10 (23312)
++		Meta for image.updater.spl         offset in file 0x7a00     size in file 0x4b610 (308752)
++		Meta for image.info                offset in file 0x0        size in file 0x800 (2048)
++		Meta for image.target.spl          offset in file 0x53200    size in file 0x4b610 (308752)
++		Meta for image.target.env          offset in file 0x9ea00    size in file 0x1000 (4096)
++		Meta for image.target.env_r        offset in file 0x9fa00    size in file 0x1000 (4096)
++		Meta for image.target.os           offset in file 0xa0a00    size in file 0x10b000 (1093632)
++		Meta for image.target.rodata       offset in file 0x1aba00   size in file 0x263000 (2502656)
++		Meta for image.target.data         offset in file 0x40ea00   size in file 0x2000 (8192)
++	Packing file data:
++		usbupg-psram-init.aic
++		bootloader.aic
++		bootloader.aic
++		env.bin
++		env.bin
++		d13x_os.itb
++		rodata.fatfs
++		data.lfs
++	Image file is generated: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_d133cbv-hmi-nor_v1.0.22.img
++
++
++make CPIO image begin...
++python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mkcpio.py Windows D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\target/d13x/d133cbv-hmi-nor/pack/ D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
++ota_info.bin
++d13x_os.itb
++rodata.fatfs
++7026 blocks
++Successfully updated size to ota.cpio
++make CPIO image done...
++
++Luban-Lite is built successfully
++
++scons: done building targets.
+diff --git a/docs/启动优化与实测.md b/docs/启动优化与实测.md
+index 440ab13..63a254b 100644
+--- a/docs/启动优化与实测.md
++++ b/docs/启动优化与实测.md
+@@ -34,6 +34,12 @@ SDK 成功构建 v1.0.21 工厂镜像：OS ITB 从 v1.0.20 的 1,392,640 字节
+ 
+ 由于正式版本不再输出 RT-Thread 日志，整机启动时间不再能从该 UART 启动日志直接读取。需要 init 函数细分时，应使用保留串口输出的独立诊断 profile；静默正式版本的启动时长改用 GPIO 脉冲或外部计时。此次没有自动烧录、擦除 Flash 或修改 NOR 时钟。
+ 
++## v1.0.22 图片预览与屏幕串口构建
++
++v1.0.22 保留 `hmi_quiet` RT 控制台、FinSH/MSH 与 ULOG 静默配置，同时重新启用 UART0 驱动用于屏幕代号协议。UART0 收到 `CS000` 会报告当前 1024×600 LVDS/GT911 配置；收到 `CS001` 会返回 `NOT_CONFIGURED`。该协议应答不是 RT-Thread/HMI 日志。串口收发和上电耗时尚未在开发板验证。
++
++图片预览改成原始像素 1:1：小图居中，大图按中心窗口裁切。BMP 解码器只按可视区域逐行读取并分配屏幕大小的 RGB565 输出缓冲；JPG/JPEG 与 PNG 通过 SDK MPP 已有裁剪命令设置源窗口和输出尺寸。JPEG/PNG 压缩输入仍限制为 4 MiB，PNG 像素数保留 SDK 800 万限制；JPEG 上限、MPP 硬件边界、CMA 余量和颜色结果需要板上验证。构建日志为 `stage_panel_serial_images_v1.0.22_build.log`，SDK 报告 `Luban-Lite is built successfully`，生成 4,262,400 字节工厂 IMG；该编译结果不代表实际显示验收。
++
+ ## v1.0.18 软件改动
+ 
+ - 工厂和 OTA profile 关闭显式启用的 CMU、GPIO、DMA、CAN、Audio、GPAI、TSEN、PSADC 测试命令，减少固件内容；没有更改底层驱动时钟。
+@@ -52,12 +58,11 @@ v1.0.19 OtaProfile 启用 SDK RT_DEBUG_INIT_CONFIG：UART 输出每个 board/dev
+ 诊断包使用 OTA 升级后版本为 1.0.19，不能再退回 v1.0.18；之后的正式 OTA 需提高版本号。安装、串口采集和后续修复均由用户手动确认；本工程不会自动烧录或改动 NOR 时钟。
+ ## 板上验收方法
+ 
+-1. 新板首次部署使用 v1.0.21 工厂镜像。该镜像含配套 SPL/Bootloader，烧录由用户手动执行。
+-2. v1.0.21 正式固件静默 RT-Thread UART，需以 GPIO 起停标记或外部计时从电源上升沿测量；连续冷启动至少 10 次，记录最慢值和中位数。需要 init 函数细分时，使用保留串口输出的独立诊断 profile。
+-3. 在 SD 卡上分别打开 16/24/32 位 BMP（包括自底向上和 top-down、行 stride 需补齐的宽度）、JPG/JPEG、PNG；记录 `[image_preview]` 文件头、MPP、归一化和总耗时，核对颜色、铺屏与返回键。
++1. 新板首次部署使用 v1.0.22 工厂镜像。该镜像含配套 SPL/Bootloader，烧录由用户手动执行。
++2. v1.0.22 正式固件静默 RT-Thread 控制台；UART0 只回传屏幕代号协议。用 GPIO 起停标记或外部计时从电源上升沿测量，连续冷启动至少 10 次，记录最慢值和中位数。需要 init 函数细分时，使用保留串口输出的独立诊断 profile。
++3. 在 UART0 发送 `CS000`、`CS001` 和未知代号，分别确认当前配置应答、未配置拒绝和未知代号错误；再在 SD 卡打开 16/24/32 位 BMP、JPG/JPEG、PNG，核对小图居中、大图中心裁剪、颜色、返回键和内存余量。
+ 4. 检查热启动和连续快速打开/关闭图片时的内存占用、取消行为以及 SD 拔卡后的错误处理。
+ 
+-目标板上 v1.0.18 仍需同条件冷启动复测；SD 图片格式/大小、取消行为、A/B 升级和回滚也尚未验收。本轮没有使用 AiBurn、连接开发板或写入 Flash。
++目标板上 v1.0.22 仍需串口、图片和同条件冷启动验收；A/B 升级和回滚也尚未验收。本轮没有使用 AiBurn、连接开发板或写入 Flash。上电进入 BROM 的问题由用户自行修复，本轮没有修改该启动路径。
+ 
+ 构建记录：`stage42_ota_v1.0.18_build.log`、`stage43_factory_v1.0.18_build.log`。代码差异见 `v1.0.18_startup_image_optimization.patch`。
+-
+diff --git a/docs/实施说明.md b/docs/实施说明.md
+index ea74e3a..a6e400f 100644
+--- a/docs/实施说明.md
++++ b/docs/实施说明.md
+@@ -29,19 +29,21 @@
+ 
+ 已定位 v1.0.0 仍显示色块的原因：SDK 的 `AIC_DISP_BOOTUP_LOGO` 默认选择 `AIC_DISP_COLOR_BLOCK`，显示驱动会按 100 像素方块绘制蓝/绿/红/黑/白测试图。当前配套 Bootloader 关闭预启动 Logo；工厂 OS 和 OTA OS 保留 `AIC_DISP_BLACK_SCREEN=y` 并关闭 `AIC_DISP_COLOR_BLOCK`，OS 初始化 LVDS 时清黑屏，官方 LVGL 线程启动后直接创建中文 HMI 首页。同时关闭 `AIC_STARTUP_UI_SHOW` 和 `AIC_LVGL_DEMO`。中文字体由 FreeType 从 `/rodata/hmi/fonts/NotoSansSC-HMI.ttf` 加载，约 2.43 MiB，随 A/B RODATA 更新。工厂构建的 RODATA 镜像约 2.50 MiB，小于 5 MiB 槽位。QSPI/NOR 读取时钟保持 SDK 原配置；v1.0.18 整机启动和图片打开耗时仍需上板测量。
+ 
+-v1.0.21 正式 profile 将 RT 控制台切到静默设备，在板级驱动初始化前完成绑定；关闭 RT UART0 驱动、FinSH/MSH 和 ULOG 输出，HMI 串口诊断调用在正式配置下编译为空。BootROM/SPL 的独立串口输出未改；OtaProfile 仍保留调试串口。为支持关闭 FinSH 的 SDK 构建，工程 overlay 只对未启用的 MbedTLS 示例禁用编译，并提供 `finsh.h`/`shell.h` 兼容头转入 SDK 自带空命令宏；底层驱动源码未改。
++v1.0.22 正式 profile 将 RT 控制台切到静默设备，在板级驱动初始化前完成绑定；UART0 驱动重新启用，仅供屏幕代号协议收发；FinSH/MSH 和 ULOG 输出保持关闭，HMI 串口诊断调用在正式配置下编译为空。BootROM/SPL 的独立串口输出未改；OtaProfile 仍保留调试串口。为支持关闭 FinSH 的 SDK 构建，工程 overlay 只对未启用的 MbedTLS 示例禁用编译，并提供 `finsh.h`/`shell.h` 兼容头转入 SDK 自带空命令宏；底层 BSP 驱动源码未改。
+ 
+ 官方 Bootloader 的 ENV 逻辑在升级期间试启动。HMI 策略将失败槽回退扩展为 OS/RODATA 成对回退；DATA 始终保持原槽。Bootloader 在候选系统前启动 60 秒看门狗并递增 `bootcount`。RT-Thread GUI 启动后改用 15 秒看门狗，要求 LVGL 心跳、GT911 设备、`/rodata` 与 `/data` 均正常，连续 30 秒后才调用官方 `aic_ota_status_update()` 清除升级标志。
+ 
+ ## 第一阶段交付和烧录
+ 
+-首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.21.img`，大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。此次未生成 v1.0.21 日常 OTA；日常 OTA 不包含 SPL、ENV 或 DATA。量产或维护时按板卡说明在 PA0 UBOOT 键上电进入 USB 烧录模式，再选择对应 D133CBS 工厂镜像。工厂镜像编译和复制完成不代表已烧进开发板；需要由用户手动用 AiBurn 烧录。本工程没有执行烧录、擦除或分区写入。
++首次部署或恢复请使用 `downloads/d13x_d133cbv-hmi-nor_v1.0.22.img`，大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包括首次部署用 SPL/Bootloader、ENV、双 OS、双 RODATA 与 DATA，保留官方 USB BROM/AiBurn 与 SD/USB 恢复组件。此次未发布 v1.0.22 日常 OTA；日常 OTA 不包含 SPL、ENV 或 DATA。工厂镜像由用户手动使用 AiBurn 烧录；本工程没有执行烧录、擦除或分区写入。
+ 
+ 最终生成文件：SDK 输出 `output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/`。本工程 `downloads/` 保存交付副本。烧录后的触摸、显示、SD 插拔、RMII PHY 和自动回滚仍需目标板验证。
+ 
+ ## SD/FATFS 与文件页
+ 
+-板级 pinmux 复用 SDK 的 SDMC1 PC0–PC6；PC6 是插卡检测。官方 `drv_sdcard.c` 热插拔线程处理插拔，board mount table 将 FATFS 自动挂载为 `/sdcard`。`sd_manager` 查询该挂载，`storage_manager` 使用 RT-Thread 消息队列把 POSIX DFS/FATFS 文件操作送到独立线程。列表每页最多显示 32 项，长列表可刷新；纯文本读取/写入上限 511 字节。创建文件夹、复制、改名、删除、浏览、大小和容量查询均在工作线程执行。选中 JPG/JPEG、PNG 或 16/24/32 位 BMP 后按“打开 / 读取”会进入全屏裁切铺满页，左上角有触摸返回键。文件读取和解码由独立图片线程完成，LVGL 线程只创建/更新控件。JPEG 由 MPP 缩放到不超过 1024×600；PNG/BMP 支持不超过 1024×768；单文件上限 4 MiB。各解码格式在原 MPP 缓冲区内归一为屏幕 RGB565，不额外申请大块 CMA；透明 PNG 按预览底色合成。UART0 `[image_preview]` 日志用于解码故障定位。删除、写入和 OTA 提交有界面确认。`/sdcard/UPDATE` 由 OTA 服务保留。
++板级 pinmux 复用 SDK 的 SDMC1 PC0–PC6；PC6 是插卡检测。官方 `drv_sdcard.c` 热插拔线程处理插拔，board mount table 将 FATFS 自动挂载为 `/sdcard`。`sd_manager` 查询该挂载，`storage_manager` 使用 RT-Thread 消息队列把 POSIX DFS/FATFS 文件操作送到独立线程。列表每页最多显示 32 项，长列表可刷新；纯文本读取/写入上限 511 字节。创建文件夹、复制、改名、删除、浏览、大小和容量查询均在工作线程执行。图片按原始像素显示：小图居中，大图中心裁切，不进行缩放；左上角有触摸返回键。BMP 仅读取可见窗口行并转换为 RGB565；JPG/JPEG、PNG 通过 SDK MPP 裁剪接口输出可视窗口，避免按源图尺寸分配整帧。JPEG/PNG 压缩文件上限为 4 MiB，PNG 仍受 SDK 800 万像素上限约束。图片读取与解码在线程完成，LVGL 线程只更新控件。正式配置不输出 `[image_preview]` 调试日志。`/sdcard/UPDATE` 由 OTA 服务保留。
++
++UART0 屏幕代号协议见 [屏幕代号串口协议](屏幕代号串口协议.md)。当前 `CS000` 为 1024×600 LVDS/GT911；`CS001` 会明确返回 `NOT_CONFIGURED`。新屏的样件确认资料没有 LCM 电气时序/排线定义，SDK 也没有 ATMXT1066TD 驱动，因此本版本不执行硬件切换。
+ 
+ SD OTA 文件放在 `/sdcard/UPDATE/ota.cpio`，并带同名 `/sdcard/UPDATE/ota.cpio.sig`。先用 `scripts/sign_ota.ps1` 对 OTA CPIO 签名；签名采用 RSA-2048/SHA-256，公钥随只读资源部署在 `/rodata/hmi/ota_public.pem`。缺少签名、公钥、SHA256 或槽位容量校验失败时不会调用 OTA 写入。文件页触发 OTA 后，在 LVDS 屏幕确认；成功写入非活动槽并提交官方 ENV 后，设备自动重启。
+ 
+@@ -70,9 +72,9 @@ LVGL 对象只由 `lv_user_gui_init` 所在的官方 LVGL 线程创建和更新
+ 
+ ## 阶段编译证据与验证边界
+ 
+-历史构建证据：`stage24_bootloader_fast_start_build.log`、`stage29_factory_v1.0.7_unused_driver_trim_build.log`、`stage30_ota_v1.0.9_unused_driver_trim_build.log`、`stage33_logo_factory_v1.0.10_build.log`、`stage34_app_launcher_factory_v1.0.11_build.log`、`stage35_app_grid_5x3_factory_v1.0.12_build.log`、`stage36_home_overview_factory_v1.0.13_build.log`、`stage37_startup_header_factory_v1.0.14_build.log`、`stage38_startup_header_factory_v1.0.15_build.log`、`stage39_startup_header_factory_v1.0.15_build.log`、`stage40_startup_header_factory_v1.0.16_build.log`、`stage41_ota_v1.0.17_build.log`。v1.0.18 OTA 与工厂 OS 构建日志分别为 `stage42_ota_v1.0.18_build.log` 和 `stage43_factory_v1.0.18_build.log`。v1.0.21 静默 OS/工厂镜像构建日志为 `stage_quiet_startup_v1.0.21_factory_build.log`，SDK SCons 构建成功；用户提供的 v1.0.20 外部引脚热复位实测为 1.632 秒，v1.0.21 尚无板上数据。Windows PowerShell 构建脚本捕获 SCons stderr 进度流，自动把原始 BMP 转成 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
++历史构建证据包括 v1.0.21 静默启动版本；本次 OS 与工厂 IMG 构建日志为 `stage_panel_serial_images_v1.0.22_build.log`，SDK SCons 报告 `Luban-Lite is built successfully`。新镜像尚未在开发板验证。Windows PowerShell 构建脚本捕获 SCons stderr 进度流，自动把原始 BMP 转成 LVGL RGB565 资源，并避免给 image_cfg 写入 JSON BOM。
+ 
+-构建和主机 CPIO/RSA 检查不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证真实 PHY、板载触摸、热插拔、看门狗计数及启动回退。确认这些行为仍需在目标板执行一次完整流程。
++构建成功不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证 UART0 指令收发、图像颜色/裁剪/内存、显示、触摸、真实 PHY、热插拔、看门狗计数或启动回退。确认这些行为仍需在目标板执行验证。用户已经修复上电进入 BROM 的问题，本轮未改动 PA0/BOOT 硬件或启动配置。
+ 
+ ## v1.0.18 OTA 包与发布资源
+ 
+@@ -92,4 +94,3 @@ SDK 的 RT_DEBUG_INIT_CONFIG 可逐项输出 RT-Thread board/device/component/fi
+ 
+ 诊断 OTA 版本为 1.0.19，主机 CPIO/RSA 检查通过。额外串口日志会增加启动开销，不能用其整机启动总时间作为生产性能指标。安装会把板端版本升级到 1.0.19；采集完日志后，正式修复 OTA 需要版本高于 1.0.19。诊断包只用于定位瓶颈，不用于量产。
+ 
+-
+diff --git a/docs/实现状态.md b/docs/实现状态.md
+index c992b5c..0419717 100644
+--- a/docs/实现状态.md
++++ b/docs/实现状态.md
+@@ -2,27 +2,27 @@
+ 
+ | 阶段 | 实现内容 | 编译/验证证据 |
+ | --- | --- | --- |
+-| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；Bootloader 跳过预启动黑屏，OS 黑屏初始化后进入 HMI；NOR QSPI 维持 100 MHz 四线/半周期采样；v1.0.20 已有板上启动日志，v1.0.21 静默 OS 已编译 | `stage_quiet_startup_v1.0.21_factory_build.log`、v1.0.20 UART 日志 |
++| 1 启动与分区 | 独立 D133CBS target、冗余 ENV、OS/RODATA A/B、DATA 单槽、配套 Bootloader；Bootloader 跳过预启动黑屏，OS 黑屏初始化后进入 HMI；NOR QSPI 维持 100 MHz 四线/半周期采样；v1.0.22 保持静默 RT 控制台并启用 UART0 协议驱动 | `stage_panel_serial_images_v1.0.22_build.log`；v1.0.20 UART 日志 |
+ | 2 SD/FATFS | SDMC1、PC6 热插拔、/sdcard、文件列表/读写/复制/删除/新建/改名/容量，独立工作队列 | `stage3_os_build.log` 与最终 OS 编译 |
+ | 3 A/B OTA | 官方 aic-ota/aic-env、CPIO CRC 与包长、SHA256、RSA2048/SHA256、ENV提交、配对回退、看门狗和健康确认；v1.0.18 OTA 已编译、签名并通过主机侧校验 | `stage42_ota_v1.0.18_build.log`、`verify_ota_host.py`、`verify_ota_signature.ps1` |
+ | 4 SD OTA | /sdcard/UPDATE/ota.cpio 与 .sig，确认后校验/写非活动槽/重启 | 同上；工具 `verify_ota_host.py` 验证成员、SPL白名单、校验篡改和尾随数据 |
+ | 5 RMII/TCP OTA | GMAC0 RMII、RTL8201F、netdev DHCP/静态配置、TCP 8899推包、RSA签名和逐帧ACK | `stage5_os_build.log`、`final_integrity_build.log` |
+-| 6 LVGL HMI | LVGL 9.1 官方线程；输入键盘延迟至首次聚焦创建；图片预览完成由 LVGL 专用 20 ms 定时器刷新；BMP 解码批量读取并原位翻转倒序行 | `stage43_factory_v1.0.18_build.log` |
++| 6 LVGL HMI | LVGL 9.1 官方线程；图片小于屏幕时居中 1:1 显示，大图中心裁剪；BMP 只读可见窗口，JPG/PNG 复用 MPP 硬件裁剪 | `stage_panel_serial_images_v1.0.22_build.log` |
+ | 7 模块化与说明 | app、boot_manager、ota、storage、network、ui、system各有接口头文件和实现；Logo BMP 自动生成 LVGL RGB565 C 资源；编译、烧录、升级、故障说明及 Git 兼容 diff | `docs/sdk_changes.patch`、`docs/logo_factory_fw.patch`、`docs/app_shell_factory.patch`、`docs/app_grid_5x3_factory.patch`、`docs/home_overview_move.patch`、`docs/boot_speed_header.patch`、`docs/v1.0.18_startup_image_optimization.patch`；研发工具箱启动检查报告 |
+ | 8 蜂鸣器与工具箱设备消息 | PWM1_A/PE.11、4 kHz；LNET 首次 INFO 回传 TCP 连接消息，OTA BEGIN 回传升级消息；RT-Thread 工作线程异步请求 1 秒蜂鸣；工具箱健康查询使用 0xD105 | `stage_wifi_buzzer_v1.0.20_factory_build.log`；工具箱 Python 语法检查 |
+-| 9 静默输出与启动瘦身 | RT 控制台预先绑定空输出设备，禁用 OS UART0、FinSH/MSH 线程及 ULOG 输出；HMI 调试串口格式化由诊断配置控制；BootROM/SPL 配置未改 | `stage_quiet_startup_v1.0.21_factory_build.log`、`docs/quiet_startup_v1.0.21_source.patch`、新 v1.0.21 镜像 |
++| 9 静默输出与启动瘦身 | RT 控制台预先绑定空输出设备；UART0 驱动仅服务屏幕代号协议，FinSH/MSH 与 ULOG 输出关闭；BootROM/SPL 配置未改 | `stage_panel_serial_images_v1.0.22_build.log`、新 v1.0.22 IMG |
++| 10 屏幕代号串口 | UART0 115200/8N1；`CS000` 查询当前 1024×600/GT911；`CS001` 明确拒绝为未配置 | 协议文档；仅编译通过，未板测 |
+ 
+-当前工厂镜像为 v1.0.21，`downloads/d13x_d133cbv-hmi-nor_v1.0.21.img` 大小 4,250,112 字节，SHA-256 `d6cacd79cc56b24b3b8c50c2a4154a6abfaef5b8b1d31f9ae2ec4820d2760f4c`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA。SDK 构建报告 OS 为 1,081,344 字节，小于 2 MiB 槽位；RODATA 为 2,502,656 字节，小于 5 MiB 槽位。相较 v1.0.20 OS/镜像减少 311,296 字节；按先前 47,050 KB/s 读取率推算，读取量约少 6–7 ms，尚无 v1.0.21 板上计时。此次未生成 v1.0.21 OTA 包。
++当前工厂镜像为 v1.0.22，`downloads/d13x_d133cbv-hmi-nor_v1.0.22.img` 大小 4,262,400 字节，SHA-256 `c03ae1ecb699acaee776cc2b8a4e00d39e8271f2bc02413c9cf65d2b9a9991f8`。镜像包含配套 SPL/Bootloader、冗余 ENV、OS_A/B、RODATA_A/B 和 DATA；本次未发布日常 OTA。v1.0.22 只完成 SDK 构建，没有板上启动/串口/图片预览数据。
+ 
+ 用户提供的 v1.0.20 外部引脚热复位日志报告 `Startup time: 1.632 sec`；SPL 读取 1,389,240 字节耗时 28,834 μs；framebuffer 在 1.375 秒分配；HMI 标记控件127 ms、flush218 ms、render221 ms。此前 v1.0.18 同类复位为 1.630 秒，差 2 ms，未显示整机速度改善。需要 RT 初始化逐项耗时才能继续定位 1.375 秒前的时间；QSPI/NOR 参数保持原配置。
+ 
+ v1.0.19 RT_DEBUG_INIT 诊断 OTA 已通过 SDK 构建、CPIO 主机校验和 RSA 验签，包大小 3,931,136 字节，SHA-256 `ff783f19bb476509175ddb0fa962732368e9b0c760302dbf526971d4e1ca8c0b`。它输出每个 RT-Thread 初始化函数及早期阶段耗时；UART 大量日志会增加启动时间，profile 仅用于定位，不是生产固件。安装后设备版本为1.0.19，后续正式 OTA 必须使用更高版本。
+ 
+-板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.21 没有启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。用户提供的 v1.0.20 UART 日志验证了启动和 LVGL 首帧，但未验证蜂鸣器、Wi-Fi、工具箱 TCP 或 OTA。该日志还报告 `/data` LittleFS 挂载失败；`/sdcard` 初始挂载失败后检测到插卡，但未见挂载成功行。
++板载 Wi-Fi 芯片为 RTL8723DS。当前 Luban-Lite Realtek 支持仅选择 RTL8733/RTL8189，缺少匹配的 RTL8723DS SDIO 驱动和 E907F 库，所以 v1.0.22 仍未启用无线功能；详细缺失项见 `docs/无线与蜂鸣器集成.md`。用户提供的 v1.0.20 UART 日志验证了当时的启动和 LVGL 首帧，但未验证本次 UART0 命令、图片裁剪或 CMA 余量。该日志还报告 `/data` LittleFS 挂载失败；`/sdcard` 初始挂载失败后检测到插卡，但未见挂载成功行。
+ 
+-所有代码基于本地 Luban-Lite 接口；没有修改 `bsp/` 底层驱动，也没有写实际 Flash 地址。v1.0.21 通过板级静默 console 设备在驱动初始化前关闭 RT 控制台输出，FinSH/MSH 线程与 RT UART0 驱动在生产 profile 中关闭；HMI 调试格式化在正式构建时编译为空。独立诊断 profile 保留串口输出。BootROM/SPL 的打印路径没有修改。静默配置和构建结果尚未上板验证。
++所有代码基于本地 Luban-Lite 接口；没有修改 `bsp/` 底层驱动，也没有写实际 Flash 地址。v1.0.22 通过板级静默 console 设备关闭 RT 控制台输出；UART0 驱动重新启用，只用于屏幕代号协议；FinSH/MSH 与 ULOG 输出仍关闭。BootROM/SPL 打印路径没有修改。用户已自行修复上电进入 BROM，本次未改 PA0/BOOT 配置。编译结果尚未上板验证。
+ 
+-尚未完成实机验收：首页不显示状态胶囊、设备总览卡片打开独立详情页、5×3 启动器布局、顶栏/Logo 间距、v1.0.21 静默串口结果、同条件冷启动与完整 1 秒目标、SD 图片各格式颜色/内存占用、全屏触摸返回、NOR 原频率稳定性、LVDS 时序、GT911 触摸、SD 插拔及最终挂载、`/data` LittleFS、RMII 链路/DHCP、Wi-Fi、蜂鸣、看门狗触发、A/B 试启动与回退，以及工具箱对板端 TCP 的真实传输。用户提供的日志确认 v1.0.20 在板上运行并显示 LVGL；v1.0.21 仅完成 SDK 构建。本次没有连接或操作硬件。日常 OTA 不含 SPL/Bootloader；尚未生成 v1.0.21 OTA。UART `[boot_time]` 在静默正式配置中不输出；整机时长仍需板上 UART 以外的计时方式验证。
++尚未完成实机验收：v1.0.22 UART0 的 `CS000`/`CS001` 应答、JPG/PNG MPP 裁剪、BMP 16/24/32 位颜色、图片 CMA 余量、触摸返回、同条件冷启动与 1 秒目标、LVDS/GT911、SD 插拔和挂载、`/data` LittleFS、RMII/DHCP、蜂鸣、看门狗/A/B 回退，以及工具箱对板端 TCP 的真实传输。CS001 仍未配置；待完整 LCM 时序/排线资料和 ATMXT1066TD 驱动依赖。没有连接或操作硬件，未烧录/擦除 Flash，也没有发布本版本 OTA。UART `[boot_time]` 在静默正式配置中不输出；整机时长仍需外部计时验证。
+ 
+ RSA私钥 `keys/development_private.pem` 是仅供开发的本地测试密钥。量产必须改用受控密钥，并配置TLS/证书或TLS设备身份认证；当前TCP OTA按用户要求运行在局域网明文链路，由签名和屏幕确认保护升级授权。
+-
+diff --git a/docs/屏幕代号串口协议.md b/docs/屏幕代号串口协议.md
+new file mode 100644
+index 0000000..4949a3d
+--- /dev/null
++++ b/docs/屏幕代号串口协议.md
+@@ -0,0 +1,51 @@
++# 屏幕代号串口协议
++
++## 接口
++
++- UART：UART0，115200 baud，8 data bits，no parity，1 stop bit（8N1）。
++- 命令：5 个 ASCII 字符，例如 `CS000`；可直接发送，也可追加 CR、LF 或 CRLF。
++- 应答：ASCII 文本，以 CRLF 结束；没有额外控制台日志、校验和或二进制帧头。
++- 命令接收由 RT-Thread 工作线程处理，不占用 LVGL 线程。
++
++板端 UART0 为 3.3 V TTL。连接 USB-UART 时交叉连接 TX/RX 并接共地，不要连接 RS-232 电平。D133CBS 板卡 UART0 TX 使用 PA0，PA0 同时连接 UBOOT 按键启动采样；避免在上电时把该线拉低。
++
++## 命令与应答
++
++| 命令 | 应答 | 含义 |
++| --- | --- | --- |
++| `CS000` | `CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911` | 确认当前配置为 CS000；本命令不重启显示链路。 |
++| `CS001` | `CS001,ERR,NOT_CONFIGURED,ACTIVE=CS000` | CS001 配置和驱动尚未就绪，拒绝切换并报告当前配置。 |
++| 其他代号 | `<代号>,ERR,UNSUPPORTED_CODE,ACTIVE=CS000` | 当前固件未登记该代号。 |
++
++示例：
++
++```text
++电脑发送：CS000\r\n
++开发板：  CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911\r\n
++
++电脑发送：CS001
++开发板：  CS001,ERR,NOT_CONFIGURED,ACTIVE=CS000\r\n
++```
++
++`CS000` 是当前固化的板级配置：1024×600 LVDS、GT911 触摸。v1.0.22 的正式配置启用 UART0 驱动，但 RT 控制台仍绑定静默设备；命令应答是 UART0 上唯一的 HMI 文本协议输出。这里的编译结果尚未在开发板上验证。
++
++## CS001 尚缺的资料
++
++当前提供的 LCJ0010R1EA0Y16CP100 样件确认资料提到 ATMXT1066TD 电容触摸、I²C/3.3 V 和 1280×800 触摸分辨率，但没有给出完成 D133 LVDS 初始化所需的屏幕电气定义。SDK 当前可用的触摸驱动是 GT911，未找到 ATMXT1066TD 驱动。
++
++要把 CS001 从“已识别但拒绝切换”变成可用配置，还需要：
++
++1. LCM 完整数据手册：LVDS/MIPI 接口类型、单/双通道、lane 或 bit mapping、像素时钟、水平/垂直 porch 与 sync 极性、复位和背光时序、连接器引脚定义。
++2. ATMXT1066TD 驱动资料：I²C 地址与寄存器协议、IRQ/RESET 引脚和有效电平、坐标范围与方向、初始化/固件配置要求；或供应商现成 RT-Thread 驱动。
++3. 板卡上 CS001 屏幕排线与触摸排线的实际接口/引脚对应关系。
++
++在这些资料齐全前，CS001 不会更改 LVDS、触摸或 framebuffer 配置。拿到资料后，应先增加独立的板级屏幕配置和触摸驱动适配，再检查冷启动、切换/重启及触摸坐标；无需改写官方 OTA 或直接操作 Flash。
++
++## 验收步骤
++
++1. 使用 3.3 V USB-UART 连接 UART0，设为 115200/8N1。
++2. 发送 `CS000`，期望返回 `OK`、`ACTIVE=CS000`、`1024x600` 和 `GT911`。
++3. 发送 `CS001`，期望返回 `NOT_CONFIGURED`，当前值仍为 `CS000`。
++4. 发送其他 5 字节代号，期望返回 `UNSUPPORTED_CODE`。
++
++以上是协议预期结果。实际串口收发、屏幕切换和触摸仍需在目标板验证；目前 CS001 应当保持拒绝状态。
+diff --git a/docs/故障排查.md b/docs/故障排查.md
+index 43d64c0..d1e1d34 100644
+--- a/docs/故障排查.md
++++ b/docs/故障排查.md
+@@ -11,9 +11,10 @@
+ | TCP 已上传但未确认 | 开发板需在 60 秒内允许；端口会在升级后重启期间断开。重新连接后检查运行版本、OS槽和 health 状态。 |
+ | 新系统看门狗复位 | 看 UART0 日志；确认 LVGL GUI线程启动、GT911设备名、`/rodata` 和 `/data` 挂载以及两者槽位匹配。Bootloader 连续试启动失败后应同步回退 OS/RODATA。 |
+ | 旧系统启动但资源异常 | 检查 ENV 的 `osAB_now/next` 与 `rodataAB_now/next`；回退实现必须成对切换。确认 RODATA A/B 的 FATFS 容量均大于镜像。 |
+-| 开机仍显示旧色块测试画面 | v1.0.0 的 SDK 配置启用了 `AIC_DISP_COLOR_BLOCK`。请手动烧录新版 `downloads/d13x_d133cbv-hmi-nor_v1.0.12.img`；新配套 Bootloader 不再初始化预启动画面，OS 仍会黑屏初始化并关闭色块。烧录后若无中文应用中心，请保存 UART0 从上电开始的日志。 |
++| 开机仍显示旧色块测试画面 | 旧 v1.0.0 SDK 配置启用了 `AIC_DISP_COLOR_BLOCK`。工厂镜像已更新为 `downloads/d13x_d133cbv-hmi-nor_v1.0.22.img`；用户需手动用 AiBurn 烧录。若仍看到色块，先确认 AiBurn 选择的镜像路径和烧录结果，再查看显示配置是否为 `AIC_DISP_BLACK_SCREEN=y`、`AIC_DISP_COLOR_BLOCK` 未启用。 |
+ | 中文显示为空白或方框 | 检查 `/rodata/hmi/fonts/NotoSansSC-HMI.ttf` 是否存在、RODATA 槽是否为与 OS 配对的版本，以及 defconfig 是否启用了 `LPKG_USING_FREETYPE`。字体加载失败会阻止健康确认，使 Bootloader 执行 A/B 回退。 |
+-| SD 图片无法预览、偏色或内存不足 | 使用工厂 v1.0.12 或已有 OTA v1.0.9。两版都支持 JPG/JPEG、PNG 和 16/24/32 位 BMP；解码输出统一原位归一到 RGB565，不额外申请第二块大 CMA 图像缓存；透明 PNG 按预览底色合成。1024×768 图像在 1024×600 屏幕上裁切铺满。确认 SD 卡已挂载到 `/sdcard`、扩展名与文件真实格式一致；仍失败时读取 UART0 `[image_preview]` 日志。 |
++| SD 图片无法预览、偏色或内存不足 | v1.0.22 中 BMP 只分配屏幕可视窗口缓冲并逐行读取；JPG/JPEG、PNG 使用 SDK MPP 裁剪窗口，保留原始像素尺寸，不缩放。JPEG/PNG 压缩输入上限为 4 MiB，PNG 受 SDK 800 万像素和硬件解码范围约束。BMP 支持 16/24/32 位 BI_RGB 及 16/32 位 BI_BITFIELDS。确认 SD 卡挂载到 `/sdcard`、文件实际格式与扩展名一致；正式固件不输出 `[image_preview]` 日志。当前尚未板上验证颜色、裁剪边缘及 CMA 余量。 |
++| 屏幕代号串口没有应答 | 确认使用 UART0 3.3 V TTL、115200/8N1，TX/RX 交叉连接并共地。发送 `CS000` 应返回当前 1024×600/GT911；发送 `CS001` 应返回 `NOT_CONFIGURED`，不是成功切换。串口协议只在 v1.0.22 OS 编译，暂未板上验证。 |
+ | 1 秒启动目标未达到 | 本版关闭 Bootloader 预启动黑屏、将 ULOG 降为 Warning、复用 FreeType 字体，并关闭 HMI 未用的 CAN/音频/TSEN/GPAI 驱动。仍须实测；UART `[boot_time]` 仅记录 RT-Thread app 初始化到首帧/flush，不含 BootROM、SPL 和 Bootloader。请从上电沿测到首页可触摸，并连续冷启动 10 次。QSPI 保持 100 MHz、CPU 480 MHz、AXI/AHB 200 MHz；未核实 NOR 料号并做边界测试前不要超频。 |
+ | SDK 命令行出现 `python3 not recognized` | 通过工程 `scripts/build.ps1` 构建；该脚本把 SDK Python38、RISC-V 工具链和 SDK host utilities 放入 PATH。 |
+ | `scons -j8` 在 Windows 挂起 | 检查 pywin32 worker 警告和遗留 `cp.exe/echo.exe` 子进程；保留输出后用 `-Jobs 1` 重建。 |
+diff --git a/source/application/rt-thread/d133_hmi/Kconfig b/source/application/rt-thread/d133_hmi/Kconfig
+index 12714ae..60baf07 100644
+--- a/source/application/rt-thread/d133_hmi/Kconfig
++++ b/source/application/rt-thread/d133_hmi/Kconfig
+@@ -11,6 +11,12 @@ config HMI_QUIET_CONSOLE
+     depends on HMI_APP
+     default n
+ 
++config HMI_DISPLAY_PROFILE_SERIAL
++    bool "Enable UART0 panel profile commands"
++    depends on HMI_APP && HMI_QUIET_CONSOLE
++    select AIC_USING_UART0
++    default y
++
+ config HMI_SERIAL_DIAGNOSTICS
+     bool "Enable HMI serial diagnostics"
+     depends on HMI_APP
+@@ -28,4 +34,3 @@ config HMI_SD_OTA
+     default n
+ 
+ 
+-
+diff --git a/source/application/rt-thread/d133_hmi/SConscript b/source/application/rt-thread/d133_hmi/SConscript
+index 340badf..8191726 100644
+--- a/source/application/rt-thread/d133_hmi/SConscript
++++ b/source/application/rt-thread/d133_hmi/SConscript
+@@ -12,5 +12,6 @@ if GetDepend('HMI_NETWORK'):
+ if GetDepend('HMI_UI'):
+     src += Glob('ui/*.c')
+ inc=[cwd]+[cwd+'/'+m for m in modules+['network','ui']]
++inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec'))]
+ group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
+ Return('group')
+diff --git a/source/application/rt-thread/d133_hmi/app/app_manager.c b/source/application/rt-thread/d133_hmi/app/app_manager.c
+index 270c95b..2584b2d 100644
+--- a/source/application/rt-thread/d133_hmi/app/app_manager.c
++++ b/source/application/rt-thread/d133_hmi/app/app_manager.c
+@@ -11,6 +11,9 @@ unsigned int app_manager_boot_elapsed_ms(void)
+ #include "system_manager.h"
+ #include "device_event_manager.h"
+ #include "hmi_serial_log.h"
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++#include "display_profile_manager.h"
++#endif
+ #include "boot_manager.h"
+ #include "ota_manager.h"
+ #ifdef HMI_NETWORK
+@@ -20,7 +23,12 @@ unsigned int app_manager_boot_elapsed_ms(void)
+ int app_manager_init(void)
+ {
+     boot_start_ms=rt_tick_get_millisecond();
+-    if(system_manager_init()||device_event_manager_init()||storage_manager_init()||ota_manager_init())return -1;
++    if(system_manager_init())return -1;
++#ifdef HMI_DISPLAY_PROFILE_SERIAL
++    if(display_profile_manager_init())
++        system_manager_log("屏幕配置串口服务启动失败");
++#endif
++    if(device_event_manager_init()||storage_manager_init()||ota_manager_init())return -1;
+     if(boot_manager_init())return -2;
+ #ifdef HMI_NETWORK
+     if(network_manager_init())return -3;
+@@ -32,4 +40,3 @@ int app_manager_init(void)
+ 
+ INIT_APP_EXPORT(app_manager_init);
+ 
+-
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 7d18f80..97a7c42 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.18
++D133-控制终端 1.0.22
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+new file mode 100644
+index 0000000..ac55d3a
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -0,0 +1,173 @@
++#include "display_profile_manager.h"
++#include "system_manager.h"
++
++#include <rtthread.h>
++#include <rtdevice.h>
++#include <ctype.h>
++#include <stdio.h>
++#include <string.h>
++
++#define DISPLAY_PROFILE_UART_NAME "uart0"
++#define DISPLAY_PROFILE_UART_BAUD 115200
++#define DISPLAY_PROFILE_RX_CHUNK 32
++#define DISPLAY_PROFILE_THREAD_STACK 3072
++
++static struct rt_mutex profile_lock;
++static rt_sem_t rx_sem;
++static rt_device_t profile_uart;
++static int profile_lock_ready;
++static int manager_ready;
++static display_profile_info_t active_profile = {
++    "CS000", 1024, 600, "LVDS-1024x600", "GT911"
++};
++
++static void profile_uart_send(const char *text)
++{
++    size_t length;
++
++    if (!profile_uart || !text)
++        return;
++    length = strlen(text);
++    if (rt_device_write(profile_uart, 0, text, length) != length)
++        system_manager_log("屏幕配置串口应答发送失败");
++}
++
++static void profile_command_reply(const char *command)
++{
++    char response[128];
++    display_profile_info_t active;
++    display_profile_result_t result;
++
++    result = display_profile_apply(command);
++    display_profile_get_active(&active);
++    if (result == DISPLAY_PROFILE_OK) {
++        rt_snprintf(response, sizeof(response),
++                    "%s,OK,ACTIVE=%s,RES=%ux%u,TOUCH=%s\r\n",
++                    command, active.code, active.width, active.height, active.touch);
++    } else if (result == DISPLAY_PROFILE_ERR_NOT_CONFIGURED) {
++        rt_snprintf(response, sizeof(response),
++                    "%s,ERR,NOT_CONFIGURED,ACTIVE=%s\r\n",
++                    command, active.code);
++    } else {
++        rt_snprintf(response, sizeof(response),
++                    "%s,ERR,UNSUPPORTED_CODE,ACTIVE=%s\r\n",
++                    command, active.code);
++    }
++    profile_uart_send(response);
++}
++
++static rt_err_t profile_uart_rx_indicate(rt_device_t device, rt_size_t size)
++{
++    RT_UNUSED(device);
++    RT_UNUSED(size);
++    rt_sem_release(rx_sem);
++    return RT_EOK;
++}
++
++/* 代号为固定 5 字节 ASCII，因此既支持直接发送，也支持 CR/LF 结尾。 */
++static void profile_uart_consume_byte(char value)
++{
++    static char command[DISPLAY_PROFILE_CODE_LENGTH];
++    static size_t command_length;
++    unsigned char byte = (unsigned char)value;
++
++    if (value == '\r' || value == '\n' || value == ' ' || value == '\t') {
++        if (value == '\r' || value == '\n')
++            command_length = 0;
++        return;
++    }
++
++    if (!isalnum(byte)) {
++        command_length = 0;
++        return;
++    }
++    if (command_length >= DISPLAY_PROFILE_CODE_LENGTH - 1)
++        command_length = 0;
++    command[command_length++] = (char)toupper(byte);
++    if (command_length == DISPLAY_PROFILE_CODE_LENGTH - 1) {
++        command[command_length] = '\0';
++        profile_command_reply(command);
++        command_length = 0;
++    }
++}
++
++static void display_profile_uart_thread(void *parameter)
++{
++    struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT;
++    uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
++    rt_device_t device;
++
++    RT_UNUSED(parameter);
++    device = rt_device_find(DISPLAY_PROFILE_UART_NAME);
++    if (!device) {
++        system_manager_log("屏幕配置串口未找到 uart0");
++        return;
++    }
++    config.baud_rate = DISPLAY_PROFILE_UART_BAUD;
++    if (rt_device_control(device, RT_DEVICE_CTRL_CONFIG, &config) != RT_EOK ||
++        rt_device_open(device, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_INT_RX) != RT_EOK) {
++        system_manager_log("屏幕配置串口 uart0 初始化失败");
++        return;
++    }
++
++    profile_uart = device;
++    rt_device_set_rx_indicate(profile_uart, profile_uart_rx_indicate);
++    system_manager_log("屏幕配置串口已启动：UART0 115200 8N1");
++
++    while (1) {
++        rt_size_t received;
++
++        rt_sem_take(rx_sem, RT_WAITING_FOREVER);
++        do {
++            rt_size_t index;
++            received = rt_device_read(profile_uart, 0, bytes, sizeof(bytes));
++            for (index = 0; index < received; index++)
++                profile_uart_consume_byte((char)bytes[index]);
++        } while (received == sizeof(bytes));
++    }
++}
++
++display_profile_result_t display_profile_apply(const char *code)
++{
++    if (!code)
++        return DISPLAY_PROFILE_ERR_ARGUMENT;
++    if (strcmp(code, "CS000") == 0)
++        return DISPLAY_PROFILE_OK;
++    if (strcmp(code, "CS001") == 0)
++        return DISPLAY_PROFILE_ERR_NOT_CONFIGURED;
++    return DISPLAY_PROFILE_ERR_ARGUMENT;
++}
++
++display_profile_result_t display_profile_get_active(display_profile_info_t *profile)
++{
++    if (!profile)
++        return DISPLAY_PROFILE_ERR_ARGUMENT;
++    if (profile_lock_ready)
++        rt_mutex_take(&profile_lock, RT_WAITING_FOREVER);
++    *profile = active_profile;
++    if (profile_lock_ready)
++        rt_mutex_release(&profile_lock);
++    return DISPLAY_PROFILE_OK;
++}
++
++int display_profile_manager_init(void)
++{
++    rt_thread_t thread;
++
++    if (manager_ready)
++        return 0;
++    if (rt_mutex_init(&profile_lock, "dspcfg", RT_IPC_FLAG_PRIO) != RT_EOK)
++        return -1;
++    profile_lock_ready = 1;
++    rx_sem = rt_sem_create("dsp_rx", 0, RT_IPC_FLAG_FIFO);
++    if (!rx_sem)
++        return -2;
++    thread = rt_thread_create("dsp_cfg", display_profile_uart_thread, NULL,
++                              DISPLAY_PROFILE_THREAD_STACK, 27, 10);
++    if (!thread)
++        return -3;
++    if (rt_thread_startup(thread) != RT_EOK)
++        return -4;
++    manager_ready = 1;
++    return 0;
++}
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.h b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+new file mode 100644
+index 0000000..3eb4e72
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+@@ -0,0 +1,32 @@
++#ifndef D133_DISPLAY_PROFILE_MANAGER_H
++#define D133_DISPLAY_PROFILE_MANAGER_H
++
++#include <stddef.h>
++#include <stdint.h>
++
++#define DISPLAY_PROFILE_CODE_LENGTH 6
++#define DISPLAY_PROFILE_PANEL_LENGTH 24
++#define DISPLAY_PROFILE_TOUCH_LENGTH 16
++
++typedef enum {
++    DISPLAY_PROFILE_OK = 0,
++    DISPLAY_PROFILE_ERR_ARGUMENT = -1,
++    DISPLAY_PROFILE_ERR_NOT_CONFIGURED = -2,
++    DISPLAY_PROFILE_ERR_SERIAL = -3
++} display_profile_result_t;
++
++typedef struct {
++    char code[DISPLAY_PROFILE_CODE_LENGTH];
++    uint16_t width;
++    uint16_t height;
++    char panel[DISPLAY_PROFILE_PANEL_LENGTH];
++    char touch[DISPLAY_PROFILE_TOUCH_LENGTH];
++} display_profile_info_t;
++
++/* 启动 UART0 屏幕代号服务；串口只发送协议应答，不承载控制台日志。 */
++int display_profile_manager_init(void);
++/* 当前固件只固化 CS000；未配置的代号会返回明确错误，不会假切换。 */
++display_profile_result_t display_profile_apply(const char *code);
++display_profile_result_t display_profile_get_active(display_profile_info_t *profile);
++
++#endif
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index 2305f8f..c9975b8 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -1,16 +1,19 @@
+ #include "image_preview.h"
+ #include "hmi_serial_log.h"
+ #include "file_manager.h"
++#include "display_profile_manager.h"
++#include <lv_mpp_dec.h>
+ #include <rtthread.h>
+ #include <aic_core.h>
+ #include <sys/stat.h>
++#include <limits.h>
++#include <stdint.h>
+ #include <string.h>
+ #include <stdio.h>
+ #include <ctype.h>
+ 
+ #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
+-#define IMAGE_PREVIEW_WIDTH_MAX 1024U
+-#define IMAGE_PREVIEW_HEIGHT_MAX 768U
++#define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
+ #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
+ 
+ typedef struct {
+@@ -33,6 +36,7 @@ static int cancel_requested;
+ static int decoder_opened;
+ static lv_image_decoder_dsc_t decoder_dsc;
+ static lv_image_dsc_t preview_image;
++static void *preview_owned_buffer;
+ static char preview_source_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
+ 
+ enum {
+@@ -95,14 +99,289 @@ static void release_decode_resources(void)
+         decoder_opened = 0;
+         memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+     }
++    if (preview_owned_buffer) {
++        aicos_free(MEM_CMA, preview_owned_buffer);
++        preview_owned_buffer = NULL;
++    }
+     memset(&preview_image, 0, sizeof(preview_image));
+ }
+ 
+ static int dimensions_supported(const lv_image_header_t *header)
+ {
+-    return header && header->w > 0 && header->h > 0 &&
+-           header->w <= IMAGE_PREVIEW_WIDTH_MAX &&
+-           header->h <= IMAGE_PREVIEW_HEIGHT_MAX;
++    /* LVGL 的图像描述符使用 16 位宽高；不再人为限制为 1024×768。 */
++    return header && header->w > 0 && header->h > 0;
++}
++
++static uint32_t read_le32(const uint8_t *p)
++{
++    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
++           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
++}
++
++static uint16_t read_le16(const uint8_t *p)
++{
++    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
++}
++
++static uint32_t read_be32(const uint8_t *p)
++{
++    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
++           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
++}
++
++static uint8_t bmp_mask_to_u8(uint32_t pixel, uint32_t mask)
++{
++    uint32_t shift = 0;
++    uint32_t maximum;
++    uint32_t value;
++
++    while (shift < 32U && ((mask >> shift) & 1U) == 0U)
++        shift++;
++    if (shift == 32U)
++        return 0;
++    maximum = mask >> shift;
++    value = (pixel & mask) >> shift;
++    if (maximum == 0U)
++        return 0;
++    return (uint8_t)((value * 255U + maximum / 2U) / maximum);
++}
++
++static void preview_viewport(uint16_t *width, uint16_t *height)
++{
++    display_profile_info_t profile;
++
++    if (!width || !height)
++        return;
++    if (display_profile_get_active(&profile) == DISPLAY_PROFILE_OK &&
++        profile.width > 0 && profile.height > 0) {
++        *width = profile.width;
++        *height = profile.height;
++    } else {
++        /* 仅在串口配置服务尚未启动时回退到当前 CS000 屏幕。 */
++        *width = 1024;
++        *height = 600;
++    }
++}
++
++static int read_png_dimensions(const char *path, uint32_t *width, uint32_t *height)
++{
++    uint8_t header[24];
++    FILE *file;
++    int result = IMAGE_PREVIEW_ERR_DECODE;
++
++    file = fopen(path, "rb");
++    if (!file)
++        return IMAGE_PREVIEW_ERR_PATH;
++    if (fread(header, 1, sizeof(header), file) == sizeof(header) &&
++        memcmp(header, "\x89PNG\r\n\x1a\n", 8) == 0 &&
++        memcmp(header + 12, "IHDR", 4) == 0) {
++        uint32_t image_width = read_be32(header + 16);
++        uint32_t image_height = read_be32(header + 20);
++        uint64_t pixels = (uint64_t)image_width * image_height;
++
++        if (image_width && image_height && image_width <= UINT16_MAX &&
++            image_height <= UINT16_MAX && pixels <= IMAGE_PREVIEW_PNG_MAX_PIXELS) {
++            *width = image_width;
++            *height = image_height;
++            result = IMAGE_PREVIEW_ERR_NONE;
++        } else {
++            result = IMAGE_PREVIEW_ERR_SIZE;
++        }
++    }
++    fclose(file);
++    return result;
++}
++
++/* BMP 只读屏幕中央可见窗口，源图片分辨率不会决定输出缓冲区大小。 */
++static int decode_bmp_preview(const char *path, uint64_t file_size)
++{
++    uint8_t header[54];
++    uint8_t *source_row = NULL;
++    uint8_t *raw = NULL;
++    uint8_t *output;
++    FILE *file = NULL;
++    int32_t signed_width;
++    int32_t signed_height;
++    uint32_t width;
++    uint32_t height;
++    uint32_t pixel_offset;
++    uint32_t dib_size;
++    uint32_t compression;
++    uint32_t red_mask = 0;
++    uint32_t green_mask = 0;
++    uint32_t blue_mask = 0;
++    uint32_t source_stride;
++    uint64_t source_stride_wide;
++    uint32_t crop_x;
++    uint32_t crop_y;
++    uint32_t output_width;
++    uint32_t output_height;
++    uint32_t output_stride;
++    uint32_t bytes_per_pixel;
++    uint16_t planes;
++    uint16_t bits_per_pixel;
++    uint16_t viewport_width;
++    uint16_t viewport_height;
++    uint64_t row_bits;
++    uint64_t image_end;
++    uint64_t output_size;
++    uint64_t source_bytes;
++    uint32_t y;
++    int top_down;
++    int result = IMAGE_PREVIEW_ERR_DECODE;
++
++    file = fopen(path, "rb");
++    if (!file)
++        return IMAGE_PREVIEW_ERR_PATH;
++    if (fread(header, 1, sizeof(header), file) != sizeof(header) ||
++        header[0] != 'B' || header[1] != 'M')
++        goto done;
++
++    pixel_offset = read_le32(header + 10);
++    dib_size = read_le32(header + 14);
++    signed_width = (int32_t)read_le32(header + 18);
++    signed_height = (int32_t)read_le32(header + 22);
++    planes = read_le16(header + 26);
++    bits_per_pixel = read_le16(header + 28);
++    compression = read_le32(header + 30);
++    if (dib_size < 40 || (uint64_t)pixel_offset < 14ULL + dib_size ||
++        14ULL + dib_size > file_size || signed_width <= 0 ||
++        signed_height == 0 || signed_height == INT32_MIN || planes != 1 ||
++        (compression != 0 && compression != 3) ||
++        (bits_per_pixel != 16 && bits_per_pixel != 24 && bits_per_pixel != 32) ||
++        (compression == 3 && bits_per_pixel == 24)) {
++        result = IMAGE_PREVIEW_ERR_FORMAT;
++        goto done;
++    }
++
++    if (compression == 3) {
++        uint8_t masks[12];
++
++        if (pixel_offset < 66U || fseek(file, 54, SEEK_SET) != 0 ||
++            fread(masks, 1, sizeof(masks), file) != sizeof(masks))
++            goto done;
++        red_mask = read_le32(masks);
++        green_mask = read_le32(masks + 4);
++        blue_mask = read_le32(masks + 8);
++        if (!red_mask || !green_mask || !blue_mask) {
++            result = IMAGE_PREVIEW_ERR_FORMAT;
++            goto done;
++        }
++    } else if (bits_per_pixel == 16) {
++        /* BI_RGB 的 16 位 BMP 按标准 5-5-5 解码，再转换成屏幕 RGB565。 */
++        red_mask = 0x7C00U;
++        green_mask = 0x03E0U;
++        blue_mask = 0x001FU;
++    }
++
++    width = (uint32_t)signed_width;
++    height = (uint32_t)(signed_height < 0 ? -signed_height : signed_height);
++    top_down = signed_height < 0;
++    row_bits = (uint64_t)width * bits_per_pixel;
++    source_stride_wide = ((row_bits + 31U) / 32U) * 4U;
++    if (source_stride_wide == 0 || source_stride_wide > UINT32_MAX) {
++        result = IMAGE_PREVIEW_ERR_SIZE;
++        goto done;
++    }
++    source_stride = (uint32_t)source_stride_wide;
++    image_end = (uint64_t)pixel_offset + (uint64_t)source_stride * height;
++    if (source_stride == 0 || image_end > file_size || image_end > LONG_MAX) {
++        result = IMAGE_PREVIEW_ERR_SIZE;
++        goto done;
++    }
++
++    preview_viewport(&viewport_width, &viewport_height);
++    output_width = width < viewport_width ? width : viewport_width;
++    output_height = height < viewport_height ? height : viewport_height;
++    crop_x = (width - output_width) / 2U;
++    crop_y = (height - output_height) / 2U;
++    bytes_per_pixel = bits_per_pixel / 8U;
++    source_bytes = (uint64_t)output_width * bytes_per_pixel;
++    output_stride = lv_draw_buf_width_to_stride(output_width, LV_COLOR_FORMAT_RGB565);
++    output_size = (uint64_t)output_stride * output_height;
++    if (source_bytes == 0 || source_bytes > UINT32_MAX || output_size == 0 ||
++        output_size > INT_MAX - CACHE_LINE_SIZE) {
++        result = IMAGE_PREVIEW_ERR_SIZE;
++        goto done;
++    }
++
++    source_row = (uint8_t *)rt_malloc((size_t)source_bytes);
++    raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
++    if (!source_row || !raw) {
++        result = IMAGE_PREVIEW_ERR_SIZE;
++        goto done;
++    }
++    output = (uint8_t *)ALIGN_UP((ulong)raw, CACHE_LINE_SIZE);
++
++    for (y = 0; y < output_height; y++) {
++        uint32_t source_y = top_down ? crop_y + y : height - 1U - (crop_y + y);
++        uint64_t source_offset = (uint64_t)pixel_offset +
++            (uint64_t)source_y * source_stride + (uint64_t)crop_x * bytes_per_pixel;
++        uint8_t *output_row = output + (size_t)y * output_stride;
++        uint32_t x;
++
++        if (source_offset + source_bytes > image_end || source_offset > LONG_MAX ||
++            fseek(file, (long)source_offset, SEEK_SET) != 0 ||
++            fread(source_row, 1, (size_t)source_bytes, file) != source_bytes) {
++            result = IMAGE_PREVIEW_ERR_DECODE;
++            goto done;
++        }
++
++        for (x = 0; x < output_width; x++) {
++            uint16_t rgb565;
++            if (bits_per_pixel == 16) {
++                uint32_t pixel = read_le16(source_row + (size_t)x * 2U);
++                uint8_t red = bmp_mask_to_u8(pixel, red_mask);
++                uint8_t green = bmp_mask_to_u8(pixel, green_mask);
++                uint8_t blue = bmp_mask_to_u8(pixel, blue_mask);
++                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                    ((uint16_t)(green & 0xFCU) << 3) |
++                                    ((uint16_t)blue >> 3));
++            } else if (bits_per_pixel == 32 && compression == 3) {
++                const uint8_t *pixel = source_row + (size_t)x * 4U;
++                uint32_t value = read_le32(pixel);
++                uint8_t red = bmp_mask_to_u8(value, red_mask);
++                uint8_t green = bmp_mask_to_u8(value, green_mask);
++                uint8_t blue = bmp_mask_to_u8(value, blue_mask);
++                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                    ((uint16_t)(green & 0xFCU) << 3) |
++                                    ((uint16_t)blue >> 3));
++            } else {
++                const uint8_t *pixel = source_row + (size_t)x * bytes_per_pixel;
++                uint8_t blue = pixel[0];
++                uint8_t green = pixel[1];
++                uint8_t red = pixel[2];
++                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                    ((uint16_t)(green & 0xFCU) << 3) |
++                                    ((uint16_t)blue >> 3));
++            }
++            memcpy(output_row + (size_t)x * sizeof(rgb565), &rgb565, sizeof(rgb565));
++        }
++        if (output_stride > output_width * 2U)
++            memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
++    }
++
++    aicos_dcache_clean_range((unsigned long *)output, (int64_t)output_size);
++    preview_owned_buffer = raw;
++    raw = NULL;
++    memset(&preview_image, 0, sizeof(preview_image));
++    preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
++    preview_image.header.cf = LV_COLOR_FORMAT_RGB565;
++    preview_image.header.w = output_width;
++    preview_image.header.h = output_height;
++    preview_image.header.stride = output_stride;
++    preview_image.data_size = (uint32_t)output_size;
++    preview_image.data = output;
++    result = IMAGE_PREVIEW_ERR_NONE;
++
++done:
++    if (source_row)
++        rt_free(source_row);
++    if (raw)
++        aicos_free(MEM_CMA, raw);
++    if (file)
++        fclose(file);
++    return result;
+ }
+ 
+ /* 各解码器输出统一归一化到屏幕原生 RGB565，避免格式映射造成通道偏色。 */
+@@ -206,6 +485,12 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
+ static int decode_mpp_image(const lv_image_header_t *header)
+ {
+     lv_image_decoder_args_t args = {0};
++    struct mpp_dec_crop_info crop = {0};
++    uint16_t viewport_width;
++    uint16_t viewport_height;
++    uint32_t crop_width;
++    uint32_t crop_height;
++    int crop_requested = 0;
+     rt_uint32_t decode_started;
+     rt_uint32_t decode_ms;
+     rt_uint32_t normalize_started;
+@@ -215,15 +500,34 @@ static int decode_mpp_image(const lv_image_header_t *header)
+     if (!dimensions_supported(header))
+         return IMAGE_PREVIEW_ERR_SIZE;
+ 
++    preview_viewport(&viewport_width, &viewport_height);
++    crop_width = header->w < viewport_width ? header->w : viewport_width;
++    crop_height = header->h < viewport_height ? header->h : viewport_height;
++    if (crop_width != header->w || crop_height != header->h) {
++        crop.crop_x = ((int)header->w - (int)crop_width) / 2;
++        crop.crop_y = ((int)header->h - (int)crop_height) / 2;
++        crop.crop_width = (int)crop_width;
++        crop.crop_height = (int)crop_height;
++        crop.crop_out_x = 0;
++        crop.crop_out_y = 0;
++        if (lv_mpp_dec_set_preview_crop(preview_source_path, &crop) != 0)
++            return IMAGE_PREVIEW_ERR_DECODE;
++        crop_requested = 1;
++    }
++
+     args.no_cache = true;
+     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+     decode_started = rt_tick_get_millisecond();
+     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
++        if (crop_requested)
++            lv_mpp_dec_clear_preview_crop(preview_source_path);
+         hmi_serial_log("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
+                    (unsigned)(rt_tick_get_millisecond() - decode_started),
+                    preview_source_path);
+         return IMAGE_PREVIEW_ERR_DECODE;
+     }
++    if (crop_requested)
++        lv_mpp_dec_clear_preview_crop(preview_source_path);
+     decode_ms = rt_tick_get_millisecond() - decode_started;
+     decoder_opened = 1;
+     if (!decoder_dsc.decoded || !decoder_dsc.decoded->unaligned_data ||
+@@ -258,6 +562,8 @@ static int load_image(const char *path)
+     struct stat st;
+     lv_image_header_t header = {0};
+     image_kind_t kind = image_kind(path);
++    uint32_t png_width = 0;
++    uint32_t png_height = 0;
+     size_t path_len;
+     rt_uint32_t started = rt_tick_get_millisecond();
+     rt_uint32_t info_ms;
+@@ -267,12 +573,33 @@ static int load_image(const char *path)
+ 
+     if (kind == IMAGE_KIND_UNSUPPORTED)
+         return IMAGE_PREVIEW_ERR_FORMAT;
+-    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
+-        (uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
++    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0) {
+         hmi_serial_log("[image_preview] 文件不可读或大小无效：%s\n", path);
+         return IMAGE_PREVIEW_ERR_SIZE;
+     }
+ 
++    if (kind == IMAGE_KIND_BMP) {
++        decode_started = rt_tick_get_millisecond();
++        result = decode_bmp_preview(path, (uint64_t)st.st_size);
++        hmi_serial_log("[image_preview] BMP 可视区域读取耗时：%u ms，结果=%d\n",
++                       (unsigned)(rt_tick_get_millisecond() - decode_started), result);
++        return result;
++    }
++
++    /* JPEG/PNG 的官方 MPP 解码器会缓存压缩输入，保留有界文件大小保护。 */
++    if ((uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
++        hmi_serial_log("[image_preview] 压缩图片超过 MPP 安全输入上限：%s\n", path);
++        return IMAGE_PREVIEW_ERR_SIZE;
++    }
++
++    if (kind == IMAGE_KIND_PNG) {
++        result = read_png_dimensions(path, &png_width, &png_height);
++        if (result != IMAGE_PREVIEW_ERR_NONE) {
++            hmi_serial_log("[image_preview] PNG 尺寸无效或超过 SDK 解码范围：%s\n", path);
++            return result;
++        }
++    }
++
+     path_len = strlen(path);
+     if (path_len + 2 >= sizeof(preview_source_path))
+         return IMAGE_PREVIEW_ERR_PATH;
+@@ -296,15 +623,16 @@ static int load_image(const char *path)
+         return IMAGE_PREVIEW_ERR_DECODE;
+     }
+     info_ms = rt_tick_get_millisecond() - info_started;
+-    if (!dimensions_supported(&header)) {
+-        hmi_serial_log("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
+-                   path, header.w, header.h);
++    if (!dimensions_supported(&header) ||
++        (kind == IMAGE_KIND_PNG &&
++         (header.w != png_width || header.h != png_height))) {
++        hmi_serial_log("[image_preview] 图片尺寸超出 LVGL 描述符或 SDK 范围：%s (%u x %u)\n",
++                       path, header.w, header.h);
+         return IMAGE_PREVIEW_ERR_SIZE;
+     }
+     if (preview_cancelled())
+         return IMAGE_PREVIEW_ERR_CANCELLED;
+ 
+-    /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
+     decode_started = rt_tick_get_millisecond();
+     result = decode_mpp_image(&header);
+     hmi_serial_log("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
+@@ -317,7 +645,7 @@ static const char *error_text(int error)
+ {
+     switch (error) {
+     case IMAGE_PREVIEW_ERR_PATH: return "图片路径无效。";
+-    case IMAGE_PREVIEW_ERR_SIZE: return "图片文件超过 4 MiB，或分辨率超出 1024×768 解码限制。";
++    case IMAGE_PREVIEW_ERR_SIZE: return "图片缓冲或尺寸超过当前 SDK 的安全范围；JPEG/PNG 输入上限为 4 MiB，PNG 像素上限为 800 万。";
+     case IMAGE_PREVIEW_ERR_FORMAT: return "图片格式不支持，请选择基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
+     case IMAGE_PREVIEW_ERR_CANCELLED: return "已取消图片加载。";
+     case IMAGE_PREVIEW_ERR_DECODE:
+@@ -471,4 +799,3 @@ void image_preview_cancel(void)
+         rt_mutex_release(&state_lock);
+     }
+ }
+-
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index 0927816..fa24e79 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -364,25 +364,14 @@ static void image_preview_ui_timer(lv_timer_t *timer_obj)
+     }
+ 
+     if (state == IMAGE_PREVIEW_READY && image_area) {
+-        uint32_t scale_x;
+-        uint32_t scale_y;
+-        uint32_t scale;
+-
+         image_dsc = image_preview_get_image();
+         if (image_dsc && !image_object) {
+             image_object = lv_image_create(image_area);
+             if (image_object) {
+                 lv_image_set_src(image_object, image_dsc);
+                 lv_image_set_antialias(image_object, false);
+-                /* 向上取整并取较大比例，裁边铺满屏幕。 */
+-                scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
+-                           image_dsc->header.w - 1U) / image_dsc->header.w;
+-                scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
+-                           image_dsc->header.h - 1U) / image_dsc->header.h;
+-                scale = scale_x > scale_y ? scale_x : scale_y;
+-                if (scale == 0U)
+-                    scale = 1U;
+-                lv_image_set_scale(image_object, scale);
++                /* 解码器已按屏幕可视区域裁剪，控件保持 1:1 原始像素显示。 */
++                lv_image_set_scale(image_object, 256U);
+                 lv_obj_center(image_object);
+             }
+         }
+@@ -1012,4 +1001,3 @@ void hmi_ui_init(void)
+     }
+     hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
+ }
+-
+diff --git a/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h
+index 88676e3..cf19bd2 100644
+--- a/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h
++++ b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h
+@@ -122,12 +122,12 @@
+     #define LV_USE_FREETYPE 0
+ #endif
+ 
+-/* HMI 图片预览复用 LVGL BMP 与 ArtInChip MPP 解码器，并限制 JPEG 输出分辨率。 */
++/* HMI 图片预览复用 LVGL BMP 与 ArtInChip MPP 解码器，输出由预览窗口裁剪。 */
+ #if defined(HMI_UI)
+     #define LV_USE_BMP 1
+     #define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
+-    #define MPP_JPEG_DEC_MAX_OUT_WIDTH 1024
+-    #define MPP_JPEG_DEC_MAX_OUT_HEIGHT 600
++    #define MPP_JPEG_DEC_MAX_OUT_WIDTH 65535
++    #define MPP_JPEG_DEC_MAX_OUT_HEIGHT 65535
+ #endif
+ 
+ #define LV_USE_GIF 1
+diff --git a/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.c b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.c
+new file mode 100644
+index 0000000..6f12ee8
+--- /dev/null
++++ b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.c
+@@ -0,0 +1,1007 @@
++/*
++ * Copyright (C) 2024-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors:  Ning Fang <ning.fang@artinchip.com>
++ */
++
++#include <pthread.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++#include <sys/time.h>
++
++#include "lvgl.h"
++#include "aic_core.h"
++#include "mpp_mem.h"
++#include "mpp_ge.h"
++#include "lv_mpp_dec.h"
++#include "lv_aic_stream.h"
++#include "lv_aic_bmp.h"
++#include "aic_ui.h"
++#include "lv_draw_ge2d_utils.h"
++
++#define LV_MPP_PREVIEW_CROP_PATH_MAX 512
++
++static lv_mutex_t preview_crop_lock;
++static bool preview_crop_lock_ready;
++static bool preview_crop_pending;
++static char preview_crop_src[LV_MPP_PREVIEW_CROP_PATH_MAX];
++static struct mpp_dec_crop_info preview_crop_info;
++
++/* HMI 只给选中的文件设置一次裁剪，避免改动其它 LVGL 图片的解码行为。 */
++int lv_mpp_dec_set_preview_crop(const char *src, const struct mpp_dec_crop_info *crop)
++{
++    size_t path_len;
++
++    if (!src || !crop || !preview_crop_lock_ready)
++        return -1;
++    path_len = strlen(src);
++    if (path_len == 0 || path_len >= sizeof(preview_crop_src) ||
++        crop->crop_x < 0 || crop->crop_y < 0 ||
++        crop->crop_width <= 0 || crop->crop_height <= 0 ||
++        crop->crop_out_x < 0 || crop->crop_out_y < 0)
++        return -2;
++
++    lv_mutex_lock(&preview_crop_lock);
++    memcpy(preview_crop_src, src, path_len + 1);
++    preview_crop_info = *crop;
++    preview_crop_pending = true;
++    lv_mutex_unlock(&preview_crop_lock);
++    return 0;
++}
++
++void lv_mpp_dec_clear_preview_crop(const char *src)
++{
++    if (!src || !preview_crop_lock_ready)
++        return;
++
++    lv_mutex_lock(&preview_crop_lock);
++    if (preview_crop_pending && strcmp(preview_crop_src, src) == 0) {
++        preview_crop_pending = false;
++        preview_crop_src[0] = '\0';
++    }
++    lv_mutex_unlock(&preview_crop_lock);
++}
++
++static bool lv_mpp_dec_take_preview_crop(const char *src,
++                                         struct mpp_dec_crop_info *crop)
++{
++    bool matched = false;
++
++    if (!src || !crop || !preview_crop_lock_ready)
++        return false;
++
++    lv_mutex_lock(&preview_crop_lock);
++    if (preview_crop_pending && strcmp(preview_crop_src, src) == 0) {
++        *crop = preview_crop_info;
++        preview_crop_pending = false;
++        preview_crop_src[0] = '\0';
++        matched = true;
++    }
++    lv_mutex_unlock(&preview_crop_lock);
++    return matched;
++}
++
++#define PNG_HEADER_SIZE (8 + 12 + 13) //png signature + IHDR chuck
++#define PNGSIG 0x89504e470d0a1a0aull
++#define MNGSIG 0x8a4d4e470d0a1a0aull
++#define JPEG_SOI 0xFFD8
++#define JPEG_SOF 0xFFC0
++#define AICP_SOF 0xFFC1
++#define ALIGN_16B(x) (((x) + (15)) & ~(15))
++
++lv_color_format_t mpp_fmt_to_lv_fmt(enum mpp_pixel_format cf)
++{
++    lv_color_format_t fmt = LV_COLOR_FORMAT_ARGB8888;
++
++    switch(cf) {
++        case MPP_FMT_RGB_565:
++            fmt = LV_COLOR_FORMAT_RGB565;
++            break;
++        case MPP_FMT_RGB_888:
++            fmt = LV_COLOR_FORMAT_RGB888;
++            break;
++        case MPP_FMT_ARGB_8888:
++            fmt = LV_COLOR_FORMAT_ARGB8888;
++            break;
++        case MPP_FMT_XRGB_8888:
++            fmt = LV_COLOR_FORMAT_XRGB8888;
++            break;
++        case MPP_FMT_YUV420P:
++            fmt = LV_COLOR_FORMAT_I420;
++            break;
++        case MPP_FMT_YUV422P:
++            fmt = LV_COLOR_FORMAT_I422;
++            break;
++        case MPP_FMT_YUV444P:
++            fmt = LV_COLOR_FORMAT_I444;
++            break;
++        case MPP_FMT_YUV400:
++            fmt = LV_COLOR_FORMAT_I400;
++            break;
++        default:
++            LV_LOG_ERROR("unsupported format:%d", cf);
++            break;
++    }
++
++    return fmt;
++}
++
++static int mpp_get_rgb_stride(int width, enum mpp_pixel_format fmt)
++{
++    int stride;
++
++    switch(fmt) {
++        case MPP_FMT_RGB_565:
++            stride = ALIGN_16B(width) * 2;
++            break;
++        case MPP_FMT_RGB_888:
++            stride = ALIGN_16B(width) * 3;
++            break;
++        case MPP_FMT_ARGB_8888:
++            stride = ALIGN_16B(width) * 4;
++            break;
++        case MPP_FMT_XRGB_8888:
++            stride = ALIGN_16B(width) * 4;
++            break;
++        default:
++            stride = ALIGN_16B(width) * 4;
++            LV_LOG_ERROR("unsupported format:%d", fmt);
++            break;
++    }
++    return stride;
++}
++
++static int get_jpeg_format(uint8_t *buf, enum mpp_pixel_format *pix_fmt)
++{
++    int i;
++    uint32_t h_count_flag;
++    uint32_t v_count_flag;
++    uint8_t h_count[3] = { 0 };
++    uint8_t v_count[3] = { 0 };
++    uint8_t nb_components = *buf++;
++
++    for (i = 0; i < nb_components; i++) {
++        uint8_t h_v_cnt;
++
++        // skip component id
++        buf++;
++        h_v_cnt = *buf++;
++        h_count[i] = h_v_cnt >> 4;
++        v_count[i] = h_v_cnt & 0xf;
++
++        // skip quant_index
++        buf++;
++    }
++
++    h_count_flag =  h_count[2] | (h_count[1] << 4) | (h_count[0] << 8);
++    v_count_flag =  v_count[2] | (v_count[1] << 4) | (v_count[0] << 8);
++
++    if (h_count_flag == 0x211 && v_count_flag == 0x211) {
++        *pix_fmt = MPP_FMT_YUV420P;
++    } else if (h_count_flag == 0x211 && v_count_flag == 0x111) {
++        *pix_fmt = MPP_FMT_YUV422P;
++    } else if (h_count_flag == 0x111 && v_count_flag == 0x111) {
++        *pix_fmt = MPP_FMT_YUV444P;
++    } else if (h_count_flag == 0x111 && v_count_flag == 0x222) {
++        *pix_fmt = MPP_FMT_YUV444P;
++    } else if (h_count[1] == 0 && v_count[1] == 0 && h_count[2] == 0 &&
++               v_count[2] == 0) {
++        *pix_fmt = MPP_FMT_YUV400;
++    } else {
++        LV_LOG_ERROR("Not support format! h_count: %d %d %d, v_count: %d %d %d",
++            h_count[0], h_count[1], h_count[2],
++            v_count[0], v_count[1], v_count[2]);
++        return -1;
++    }
++
++#ifndef AIC_VE_DRV_V10
++#if LV_COLOR_DEPTH  == 16
++    *pix_fmt = MPP_FMT_RGB_565;
++#else
++    *pix_fmt = MPP_FMT_RGB_888;
++#endif
++#endif
++
++#ifdef AIC_VE_DRV_V31
++    if (nb_components == 4)
++        *pix_fmt = MPP_FMT_ARGB_8888;
++#else
++    if (nb_components == 4) {
++        LV_LOG_ERROR("Unsupported nb_components: %d", nb_components);
++        return -1;
++    }
++#endif
++    return 0;
++}
++
++static inline lv_result_t check_jpeg_soi(lv_stream_t *stream)
++{
++    uint32_t read_num;
++    uint8_t buf[128];
++    lv_fs_res_t fs_res;
++    lv_result_t res = LV_RESULT_OK;
++
++    // read JPEG SOI
++    fs_res = lv_aic_stream_read(stream, buf, 2, &read_num);
++    if (fs_res != LV_FS_RES_OK || read_num != 2) {
++        res = LV_RESULT_INVALID;
++        goto read_err;
++    }
++
++    // check SOI
++    if (buf[0] != 0xff || buf[1] != 0xd8) {
++        res = LV_RESULT_INVALID;
++        goto read_err;
++    }
++
++    // check SOI
++    if (stream_to_u16(buf) != JPEG_SOI) {
++        res = LV_RESULT_INVALID;
++        goto read_err;
++    }
++
++read_err:
++    return res;
++}
++
++static lv_result_t jpeg_get_img_size(lv_stream_t *stream, int *w, int *h, enum mpp_pixel_format *pix_fmt, bool is_aicp)
++{
++    uint32_t read_num;
++    uint8_t buf[128];
++    lv_fs_res_t fs_res;
++    lv_result_t res = LV_RESULT_OK;
++
++    if (check_jpeg_soi(stream) != LV_RESULT_OK) {
++        res = LV_RESULT_INVALID;
++        LV_LOG_ERROR("check jpeg soi failed");
++        goto read_err;
++    }
++
++    // find SOF
++    while (1) {
++        int size;
++        uint16_t marker;
++        fs_res = lv_aic_stream_read(stream, buf, 4, &read_num);
++        if (fs_res != LV_FS_RES_OK || read_num != 4) {
++            res = LV_RESULT_INVALID;
++            LV_LOG_ERROR("get chunk header failed");
++            goto read_err;
++        }
++
++        marker = stream_to_u16(buf);
++        if (marker == JPEG_SOF || (is_aicp && marker == AICP_SOF)) {
++            fs_res = lv_aic_stream_read(stream, buf, 15, &read_num);
++            if (fs_res != LV_FS_RES_OK) {
++                res = LV_RESULT_INVALID;
++                LV_LOG_ERROR("read chunk data failed");
++                goto read_err;
++            }
++
++            *h = stream_to_u16(buf + 1);
++            *w = stream_to_u16(buf + 3);
++
++            if (get_jpeg_format(buf + 5, pix_fmt) < 0) {
++                res = LV_RESULT_INVALID;
++                LV_LOG_ERROR("get format failed");
++                goto read_err;
++            }
++            break;
++        } else {
++            size = stream_to_u16(buf + 2);
++             fs_res = lv_aic_stream_seek(stream, size - 2, SEEK_CUR);
++            if (fs_res != LV_FS_RES_OK) {
++                res = LV_RESULT_INVALID;
++                LV_LOG_ERROR("read chunk data failed");
++                goto read_err;
++            }
++        }
++    }
++read_err:
++    return res;
++}
++
++lv_result_t lv_jpeg_decoder_info(const char *src, lv_image_header_t *header, uint32_t size, bool is_file, bool is_aicp)
++{
++    lv_fs_res_t res;
++    int width;
++    int height;
++    enum mpp_pixel_format format = MPP_FMT_ARGB_8888;
++    lv_stream_t stream;
++
++    if (is_file)
++        res = lv_aic_stream_open_file(&stream, src);
++    else
++       res = lv_aic_stream_open_buf(&stream, src, size);
++
++    if (res != LV_FS_RES_OK)
++        return LV_RESULT_INVALID;
++
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++    // Skip AICP header if present
++    if (is_aicp) {
++        uint8_t aicp_header[4];
++        uint32_t read_num;
++        res = lv_aic_stream_read(&stream, aicp_header, 4, &read_num);
++        if (res != LV_FS_RES_OK || read_num != 4 || memcmp(aicp_header, "AICP", 4) != 0) {
++            LV_LOG_ERROR("AICP header not found");
++            lv_aic_stream_close(&stream);
++            return LV_RESULT_INVALID;
++        }
++    }
++#endif
++
++    res = jpeg_get_img_size(&stream, &width, &height, &format, is_aicp);
++    if (res != LV_RESULT_OK) {
++        lv_aic_stream_close(&stream);
++        LV_LOG_ERROR("get img size failed");
++        return LV_RESULT_INVALID;
++    }
++
++#if defined(MPP_JPEG_DEC_OUT_SIZE_LIMIT_ENABLE)
++    if (!is_aicp) {
++        int size_shift = jpeg_size_limit(width, height);
++        width = width >> size_shift;
++        height = height >> size_shift;
++        header->reserved_2 = size_shift;
++    }
++#endif
++
++    header->w = width;
++    header->h = height;
++    header->cf = mpp_fmt_to_lv_fmt(format);
++
++    if (!lv_fmt_is_yuv(header->cf))
++        header->stride = mpp_get_rgb_stride(width, format);
++
++    LV_LOG_INFO("w:%d, h:%d, cf:%d", header->w, header->h, header->cf);
++	lv_aic_stream_close(&stream);
++
++    return LV_RESULT_OK;
++}
++
++static inline lv_result_t check_png_sig(lv_stream_t *stream)
++{
++    uint32_t read_num;
++    unsigned char buf[64];
++    uint64_t sig;
++
++    lv_aic_stream_read(stream, buf, 8, &read_num);
++    sig = stream_to_u64(buf);
++    if (sig != PNGSIG && sig != MNGSIG) {
++        return LV_RESULT_INVALID;
++    }
++
++    return LV_RESULT_OK;
++}
++
++lv_result_t lv_png_decoder_info(const char *src, lv_image_header_t *header, uint32_t size, bool is_file)
++{
++    lv_fs_res_t res;
++    uint32_t read_num;
++    uint8_t buf[64];
++    lv_stream_t stream;
++    int color_type;
++
++    if (is_file)
++        res = lv_aic_stream_open_file(&stream, src);
++    else
++       res = lv_aic_stream_open_buf(&stream, src, size);
++
++    if (res != LV_FS_RES_OK) {
++        LV_LOG_ERROR("open %s failed", src);
++        return LV_RESULT_INVALID;
++    }
++
++    // read png sig + IHDR chuck
++    res = lv_aic_stream_read(&stream, buf, PNG_HEADER_SIZE, &read_num);
++    if (res != LV_FS_RES_OK || read_num != PNG_HEADER_SIZE) {
++        LV_LOG_ERROR("lv_aic_stream_read failed");
++        lv_aic_stream_close(&stream);
++        return LV_RESULT_INVALID;
++    }
++
++    // check signature
++    uint64_t sig = stream_to_u64(buf);
++    if (sig != PNGSIG && sig != MNGSIG) {
++        LV_LOG_WARN("Invalid PNG signature 0x%08llx.", (unsigned long long)sig);
++        lv_aic_stream_close(&stream);
++        return LV_RESULT_INVALID;
++    }
++
++    header->w = stream_to_u32(buf + 8 + 8);
++    header->h = stream_to_u32(buf + 8 + 8 + 4);
++
++    color_type = buf[8 + 8 + 8 + 1];
++    if (color_type == 2) {
++        header->cf = mpp_fmt_to_lv_fmt(MPP_FMT_RGB_888);
++        header->stride = mpp_get_rgb_stride(header->w, MPP_FMT_RGB_888);
++    } else {
++        header->cf = mpp_fmt_to_lv_fmt(MPP_FMT_ARGB_8888);
++        header->stride = mpp_get_rgb_stride(header->w, MPP_FMT_ARGB_8888);
++    }
++
++    LV_LOG_INFO("header->w:%d, header->h:%d, header->cf:%d", header->w, header->h, header->cf);
++    lv_aic_stream_close(&stream);
++
++    return LV_RESULT_OK;
++}
++
++static lv_res_t fake_decoder_info(const void *src, lv_image_header_t *header)
++{
++    int width;
++    int height;
++    int alpha_en;
++    unsigned int color;
++
++    FAKE_IMAGE_PARSE((char *)src, &width, &height, &alpha_en, &color);
++    header->w = width;
++    header->h = height;
++    header->stride = mpp_get_rgb_stride(header->w, MPP_FMT_ARGB_8888);
++    header->cf = LV_COLOR_FORMAT_RAW;
++    return LV_RES_OK;
++}
++
++static lv_result_t lv_mpp_dec_info(lv_image_decoder_t *decoder, const void *src, lv_image_header_t *header)
++{
++    char* ptr = NULL;
++    lv_result_t res = LV_RESULT_INVALID;
++
++    LV_UNUSED(decoder);
++
++    if (lv_image_src_get_type(src) == LV_IMAGE_SRC_FILE) {
++        ptr = strrchr(src, '.');
++        if (!ptr)
++            return LV_RESULT_INVALID;
++        if (!strncmp(ptr, ".png", 4)) {
++            return lv_png_decoder_info(src, header, 0, true);
++        } else if (image_suffix_is_jpg(ptr)) {
++            return lv_jpeg_decoder_info(src, header, 0, true, false);
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++        } else if (image_suffix_is_aicp(ptr)) {
++            return lv_jpeg_decoder_info(src, header, 0, true, true);
++#endif
++        } else if (!strncmp(ptr, ".fake", 5)) {
++            return fake_decoder_info(src, header);
++#if LV_USE_AIC_BMP
++        } else if (!strncmp(ptr, ".bmp", 4) || !strncmp(ptr, ".BMP", 4)) {
++            return lv_bmp_decoder_info(src, header, 0, true);
++#endif
++        } else {
++            LV_LOG_ERROR("unsupported image:%s", (uint8_t *)src);
++            return LV_RESULT_INVALID;
++        }
++    } else if (lv_image_src_get_type(src) == LV_IMAGE_SRC_VARIABLE) {
++        lv_color_format_t cf = ((lv_img_dsc_t *)src)->header.cf;
++        char *data = (char *)((lv_img_dsc_t *)src)->data;
++        uint32_t data_size = ((lv_img_dsc_t *)src)->data_size;
++
++        if (cf == LV_COLOR_FORMAT_RAW || cf == LV_COLOR_FORMAT_RAW) {
++            bool is_aicp_data = false;
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++            // Check for AICP header
++            if (data_size >= 4 && memcmp(data, "AICP", 4) == 0) {
++                is_aicp_data = true;
++            }
++#endif
++            res = lv_jpeg_decoder_info(data, header, data_size, false, is_aicp_data);
++
++            if (res != LV_RESULT_OK) {
++                res = lv_png_decoder_info(data, header, data_size, false);
++#if LV_USE_AIC_BMP
++                if (res != LV_RESULT_OK) {
++                    res = lv_bmp_decoder_info(data, header, data_size, false);
++                }
++#endif
++            }
++        }
++    }
++
++    return res;
++}
++
++struct ext_frame_allocator {
++    struct frame_allocator base;
++    struct mpp_frame* frame;
++};
++
++static int alloc_frame_buffer(struct frame_allocator *p, struct mpp_frame* frame,
++                              int width, int height, enum mpp_pixel_format format)
++{
++    struct ext_frame_allocator* impl = (struct ext_frame_allocator*)p;
++
++    memcpy(frame, impl->frame, sizeof(struct mpp_frame));
++    return 0;
++}
++
++static int free_frame_buffer(struct frame_allocator *p, struct mpp_frame *frame)
++{
++    return 0;
++}
++
++static int close_allocator(struct frame_allocator *p)
++{
++    struct ext_frame_allocator* impl = (struct ext_frame_allocator*)p;
++
++    free(impl);
++
++    return 0;
++}
++
++static struct alloc_ops def_ops = {
++    .alloc_frame_buffer = alloc_frame_buffer,
++    .free_frame_buffer = free_frame_buffer,
++    .close_allocator = close_allocator,
++};
++
++struct frame_allocator* lv_open_allocator(struct mpp_frame* frame)
++{
++    struct ext_frame_allocator* impl = (struct ext_frame_allocator*)malloc(sizeof(struct ext_frame_allocator));
++
++    if(impl == NULL) {
++        return NULL;
++    }
++
++    memset(impl, 0, sizeof(struct ext_frame_allocator));
++
++    impl->frame = frame;
++    impl->base.ops = &def_ops;
++    return &impl->base;
++}
++
++void lv_frame_buf_free(mpp_decoder_data_t *mpp_data)
++{
++    int i;
++    for (i = 0; i < 3; i++) {
++        if (mpp_data->data[i]) {
++            aicos_free(MEM_CMA, (void*)mpp_data->data[i]);
++            mpp_data->data[i] = NULL;
++        }
++    }
++}
++
++lv_result_t lv_frame_buf_alloc(mpp_decoder_data_t *mpp_data, struct mpp_buf *alloc_buf,
++                              int *size, uint32_t cf)
++{
++    int i;
++    int data_size = 0;
++    for (i = 0; i < 3; i++) {
++        if (size[i]) {
++            mpp_data->data[i] = (uint8_t *)aicos_malloc_try_cma(size[i] + CACHE_LINE_SIZE - 1);
++            if (!mpp_data->data[i]) {
++                goto alloc_error;
++            } else {
++                unsigned int align_addr = (unsigned int)ALIGN_UP((ulong)mpp_data->data[i], CACHE_LINE_SIZE);
++                alloc_buf->phy_addr[i] = align_addr;
++                aicos_dcache_clean_invalid_range((ulong *)(ulong)align_addr, ALIGN_UP(size[i], CACHE_LINE_SIZE));
++                data_size += size[i];
++            }
++        }
++    }
++
++    mpp_data->decoded.header.w = alloc_buf->size.width;
++    mpp_data->decoded.header.h = alloc_buf->size.height;
++    mpp_data->decoded.header.cf = cf;
++    mpp_data->decoded.header.magic = LV_IMAGE_HEADER_MAGIC;
++
++    if (lv_fmt_is_yuv(cf)) {
++        mpp_data->decoded.data =(uint8_t *)(&mpp_data->dec_buf);
++        mpp_data->decoded.data_size = data_size;
++        mpp_data->decoded.unaligned_data = (uint8_t *)(&mpp_data->dec_buf);
++    } else {
++        mpp_data->decoded.header.stride = alloc_buf->stride[0];
++        mpp_data->decoded.data =(uint8_t *)((ulong)alloc_buf->phy_addr[0]);
++        mpp_data->decoded.data_size = size[0];
++        mpp_data->decoded.unaligned_data = mpp_data->data[0];
++    }
++
++    return LV_RESULT_OK;
++alloc_error:
++    lv_frame_buf_free(mpp_data);
++    return LV_RESULT_INVALID;
++}
++
++void lv_set_frame_buf_size(struct mpp_frame *frame, int *buf_size, int size_shift, bool is_aicp)
++{
++    int height_align;
++    int width = frame->buf.size.width;
++    int height = frame->buf.size.height;
++
++    if (size_shift > 0) {
++        height_align = ALIGN_16B(ALIGN_16B(height) >> size_shift);
++        frame->buf.size.width =  width >> size_shift;;
++        frame->buf.size.height = height >> size_shift;
++    } else {
++        height_align = ALIGN_16B(height);
++    }
++
++    switch (frame->buf.format) {
++    case MPP_FMT_YUV420P:
++        if (size_shift > 0)
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift);
++        else
++            frame->buf.stride[0] =  ALIGN_16B(width);
++
++        frame->buf.stride[1] =  frame->buf.stride[0] >> 1;
++        frame->buf.stride[2] =  frame->buf.stride[0] >> 1;
++        buf_size[0] = frame->buf.stride[0] * height_align;
++        buf_size[1] = frame->buf.stride[1] * (height_align >> 1);
++        buf_size[2] = frame->buf.stride[2] * (height_align >> 1);
++        break;
++    case MPP_FMT_YUV422P:
++        if (size_shift > 0)
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift);
++        else
++            frame->buf.stride[0] =  ALIGN_16B(width);
++
++        frame->buf.stride[1] =  frame->buf.stride[0] >> 1;
++        frame->buf.stride[2] =  frame->buf.stride[0] >> 1;
++        buf_size[0] = frame->buf.stride[0] * height_align;
++        buf_size[1] = frame->buf.stride[1] * height_align;
++        buf_size[2] = frame->buf.stride[2] * height_align;
++        break;
++    case MPP_FMT_YUV444P:
++        if (size_shift > 0)
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift);
++        else
++            frame->buf.stride[0] =  ALIGN_16B(width);
++
++        frame->buf.stride[1] =  frame->buf.stride[0];
++        frame->buf.stride[2] =  frame->buf.stride[0];
++        buf_size[0] = frame->buf.stride[0] * height_align;
++        buf_size[1] = frame->buf.stride[1] * height_align;
++        buf_size[2] = frame->buf.stride[2] * height_align;
++        break;
++    case MPP_FMT_RGB_565:
++        if (size_shift > 0)
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift) * 2;
++        else
++            frame->buf.stride[0] =  ALIGN_16B(width) * 2;
++
++        buf_size[0] = frame->buf.stride[0] * height_align;
++        break;
++    case MPP_FMT_RGB_888:
++        if (size_shift > 0)
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift) * 3;
++        else
++            frame->buf.stride[0] =  ALIGN_16B(width) * 3;
++
++        buf_size[0] = frame->buf.stride[0] * height_align;
++        break;
++    case MPP_FMT_ARGB_8888:
++        if (size_shift > 0) {
++            frame->buf.stride[0] =  ALIGN_16B(ALIGN_16B(width) >> size_shift) * 4;
++            buf_size[0] = frame->buf.stride[0] * height_align;
++        } else {
++            if (is_aicp) {
++                // Use 8-byte alignment for AICP format as requested
++                frame->buf.stride[0] =  ALIGN_UP(width, 8) * 4;
++                buf_size[0] = frame->buf.stride[0] * ALIGN_UP(height, 8);
++            } else {
++                frame->buf.stride[0] =  ALIGN_16B(width * 4);
++                buf_size[0] = ALIGN_UP(frame->buf.stride[0] * height, CACHE_LINE_SIZE);
++            }
++        }
++        break;
++    default:
++        LV_LOG_ERROR("unsupported format:%d", frame->buf.format);
++        break;
++    }
++}
++
++static enum mpp_codec_type detect_codec_type(lv_stream_t *stream, lv_image_decoder_dsc_t *dsc)
++{
++    enum mpp_codec_type type = MPP_CODEC_VIDEO_DECODER_PNG;
++    char* ptr = NULL;
++
++    if (lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_FILE) {
++        ptr = strrchr(dsc->src, '.');
++        if (ptr && image_suffix_is_jpg(ptr)) {
++            type = MPP_CODEC_VIDEO_DECODER_MJPEG;
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++        } else if (ptr && image_suffix_is_aicp(ptr)) {
++            type = MPP_CODEC_VIDEO_DECODER_AICP;
++#endif
++        }
++    } else if (lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_VARIABLE) {
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++        uint8_t aicp_header[4];
++        uint32_t read_num;
++        lv_result_t res;
++
++        // Check for AICP header first
++        res = lv_aic_stream_read(stream, aicp_header, 4, &read_num);
++        if (res == LV_FS_RES_OK && read_num == 4 && memcmp(aicp_header, "AICP", 4) == 0) {
++            type = MPP_CODEC_VIDEO_DECODER_AICP;
++        } else {
++            lv_aic_stream_reset(stream);
++#endif
++            if (check_jpeg_soi(stream) == LV_RESULT_OK) {
++                type = MPP_CODEC_VIDEO_DECODER_MJPEG;
++            } else {
++                lv_aic_stream_reset(stream);
++            }
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++        }
++#endif
++        lv_aic_stream_reset(stream);
++    }
++
++    return type;
++}
++
++static lv_result_t lv_mpp_dec_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc)
++{
++    lv_result_t res = LV_RESULT_OK;
++    uint32_t file_len = 0;
++    lv_stream_t stream;
++    struct mpp_packet packet;
++    int width = 0;
++    int height = 0;
++    enum mpp_codec_type type;
++    struct decode_config config = { 0 };
++    int buf_size[3] = { 0 };
++    struct mpp_decoder *dec = NULL;
++    struct frame_allocator *allocator = NULL;
++    struct mpp_dec_crop_info preview_crop = {0};
++    bool use_preview_crop = false;
++    int size_shift = 0;
++    bool is_aicp = false;
++
++#if LV_USE_AIC_BMP
++    if (lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_FILE) {
++        const char *ext = lv_fs_get_ext(dsc->src);
++        if (lv_strcmp(ext, "bmp") == 0 || lv_strcmp(ext, "BMP") == 0) {
++            return lv_bmp_dec_open(decoder, dsc);
++        }
++    } else if (lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_VARIABLE) {
++        if (lv_aic_stream_open(&stream, dsc->src) != LV_FS_RES_OK)
++            return LV_RESULT_INVALID;
++
++        if (lv_check_bmp_header(&stream) == LV_RESULT_OK)
++            return lv_bmp_dec_open(decoder, dsc);
++
++        lv_aic_stream_close(&stream);
++    }
++#endif
++
++    if (lv_aic_stream_open(&stream, dsc->src) != LV_FS_RES_OK)
++        return LV_RESULT_INVALID;
++
++    mpp_decoder_data_t *mpp_data = (mpp_decoder_data_t *)lv_malloc_zeroed(sizeof(mpp_decoder_data_t));
++    CHECK_PTR(mpp_data);
++
++    width = dsc->header.w;
++    height = dsc->header.h;
++    use_preview_crop = lv_mpp_dec_take_preview_crop((const char *)dsc->src,
++                                                     &preview_crop);
++    config.pix_fmt = lv_fmt_to_mpp_fmt(dsc->header.cf);
++
++    // Detect codec type
++    type = detect_codec_type(&stream, dsc);
++
++    lv_aic_stream_get_size(&stream, &file_len);
++    dec = mpp_decoder_create(type);
++    CHECK_PTR(dec);
++
++    config.bitstream_buffer_size = ALIGN_UP(file_len, 256);
++    config.extra_frame_num = 0;
++    config.packet_count = 1;
++
++    struct mpp_frame dec_frame;
++    memset(&dec_frame, 0, sizeof(struct mpp_frame));
++    dec_frame.buf.size.width = width;
++    dec_frame.buf.size.height = height;
++    if (use_preview_crop) {
++        /* 分配可视窗口大小，避免高分辨率源图占用整帧 CMA。 */
++        dec_frame.buf.size.width = preview_crop.crop_width;
++        dec_frame.buf.size.height = preview_crop.crop_height;
++    }
++    dec_frame.buf.format = config.pix_fmt;
++    dec_frame.buf.buf_type = MPP_PHY_ADDR;
++
++#if defined(MPP_JPEG_DEC_OUT_SIZE_LIMIT_ENABLE)
++    if (type == MPP_CODEC_VIDEO_DECODER_MJPEG)
++        size_shift = dsc->header.reserved_2;
++#endif
++
++    if (type == MPP_CODEC_VIDEO_DECODER_AICP)
++        is_aicp = true;
++
++    lv_set_frame_buf_size(&dec_frame, buf_size, 0, is_aicp);
++
++    if (size_shift > 0) {
++        struct mpp_scale_ratio scale;
++        scale.hor_scale = size_shift;
++        scale.ver_scale = size_shift;
++        mpp_decoder_control(dec, MPP_DEC_INIT_CMD_SET_SCALE, &scale);
++    }
++
++    CHECK_RET(lv_frame_buf_alloc(mpp_data, &dec_frame.buf, buf_size, dsc->header.cf), LV_RESULT_OK);
++
++    // allocator will be released in decoder
++    allocator = lv_open_allocator(&dec_frame);
++    CHECK_PTR(allocator);
++
++    mpp_decoder_control(dec, MPP_DEC_INIT_CMD_SET_EXT_FRAME_ALLOCATOR, (void*)allocator);
++    if (use_preview_crop)
++        mpp_decoder_control(dec, MPP_DEC_INIT_CMD_SET_CROP_INFO, &preview_crop);
++    CHECK_RET(mpp_decoder_init(dec, &config), 0);
++    memset(&packet, 0, sizeof(struct mpp_packet));
++    mpp_decoder_get_packet(dec, &packet, file_len);
++
++    uint32_t read_size = 0;
++
++    lv_aic_stream_read(&stream, packet.data, file_len, &read_size);
++    packet.size = file_len;
++    packet.flag = PACKET_FLAG_EOS;
++
++    mpp_decoder_put_packet(dec, &packet);
++    CHECK_RET(mpp_decoder_decode(dec), 0);
++
++    struct mpp_frame frame;
++    memset(&frame, 0, sizeof(struct mpp_frame));
++    mpp_decoder_get_frame(dec, &frame);
++
++    memcpy(&mpp_data->dec_buf, &frame.buf, sizeof(struct mpp_buf));
++    mpp_decoder_put_frame(dec, &frame);
++    dsc->decoded = &mpp_data->decoded;
++
++#if LV_CACHE_DEF_SIZE > 0
++    if (!dsc->args.no_cache) {
++        mpp_cache_t *mpp_cache = (mpp_cache_t *)decoder->user_data;
++        if (lv_image_cache_check(mpp_cache)) {
++            // Add it to cache
++            lv_image_cache_data_t search_key;
++            search_key.src_type = dsc->src_type;
++            search_key.src = dsc->src;
++            search_key.slot.size = dsc->decoded->data_size;
++            mpp_data->cached = true;
++            lv_cache_entry_t *cache_entry = lv_image_decoder_add_to_cache(decoder, &search_key, dsc->decoded, mpp_data);
++            CHECK_PTR(cache_entry);
++            dsc->cache_entry = cache_entry;
++            lv_mutex_lock(&mpp_cache->lock);
++            mpp_cache->cache_num++;
++            lv_mutex_unlock(&mpp_cache->lock);
++        }
++    }
++#endif
++
++out:
++    if (dec)
++        mpp_decoder_destory(dec);
++
++    if (res == LV_RESULT_INVALID) {
++        dsc->decoded = NULL;
++        if (mpp_data) {
++            lv_frame_buf_free(mpp_data);
++            lv_free(mpp_data);
++        }
++    }
++
++    lv_aic_stream_close(&stream);
++    return res;
++}
++
++static void mpp_dec_data_release(mpp_decoder_data_t *decoder_data)
++{
++    if (decoder_data == NULL)
++        return;
++
++    if (decoder_data) {
++        lv_frame_buf_free(decoder_data);
++        lv_free(decoder_data);
++    }
++}
++
++static void lv_mpp_dec_close(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc)
++{
++    mpp_decoder_data_t *mpp_data =  (mpp_decoder_data_t *)dsc->decoded;
++    LV_UNUSED(decoder);
++
++    if (!mpp_data->cached) {
++        mpp_dec_data_release(mpp_data);
++    } else {
++        lv_cache_release(dsc->cache, dsc->cache_entry, NULL);
++    }
++
++    return;
++}
++
++static void mpp_dec_cache_free_cb(void *node, void *user_data)
++{
++    lv_image_cache_data_t *entry = (lv_image_cache_data_t *)node;
++    mpp_cache_t *mpp_cache = (mpp_cache_t *)entry->decoder->user_data;
++
++    mpp_dec_data_release((mpp_decoder_data_t *)entry->user_data);
++    lv_mutex_lock(&mpp_cache->lock);
++    mpp_cache->cache_num--;
++    lv_mutex_unlock(&mpp_cache->lock);
++
++    // Free the duplicated file name
++    if (entry->src_type == LV_IMAGE_SRC_FILE)
++        lv_free((void *)entry->src);
++}
++
++static lv_image_decoder_t *mpp_dec = NULL;
++void lv_mpp_dec_init(void)
++{
++    lv_image_decoder_t *dec = lv_image_decoder_create();
++    mpp_cache_t *mpp_cache = (mpp_cache_t *)lv_malloc_zeroed(sizeof(mpp_cache_t));
++
++    if (mpp_cache == NULL)
++        return;
++
++    lv_mutex_init(&preview_crop_lock);
++    preview_crop_lock_ready = true;
++    mpp_cache->max_num = LV_CACHE_IMG_NUM;
++    lv_mutex_init(&mpp_cache->lock);
++    dec->user_data = mpp_cache;
++    lv_image_decoder_set_info_cb(dec, lv_mpp_dec_info);
++    lv_image_decoder_set_open_cb(dec, lv_mpp_dec_open);
++    lv_image_decoder_set_close_cb(dec, lv_mpp_dec_close);
++
++     // use custom cache free method
++    lv_image_decoder_set_cache_free_cb(dec, mpp_dec_cache_free_cb);
++    mpp_dec = dec;
++}
++
++void lv_mpp_dec_deinit(void)
++{
++    lv_image_decoder_t * dec = NULL;
++    while ((dec = lv_image_decoder_get_next(dec)) != NULL) {
++        if (dec->info_cb == lv_mpp_dec_info) {
++            mpp_cache_t *mpp_cache = (mpp_cache_t *)dec->user_data;
++            lv_mutex_delete(&mpp_cache->lock);
++            lv_free(dec->user_data);
++            lv_image_decoder_delete(dec);
++            lv_mutex_delete(&preview_crop_lock);
++            preview_crop_lock_ready = false;
++            break;
++        }
++    }
++}
++
++#if LV_CACHE_DEF_SIZE > 0
++bool lv_drop_one_cached_image()
++{
++    #define img_cache_p (LV_GLOBAL_DEFAULT()->img_cache)
++    #define lv_initialized  (LV_GLOBAL_DEFAULT()->inited)
++    if (lv_initialized)
++        return lv_cache_evict_one(img_cache_p, NULL);
++    else
++        return false;
++}
++
++bool lv_image_cache_check(mpp_cache_t *mpp_cache)
++{
++#if LV_CACHE_IMG_NUM_LIMIT == 0
++    return true;
++#else
++    if (mpp_cache->cache_num < mpp_cache->max_num) {
++        return true;
++    } else {
++        if (lv_drop_one_cached_image())
++            return true;
++        else
++            return false;
++    }
++#endif //LV_CACHE_IMG_NUM_LIMIT
++}
++#else
++bool lv_drop_one_cached_image()
++{
++    return false;
++}
++#endif // LV_CACHE_DEF_SIZE
++
++void lv_img_cache_set_size(uint16_t max_num)
++{
++    lv_image_cache_drop(NULL);
++    if (mpp_dec) {
++        mpp_cache_t *mpp_cache = (mpp_cache_t *)mpp_dec->user_data;
++        mpp_cache->max_num = max_num;
++    }
++}
+diff --git a/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.h b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.h
+new file mode 100644
+index 0000000..56d2982
+--- /dev/null
++++ b/source/packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec/lv_mpp_dec.h
+@@ -0,0 +1,155 @@
++/*
++ * Copyright (C) 2024-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors:  Ning Fang <ning.fang@artinchip.com>
++ */
++
++#ifndef LV_MPP_DEC_H
++#define LV_MPP_DEC_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#include <rtconfig.h>
++#include "lvgl.h"
++#include "mpp_decoder.h"
++#include "frame_allocator.h"
++
++#ifndef LV_USE_MPP_DEC
++#define LV_USE_MPP_DEC 1
++#endif
++
++#ifndef LV_CACHE_IMG_NUM_LIMIT
++#define LV_CACHE_IMG_NUM_LIMIT 1
++#endif
++
++#ifndef LV_CACHE_IMG_NUM
++#define LV_CACHE_IMG_NUM 8
++#endif
++
++#ifndef MPP_JPEG_DEC_OUT_SIZE_LIMIT_ENABLE
++#define MPP_JPEG_DEC_OUT_SIZE_LIMIT_ENABLE
++#endif
++
++#ifndef MPP_JPEG_DEC_MAX_OUT_WIDTH
++#define MPP_JPEG_DEC_MAX_OUT_WIDTH  2048
++#endif
++
++#ifndef MPP_JPEG_DEC_MAX_OUT_HEIGHT
++#define MPP_JPEG_DEC_MAX_OUT_HEIGHT 2048
++#endif
++
++#define CHECK_RET(func, ret)  do {\
++                            if (func != ret) {\
++                                LV_LOG_ERROR("Invalid status");\
++                                res = LV_RESULT_INVALID;\
++                                goto out;\
++                            }\
++                         } while (0)
++
++#define CHECK_PTR(ptr)  do {\
++                            if (ptr == NULL) {\
++                                LV_LOG_ERROR("ptr == NULL");\
++                                res = LV_RESULT_INVALID;\
++                                goto out;\
++                            }\
++                        } while (0)
++
++typedef struct {
++    lv_draw_buf_t decoded;
++    struct mpp_buf dec_buf;
++    uint8_t *data[3];
++    bool cached;
++} mpp_decoder_data_t;
++
++typedef struct {
++    lv_mutex_t lock;
++    int32_t cache_num;
++    int32_t max_num;
++} mpp_cache_t;
++
++static inline int jpeg_width_limit(int width)
++{
++    int r = 0;
++
++    while(width > MPP_JPEG_DEC_MAX_OUT_WIDTH) {
++        width = width >> 1;
++        r++;
++
++        if (r == 3) {
++            break;
++        }
++    }
++    return r;
++}
++
++static inline int jpeg_height_limit(int height)
++{
++    int r = 0;
++
++    while(height > MPP_JPEG_DEC_MAX_OUT_HEIGHT) {
++        height = height >> 1;
++        r++;
++
++        if (r == 3) {
++            break;
++        }
++    }
++    return r;
++}
++
++static inline bool image_suffix_is_jpg(char *ptr)
++{
++    return ((!strncmp(ptr, ".jpg", 4)) || (!strncmp(ptr, ".jpeg", 5))
++            || (!strncmp(ptr, ".JPG", 4)) || (!strncmp(ptr, ".JPEG", 5)));
++}
++
++#ifdef AIC_MPP_AICP_DEC_ENABLE
++static inline bool image_suffix_is_aicp(char *ptr)
++{
++    return (!strncmp(ptr, ".aicp", 5));
++}
++#endif
++
++static inline int jpeg_size_limit(int w, int h)
++{
++    return LV_MAX(jpeg_width_limit(w), jpeg_height_limit(h));
++}
++
++lv_color_format_t mpp_fmt_to_lv_fmt(enum mpp_pixel_format cf);
++
++lv_result_t lv_png_decoder_info(const char *src, lv_image_header_t *header, uint32_t size, bool is_file);
++
++lv_result_t lv_jpeg_decoder_info(const char *src, lv_image_header_t *header, uint32_t size, bool is_file, bool is_aicp);
++
++/* 为单次 HMI 图片预览设置 MPP 硬件裁剪窗口，输出尺寸只占可视区域。 */
++int lv_mpp_dec_set_preview_crop(const char *src, const struct mpp_dec_crop_info *crop);
++void lv_mpp_dec_clear_preview_crop(const char *src);
++
++lv_result_t lv_frame_buf_alloc(mpp_decoder_data_t *mpp_data, struct mpp_buf *alloc_buf,
++                              int *size, uint32_t cf);
++
++void lv_frame_buf_free(mpp_decoder_data_t *mpp_data);
++
++void lv_set_frame_buf_size(struct mpp_frame *frame, int *buf_size, int size_shift, bool is_aicp);
++
++struct frame_allocator* lv_open_allocator(struct mpp_frame* frame);
++
++void lv_mpp_dec_init(void);
++
++void lv_mpp_dec_deinit(void);
++
++bool lv_drop_one_cached_image();
++
++#if LV_CACHE_DEF_SIZE > 0
++bool lv_image_cache_check(mpp_cache_t *mpp_cache);
++#endif
++
++#ifdef __cplusplus
++} /*extern "C"*/
++#endif
++
++#endif //LV_MPP_DEC_H
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 752b451..397c715 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -123,6 +123,8 @@ CONFIG_OTA_DATA_DIRECT=y
+ CONFIG_LPKG_USING_MBEDTLS=y
+ CONFIG_HMI_APP=y
+ CONFIG_HMI_QUIET_CONSOLE=y
++CONFIG_AIC_USING_UART0=y
++CONFIG_HMI_DISPLAY_PROFILE_SERIAL=y
+ 
+ CONFIG_HMI_SD_OTA=y
+ CONFIG_HMI_NETWORK=y
+@@ -139,9 +141,8 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.21"
++CONFIG_HMI_FW_VERSION="1.0.22"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+-
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index bd98a53..8c9171b 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -123,6 +123,8 @@ CONFIG_OTA_DATA_DIRECT=y
+ CONFIG_LPKG_USING_MBEDTLS=y
+ CONFIG_HMI_APP=y
+ CONFIG_HMI_QUIET_CONSOLE=y
++CONFIG_AIC_USING_UART0=y
++CONFIG_HMI_DISPLAY_PROFILE_SERIAL=y
+ 
+ CONFIG_HMI_SD_OTA=y
+ CONFIG_HMI_NETWORK=y
+@@ -137,7 +139,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.21"
++CONFIG_HMI_FW_VERSION="1.0.22"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+@@ -145,4 +147,3 @@ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+ CONFIG_LPKG_USING_FREETYPE=y
+ 
+-
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index ca2b223..ef0efff 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.21",
++            "version": "1.0.22",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
+@@ -115,4 +115,3 @@
+     },
+ }
+ 
+-

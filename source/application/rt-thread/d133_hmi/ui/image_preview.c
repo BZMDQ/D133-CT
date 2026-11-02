@@ -1,16 +1,19 @@
 #include "image_preview.h"
 #include "hmi_serial_log.h"
 #include "file_manager.h"
+#include "display_profile_manager.h"
+#include <lv_mpp_dec.h>
 #include <rtthread.h>
 #include <aic_core.h>
 #include <sys/stat.h>
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
 
 #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
-#define IMAGE_PREVIEW_WIDTH_MAX 1024U
-#define IMAGE_PREVIEW_HEIGHT_MAX 768U
+#define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
 
 typedef struct {
@@ -33,6 +36,7 @@ static int cancel_requested;
 static int decoder_opened;
 static lv_image_decoder_dsc_t decoder_dsc;
 static lv_image_dsc_t preview_image;
+static void *preview_owned_buffer;
 static char preview_source_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
 
 enum {
@@ -95,14 +99,289 @@ static void release_decode_resources(void)
         decoder_opened = 0;
         memset(&decoder_dsc, 0, sizeof(decoder_dsc));
     }
+    if (preview_owned_buffer) {
+        aicos_free(MEM_CMA, preview_owned_buffer);
+        preview_owned_buffer = NULL;
+    }
     memset(&preview_image, 0, sizeof(preview_image));
 }
 
 static int dimensions_supported(const lv_image_header_t *header)
 {
-    return header && header->w > 0 && header->h > 0 &&
-           header->w <= IMAGE_PREVIEW_WIDTH_MAX &&
-           header->h <= IMAGE_PREVIEW_HEIGHT_MAX;
+    /* LVGL 的图像描述符使用 16 位宽高；不再人为限制为 1024×768。 */
+    return header && header->w > 0 && header->h > 0;
+}
+
+static uint32_t read_le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static uint16_t read_le16(const uint8_t *p)
+{
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+static uint32_t read_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static uint8_t bmp_mask_to_u8(uint32_t pixel, uint32_t mask)
+{
+    uint32_t shift = 0;
+    uint32_t maximum;
+    uint32_t value;
+
+    while (shift < 32U && ((mask >> shift) & 1U) == 0U)
+        shift++;
+    if (shift == 32U)
+        return 0;
+    maximum = mask >> shift;
+    value = (pixel & mask) >> shift;
+    if (maximum == 0U)
+        return 0;
+    return (uint8_t)((value * 255U + maximum / 2U) / maximum);
+}
+
+static void preview_viewport(uint16_t *width, uint16_t *height)
+{
+    display_profile_info_t profile;
+
+    if (!width || !height)
+        return;
+    if (display_profile_get_active(&profile) == DISPLAY_PROFILE_OK &&
+        profile.width > 0 && profile.height > 0) {
+        *width = profile.width;
+        *height = profile.height;
+    } else {
+        /* 仅在串口配置服务尚未启动时回退到当前 CS000 屏幕。 */
+        *width = 1024;
+        *height = 600;
+    }
+}
+
+static int read_png_dimensions(const char *path, uint32_t *width, uint32_t *height)
+{
+    uint8_t header[24];
+    FILE *file;
+    int result = IMAGE_PREVIEW_ERR_DECODE;
+
+    file = fopen(path, "rb");
+    if (!file)
+        return IMAGE_PREVIEW_ERR_PATH;
+    if (fread(header, 1, sizeof(header), file) == sizeof(header) &&
+        memcmp(header, "\x89PNG\r\n\x1a\n", 8) == 0 &&
+        memcmp(header + 12, "IHDR", 4) == 0) {
+        uint32_t image_width = read_be32(header + 16);
+        uint32_t image_height = read_be32(header + 20);
+        uint64_t pixels = (uint64_t)image_width * image_height;
+
+        if (image_width && image_height && image_width <= UINT16_MAX &&
+            image_height <= UINT16_MAX && pixels <= IMAGE_PREVIEW_PNG_MAX_PIXELS) {
+            *width = image_width;
+            *height = image_height;
+            result = IMAGE_PREVIEW_ERR_NONE;
+        } else {
+            result = IMAGE_PREVIEW_ERR_SIZE;
+        }
+    }
+    fclose(file);
+    return result;
+}
+
+/* BMP 只读屏幕中央可见窗口，源图片分辨率不会决定输出缓冲区大小。 */
+static int decode_bmp_preview(const char *path, uint64_t file_size)
+{
+    uint8_t header[54];
+    uint8_t *source_row = NULL;
+    uint8_t *raw = NULL;
+    uint8_t *output;
+    FILE *file = NULL;
+    int32_t signed_width;
+    int32_t signed_height;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pixel_offset;
+    uint32_t dib_size;
+    uint32_t compression;
+    uint32_t red_mask = 0;
+    uint32_t green_mask = 0;
+    uint32_t blue_mask = 0;
+    uint32_t source_stride;
+    uint64_t source_stride_wide;
+    uint32_t crop_x;
+    uint32_t crop_y;
+    uint32_t output_width;
+    uint32_t output_height;
+    uint32_t output_stride;
+    uint32_t bytes_per_pixel;
+    uint16_t planes;
+    uint16_t bits_per_pixel;
+    uint16_t viewport_width;
+    uint16_t viewport_height;
+    uint64_t row_bits;
+    uint64_t image_end;
+    uint64_t output_size;
+    uint64_t source_bytes;
+    uint32_t y;
+    int top_down;
+    int result = IMAGE_PREVIEW_ERR_DECODE;
+
+    file = fopen(path, "rb");
+    if (!file)
+        return IMAGE_PREVIEW_ERR_PATH;
+    if (fread(header, 1, sizeof(header), file) != sizeof(header) ||
+        header[0] != 'B' || header[1] != 'M')
+        goto done;
+
+    pixel_offset = read_le32(header + 10);
+    dib_size = read_le32(header + 14);
+    signed_width = (int32_t)read_le32(header + 18);
+    signed_height = (int32_t)read_le32(header + 22);
+    planes = read_le16(header + 26);
+    bits_per_pixel = read_le16(header + 28);
+    compression = read_le32(header + 30);
+    if (dib_size < 40 || (uint64_t)pixel_offset < 14ULL + dib_size ||
+        14ULL + dib_size > file_size || signed_width <= 0 ||
+        signed_height == 0 || signed_height == INT32_MIN || planes != 1 ||
+        (compression != 0 && compression != 3) ||
+        (bits_per_pixel != 16 && bits_per_pixel != 24 && bits_per_pixel != 32) ||
+        (compression == 3 && bits_per_pixel == 24)) {
+        result = IMAGE_PREVIEW_ERR_FORMAT;
+        goto done;
+    }
+
+    if (compression == 3) {
+        uint8_t masks[12];
+
+        if (pixel_offset < 66U || fseek(file, 54, SEEK_SET) != 0 ||
+            fread(masks, 1, sizeof(masks), file) != sizeof(masks))
+            goto done;
+        red_mask = read_le32(masks);
+        green_mask = read_le32(masks + 4);
+        blue_mask = read_le32(masks + 8);
+        if (!red_mask || !green_mask || !blue_mask) {
+            result = IMAGE_PREVIEW_ERR_FORMAT;
+            goto done;
+        }
+    } else if (bits_per_pixel == 16) {
+        /* BI_RGB 的 16 位 BMP 按标准 5-5-5 解码，再转换成屏幕 RGB565。 */
+        red_mask = 0x7C00U;
+        green_mask = 0x03E0U;
+        blue_mask = 0x001FU;
+    }
+
+    width = (uint32_t)signed_width;
+    height = (uint32_t)(signed_height < 0 ? -signed_height : signed_height);
+    top_down = signed_height < 0;
+    row_bits = (uint64_t)width * bits_per_pixel;
+    source_stride_wide = ((row_bits + 31U) / 32U) * 4U;
+    if (source_stride_wide == 0 || source_stride_wide > UINT32_MAX) {
+        result = IMAGE_PREVIEW_ERR_SIZE;
+        goto done;
+    }
+    source_stride = (uint32_t)source_stride_wide;
+    image_end = (uint64_t)pixel_offset + (uint64_t)source_stride * height;
+    if (source_stride == 0 || image_end > file_size || image_end > LONG_MAX) {
+        result = IMAGE_PREVIEW_ERR_SIZE;
+        goto done;
+    }
+
+    preview_viewport(&viewport_width, &viewport_height);
+    output_width = width < viewport_width ? width : viewport_width;
+    output_height = height < viewport_height ? height : viewport_height;
+    crop_x = (width - output_width) / 2U;
+    crop_y = (height - output_height) / 2U;
+    bytes_per_pixel = bits_per_pixel / 8U;
+    source_bytes = (uint64_t)output_width * bytes_per_pixel;
+    output_stride = lv_draw_buf_width_to_stride(output_width, LV_COLOR_FORMAT_RGB565);
+    output_size = (uint64_t)output_stride * output_height;
+    if (source_bytes == 0 || source_bytes > UINT32_MAX || output_size == 0 ||
+        output_size > INT_MAX - CACHE_LINE_SIZE) {
+        result = IMAGE_PREVIEW_ERR_SIZE;
+        goto done;
+    }
+
+    source_row = (uint8_t *)rt_malloc((size_t)source_bytes);
+    raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
+    if (!source_row || !raw) {
+        result = IMAGE_PREVIEW_ERR_SIZE;
+        goto done;
+    }
+    output = (uint8_t *)ALIGN_UP((ulong)raw, CACHE_LINE_SIZE);
+
+    for (y = 0; y < output_height; y++) {
+        uint32_t source_y = top_down ? crop_y + y : height - 1U - (crop_y + y);
+        uint64_t source_offset = (uint64_t)pixel_offset +
+            (uint64_t)source_y * source_stride + (uint64_t)crop_x * bytes_per_pixel;
+        uint8_t *output_row = output + (size_t)y * output_stride;
+        uint32_t x;
+
+        if (source_offset + source_bytes > image_end || source_offset > LONG_MAX ||
+            fseek(file, (long)source_offset, SEEK_SET) != 0 ||
+            fread(source_row, 1, (size_t)source_bytes, file) != source_bytes) {
+            result = IMAGE_PREVIEW_ERR_DECODE;
+            goto done;
+        }
+
+        for (x = 0; x < output_width; x++) {
+            uint16_t rgb565;
+            if (bits_per_pixel == 16) {
+                uint32_t pixel = read_le16(source_row + (size_t)x * 2U);
+                uint8_t red = bmp_mask_to_u8(pixel, red_mask);
+                uint8_t green = bmp_mask_to_u8(pixel, green_mask);
+                uint8_t blue = bmp_mask_to_u8(pixel, blue_mask);
+                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                                    ((uint16_t)(green & 0xFCU) << 3) |
+                                    ((uint16_t)blue >> 3));
+            } else if (bits_per_pixel == 32 && compression == 3) {
+                const uint8_t *pixel = source_row + (size_t)x * 4U;
+                uint32_t value = read_le32(pixel);
+                uint8_t red = bmp_mask_to_u8(value, red_mask);
+                uint8_t green = bmp_mask_to_u8(value, green_mask);
+                uint8_t blue = bmp_mask_to_u8(value, blue_mask);
+                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                                    ((uint16_t)(green & 0xFCU) << 3) |
+                                    ((uint16_t)blue >> 3));
+            } else {
+                const uint8_t *pixel = source_row + (size_t)x * bytes_per_pixel;
+                uint8_t blue = pixel[0];
+                uint8_t green = pixel[1];
+                uint8_t red = pixel[2];
+                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                                    ((uint16_t)(green & 0xFCU) << 3) |
+                                    ((uint16_t)blue >> 3));
+            }
+            memcpy(output_row + (size_t)x * sizeof(rgb565), &rgb565, sizeof(rgb565));
+        }
+        if (output_stride > output_width * 2U)
+            memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
+    }
+
+    aicos_dcache_clean_range((unsigned long *)output, (int64_t)output_size);
+    preview_owned_buffer = raw;
+    raw = NULL;
+    memset(&preview_image, 0, sizeof(preview_image));
+    preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
+    preview_image.header.cf = LV_COLOR_FORMAT_RGB565;
+    preview_image.header.w = output_width;
+    preview_image.header.h = output_height;
+    preview_image.header.stride = output_stride;
+    preview_image.data_size = (uint32_t)output_size;
+    preview_image.data = output;
+    result = IMAGE_PREVIEW_ERR_NONE;
+
+done:
+    if (source_row)
+        rt_free(source_row);
+    if (raw)
+        aicos_free(MEM_CMA, raw);
+    if (file)
+        fclose(file);
+    return result;
 }
 
 /* 各解码器输出统一归一化到屏幕原生 RGB565，避免格式映射造成通道偏色。 */
@@ -206,6 +485,12 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
 static int decode_mpp_image(const lv_image_header_t *header)
 {
     lv_image_decoder_args_t args = {0};
+    struct mpp_dec_crop_info crop = {0};
+    uint16_t viewport_width;
+    uint16_t viewport_height;
+    uint32_t crop_width;
+    uint32_t crop_height;
+    int crop_requested = 0;
     rt_uint32_t decode_started;
     rt_uint32_t decode_ms;
     rt_uint32_t normalize_started;
@@ -215,15 +500,34 @@ static int decode_mpp_image(const lv_image_header_t *header)
     if (!dimensions_supported(header))
         return IMAGE_PREVIEW_ERR_SIZE;
 
+    preview_viewport(&viewport_width, &viewport_height);
+    crop_width = header->w < viewport_width ? header->w : viewport_width;
+    crop_height = header->h < viewport_height ? header->h : viewport_height;
+    if (crop_width != header->w || crop_height != header->h) {
+        crop.crop_x = ((int)header->w - (int)crop_width) / 2;
+        crop.crop_y = ((int)header->h - (int)crop_height) / 2;
+        crop.crop_width = (int)crop_width;
+        crop.crop_height = (int)crop_height;
+        crop.crop_out_x = 0;
+        crop.crop_out_y = 0;
+        if (lv_mpp_dec_set_preview_crop(preview_source_path, &crop) != 0)
+            return IMAGE_PREVIEW_ERR_DECODE;
+        crop_requested = 1;
+    }
+
     args.no_cache = true;
     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
     decode_started = rt_tick_get_millisecond();
     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
+        if (crop_requested)
+            lv_mpp_dec_clear_preview_crop(preview_source_path);
         hmi_serial_log("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
                    (unsigned)(rt_tick_get_millisecond() - decode_started),
                    preview_source_path);
         return IMAGE_PREVIEW_ERR_DECODE;
     }
+    if (crop_requested)
+        lv_mpp_dec_clear_preview_crop(preview_source_path);
     decode_ms = rt_tick_get_millisecond() - decode_started;
     decoder_opened = 1;
     if (!decoder_dsc.decoded || !decoder_dsc.decoded->unaligned_data ||
@@ -258,6 +562,8 @@ static int load_image(const char *path)
     struct stat st;
     lv_image_header_t header = {0};
     image_kind_t kind = image_kind(path);
+    uint32_t png_width = 0;
+    uint32_t png_height = 0;
     size_t path_len;
     rt_uint32_t started = rt_tick_get_millisecond();
     rt_uint32_t info_ms;
@@ -267,10 +573,31 @@ static int load_image(const char *path)
 
     if (kind == IMAGE_KIND_UNSUPPORTED)
         return IMAGE_PREVIEW_ERR_FORMAT;
-    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
-        (uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
+    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0) {
         hmi_serial_log("[image_preview] 文件不可读或大小无效：%s\n", path);
         return IMAGE_PREVIEW_ERR_SIZE;
+    }
+
+    if (kind == IMAGE_KIND_BMP) {
+        decode_started = rt_tick_get_millisecond();
+        result = decode_bmp_preview(path, (uint64_t)st.st_size);
+        hmi_serial_log("[image_preview] BMP 可视区域读取耗时：%u ms，结果=%d\n",
+                       (unsigned)(rt_tick_get_millisecond() - decode_started), result);
+        return result;
+    }
+
+    /* JPEG/PNG 的官方 MPP 解码器会缓存压缩输入，保留有界文件大小保护。 */
+    if ((uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
+        hmi_serial_log("[image_preview] 压缩图片超过 MPP 安全输入上限：%s\n", path);
+        return IMAGE_PREVIEW_ERR_SIZE;
+    }
+
+    if (kind == IMAGE_KIND_PNG) {
+        result = read_png_dimensions(path, &png_width, &png_height);
+        if (result != IMAGE_PREVIEW_ERR_NONE) {
+            hmi_serial_log("[image_preview] PNG 尺寸无效或超过 SDK 解码范围：%s\n", path);
+            return result;
+        }
     }
 
     path_len = strlen(path);
@@ -296,15 +623,16 @@ static int load_image(const char *path)
         return IMAGE_PREVIEW_ERR_DECODE;
     }
     info_ms = rt_tick_get_millisecond() - info_started;
-    if (!dimensions_supported(&header)) {
-        hmi_serial_log("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
-                   path, header.w, header.h);
+    if (!dimensions_supported(&header) ||
+        (kind == IMAGE_KIND_PNG &&
+         (header.w != png_width || header.h != png_height))) {
+        hmi_serial_log("[image_preview] 图片尺寸超出 LVGL 描述符或 SDK 范围：%s (%u x %u)\n",
+                       path, header.w, header.h);
         return IMAGE_PREVIEW_ERR_SIZE;
     }
     if (preview_cancelled())
         return IMAGE_PREVIEW_ERR_CANCELLED;
 
-    /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
     decode_started = rt_tick_get_millisecond();
     result = decode_mpp_image(&header);
     hmi_serial_log("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
@@ -317,7 +645,7 @@ static const char *error_text(int error)
 {
     switch (error) {
     case IMAGE_PREVIEW_ERR_PATH: return "图片路径无效。";
-    case IMAGE_PREVIEW_ERR_SIZE: return "图片文件超过 4 MiB，或分辨率超出 1024×768 解码限制。";
+    case IMAGE_PREVIEW_ERR_SIZE: return "图片缓冲或尺寸超过当前 SDK 的安全范围；JPEG/PNG 输入上限为 4 MiB，PNG 像素上限为 800 万。";
     case IMAGE_PREVIEW_ERR_FORMAT: return "图片格式不支持，请选择基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
     case IMAGE_PREVIEW_ERR_CANCELLED: return "已取消图片加载。";
     case IMAGE_PREVIEW_ERR_DECODE:
@@ -471,4 +799,3 @@ void image_preview_cancel(void)
         rt_mutex_release(&state_lock);
     }
 }
-
