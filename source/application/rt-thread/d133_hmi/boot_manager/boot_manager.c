@@ -26,15 +26,15 @@ int boot_manager_confirm(void)
 static void monitor(void *arg)
 {
     rt_device_t wdt=rt_device_find("wdt");rt_uint32_t timeout=15;unsigned healthy=0;int watchdog_ok=0;
-    /* 持续检查 UI 心跳和必要文件系统；失败时不确认，交给看门狗复位和官方计数回滚。 */
+    /* /data 仅保存日志和状态；挂载失败不应阻断正常系统或触发看门狗复位。 */
     if(wdt&&!rt_device_init(wdt)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_SET_TIMEOUT,&timeout)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_START,0))watchdog_ok=1;
     if(!watchdog_ok)system_manager_log("看门狗未能启动，已阻止新系统健康确认");
     while(1){
         boot_status_t snapshot;boot_manager_get(&snapshot);
         display_profile_info_t profile;display_profile_get_active(&profile);
-        struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata"),*data=dfs_filesystem_lookup("/data");
+        struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
         int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
-        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
+        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
         rt_thread_mdelay(1000);
     }

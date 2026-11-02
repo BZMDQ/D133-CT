@@ -1,0 +1,226 @@
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 61dd835..3b87708 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.24
++D133-控制终端 1.0.25
+diff --git a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+index 38faf6f..87df7df 100644
+--- a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
++++ b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+@@ -26,15 +26,15 @@ int boot_manager_confirm(void)
+ static void monitor(void *arg)
+ {
+     rt_device_t wdt=rt_device_find("wdt");rt_uint32_t timeout=15;unsigned healthy=0;int watchdog_ok=0;
+-    /* 持续检查 UI 心跳和必要文件系统；失败时不确认，交给看门狗复位和官方计数回滚。 */
++    /* /data 仅保存日志和状态；挂载失败不应阻断正常系统或触发看门狗复位。 */
+     if(wdt&&!rt_device_init(wdt)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_SET_TIMEOUT,&timeout)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_START,0))watchdog_ok=1;
+     if(!watchdog_ok)system_manager_log("看门狗未能启动，已阻止新系统健康确认");
+     while(1){
+         boot_status_t snapshot;boot_manager_get(&snapshot);
+         display_profile_info_t profile;display_profile_get_active(&profile);
+-        struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata"),*data=dfs_filesystem_lookup("/data");
++        struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
+         int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
+-        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
++        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
+         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
+         rt_thread_mdelay(1000);
+     }
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+index d8547da..b02a00f 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -12,16 +12,10 @@
+ #define DISPLAY_PROFILE_UART_NAME "uart0"
+ #define DISPLAY_PROFILE_UART_BAUD 115200
+ #define DISPLAY_PROFILE_RX_CHUNK 32
+-#define DISPLAY_PROFILE_RX_QUEUE 8
+ #define DISPLAY_PROFILE_THREAD_STACK 3072
+ 
+-typedef struct {
+-    rt_device_t device;
+-    rt_size_t size;
+-} profile_rx_message_t;
+-
+ static struct rt_mutex profile_lock;
+-static rt_mq_t rx_messages;
++
+ static rt_device_t profile_uart;
+ static int profile_lock_ready;
+ static int manager_ready;
+@@ -120,17 +114,6 @@ static void profile_command_reply(const char *command)
+     profile_uart_send(response);
+ }
+ 
+-static rt_err_t profile_uart_rx_indicate(rt_device_t device, rt_size_t size)
+-{
+-    profile_rx_message_t message;
+-
+-    if (!rx_messages || !size)
+-        return RT_EOK;
+-    message.device = device;
+-    message.size = size;
+-    return rt_mq_send(rx_messages, &message, sizeof(message));
+-}
+-
+ /* 代号为固定 5 字节 ASCII，因此既支持直接发送，也支持 CR/LF 结尾。 */
+ static void profile_uart_consume_byte(char value)
+ {
+@@ -158,55 +141,53 @@ static void profile_uart_consume_byte(char value)
+     }
+ }
+ 
+-static void display_profile_uart_thread(void *parameter)
++static int display_profile_uart_open(void)
+ {
+     struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT;
+-    uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
+-    profile_rx_message_t message;
+-    rt_device_t device;
++    rt_device_t device = rt_device_find(DISPLAY_PROFILE_UART_NAME);
+ 
+-    RT_UNUSED(parameter);
+-    device = rt_device_find(DISPLAY_PROFILE_UART_NAME);
+     if (!device) {
+         system_manager_log("屏幕配置串口未找到 uart0");
+-        return;
++        return -1;
+     }
+     config.baud_rate = DISPLAY_PROFILE_UART_BAUD;
+     if (rt_device_control(device, RT_DEVICE_CTRL_CONFIG, &config) != RT_EOK ||
+-        rt_device_open(device, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_INT_RX) != RT_EOK) {
++        rt_device_open(device, RT_DEVICE_OFLAG_RDWR) != RT_EOK) {
+         system_manager_log("屏幕配置串口 uart0 初始化失败");
+-        return;
++        return -2;
+     }
+ 
+     profile_uart = device;
+-    if (rt_device_set_rx_indicate(profile_uart, profile_uart_rx_indicate) != RT_EOK) {
+-        system_manager_log("屏幕配置串口 UART0 接收回调注册失败");
+-        return;
+-    }
+     system_manager_log("屏幕配置串口已启动：UART0 115200 8N1");
+-    {
+-        display_profile_info_t active;
+-        char response[128];
++    return 0;
++}
+ 
+-        display_profile_get_active(&active);
+-        rt_snprintf(response, sizeof(response),
+-                    "%s,READY,RES=%ux%u,TOUCH=%s\r\n",
+-                    active.code, active.width, active.height, active.touch);
+-        profile_uart_send(response);
+-    }
++static void display_profile_uart_send_ready(void)
++{
++    display_profile_info_t active;
++    char response[128];
++
++    display_profile_get_active(&active);
++    rt_snprintf(response, sizeof(response),
++                "%s,READY,RES=%ux%u,TOUCH=%s\r\n",
++                active.code, active.width, active.height, active.touch);
++    profile_uart_send(response);
++}
+ 
++/* 使用专用线程轮询 RT-Thread 串口设备，避免依赖 UART 中断接收配置。 */
++static void display_profile_uart_thread(void *parameter)
++{
++    uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
++
++    RT_UNUSED(parameter);
+     while (1) {
+-        if (rt_mq_recv(rx_messages, &message, sizeof(message), RT_WAITING_FOREVER) != RT_EOK)
+-            continue;
+-        while (message.size > 0) {
++        rt_size_t received = rt_device_read(profile_uart, 0, bytes, sizeof(bytes));
++        if (received) {
+             rt_size_t index;
+-            rt_size_t request = message.size > sizeof(bytes) ? sizeof(bytes) : message.size;
+-            rt_size_t received = rt_device_read(message.device, 0, bytes, request);
+-            if (!received)
+-                break;
+             for (index = 0; index < received; index++)
+                 profile_uart_consume_byte((char)bytes[index]);
+-            message.size -= received;
++        } else {
++            rt_thread_mdelay(1);
+         }
+     }
+ }
+@@ -263,20 +244,25 @@ int display_profile_manager_init(void)
+         return -1;
+     profile_lock_ready = 1;
+     profile_load_from_env();
+-    rx_messages = rt_mq_create("dsp_rx", sizeof(profile_rx_message_t),
+-                               DISPLAY_PROFILE_RX_QUEUE, RT_IPC_FLAG_FIFO);
+-    if (!rx_messages)
++    if (display_profile_uart_open() != 0)
+         return -2;
++
+     thread = rt_thread_create("dsp_cfg", display_profile_uart_thread, NULL,
+-                              DISPLAY_PROFILE_THREAD_STACK, 27, 10);
+-    if (!thread)
++                              DISPLAY_PROFILE_THREAD_STACK, 20, 10);
++    if (!thread) {
++        rt_device_close(profile_uart);
++        profile_uart = RT_NULL;
+         return -3;
+-    if (rt_thread_startup(thread) != RT_EOK)
++    }
++    if (rt_thread_startup(thread) != RT_EOK) {
++        rt_device_close(profile_uart);
++        profile_uart = RT_NULL;
+         return -4;
++    }
+     manager_ready = 1;
++    display_profile_uart_send_ready();
+     return 0;
+ }
+-
+ int display_profile_touch_enabled(void)
+ {
+     display_profile_info_t active;
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index a29fba0..fe4e71b 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -141,7 +141,7 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.24"
++CONFIG_HMI_FW_VERSION="1.0.25"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index b9cd913..914fed9 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -139,7 +139,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.24"
++CONFIG_HMI_FW_VERSION="1.0.25"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index bcd89ea..ac65803 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.24",
++            "version": "1.0.25",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,

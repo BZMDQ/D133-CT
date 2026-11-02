@@ -11,7 +11,7 @@
 
 ## 工程实现
 
-v1.0.24 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编译 LVDS 与 MIPI-DSI 控制器。aicfb_probe() 前读取官方 ENV 键 hmi_screen，按 profile 选择 connector 和显示引脚复用：
+v1.0.25 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编译 LVDS 与 MIPI-DSI 控制器。aicfb_probe() 前读取官方 ENV 键 hmi_screen，按 profile 选择 connector 和显示引脚复用：
 
 - CS000：LVDS connector，PD18–PD27 function 3，ArtInChip simple 1024×600 panel。
 - CS001：MIPI-DSI connector，PD18–PD27 function 4，EK79202D 1280×800 panel。

@@ -12,16 +12,10 @@
 #define DISPLAY_PROFILE_UART_NAME "uart0"
 #define DISPLAY_PROFILE_UART_BAUD 115200
 #define DISPLAY_PROFILE_RX_CHUNK 32
-#define DISPLAY_PROFILE_RX_QUEUE 8
 #define DISPLAY_PROFILE_THREAD_STACK 3072
 
-typedef struct {
-    rt_device_t device;
-    rt_size_t size;
-} profile_rx_message_t;
-
 static struct rt_mutex profile_lock;
-static rt_mq_t rx_messages;
+
 static rt_device_t profile_uart;
 static int profile_lock_ready;
 static int manager_ready;
@@ -120,17 +114,6 @@ static void profile_command_reply(const char *command)
     profile_uart_send(response);
 }
 
-static rt_err_t profile_uart_rx_indicate(rt_device_t device, rt_size_t size)
-{
-    profile_rx_message_t message;
-
-    if (!rx_messages || !size)
-        return RT_EOK;
-    message.device = device;
-    message.size = size;
-    return rt_mq_send(rx_messages, &message, sizeof(message));
-}
-
 /* 代号为固定 5 字节 ASCII，因此既支持直接发送，也支持 CR/LF 结尾。 */
 static void profile_uart_consume_byte(char value)
 {
@@ -158,55 +141,53 @@ static void profile_uart_consume_byte(char value)
     }
 }
 
-static void display_profile_uart_thread(void *parameter)
+static int display_profile_uart_open(void)
 {
     struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT;
-    uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
-    profile_rx_message_t message;
-    rt_device_t device;
+    rt_device_t device = rt_device_find(DISPLAY_PROFILE_UART_NAME);
 
-    RT_UNUSED(parameter);
-    device = rt_device_find(DISPLAY_PROFILE_UART_NAME);
     if (!device) {
         system_manager_log("屏幕配置串口未找到 uart0");
-        return;
+        return -1;
     }
     config.baud_rate = DISPLAY_PROFILE_UART_BAUD;
     if (rt_device_control(device, RT_DEVICE_CTRL_CONFIG, &config) != RT_EOK ||
-        rt_device_open(device, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_INT_RX) != RT_EOK) {
+        rt_device_open(device, RT_DEVICE_OFLAG_RDWR) != RT_EOK) {
         system_manager_log("屏幕配置串口 uart0 初始化失败");
-        return;
+        return -2;
     }
 
     profile_uart = device;
-    if (rt_device_set_rx_indicate(profile_uart, profile_uart_rx_indicate) != RT_EOK) {
-        system_manager_log("屏幕配置串口 UART0 接收回调注册失败");
-        return;
-    }
     system_manager_log("屏幕配置串口已启动：UART0 115200 8N1");
-    {
-        display_profile_info_t active;
-        char response[128];
+    return 0;
+}
 
-        display_profile_get_active(&active);
-        rt_snprintf(response, sizeof(response),
-                    "%s,READY,RES=%ux%u,TOUCH=%s\r\n",
-                    active.code, active.width, active.height, active.touch);
-        profile_uart_send(response);
-    }
+static void display_profile_uart_send_ready(void)
+{
+    display_profile_info_t active;
+    char response[128];
 
+    display_profile_get_active(&active);
+    rt_snprintf(response, sizeof(response),
+                "%s,READY,RES=%ux%u,TOUCH=%s\r\n",
+                active.code, active.width, active.height, active.touch);
+    profile_uart_send(response);
+}
+
+/* 使用专用线程轮询 RT-Thread 串口设备，避免依赖 UART 中断接收配置。 */
+static void display_profile_uart_thread(void *parameter)
+{
+    uint8_t bytes[DISPLAY_PROFILE_RX_CHUNK];
+
+    RT_UNUSED(parameter);
     while (1) {
-        if (rt_mq_recv(rx_messages, &message, sizeof(message), RT_WAITING_FOREVER) != RT_EOK)
-            continue;
-        while (message.size > 0) {
+        rt_size_t received = rt_device_read(profile_uart, 0, bytes, sizeof(bytes));
+        if (received) {
             rt_size_t index;
-            rt_size_t request = message.size > sizeof(bytes) ? sizeof(bytes) : message.size;
-            rt_size_t received = rt_device_read(message.device, 0, bytes, request);
-            if (!received)
-                break;
             for (index = 0; index < received; index++)
                 profile_uart_consume_byte((char)bytes[index]);
-            message.size -= received;
+        } else {
+            rt_thread_mdelay(1);
         }
     }
 }
@@ -263,20 +244,25 @@ int display_profile_manager_init(void)
         return -1;
     profile_lock_ready = 1;
     profile_load_from_env();
-    rx_messages = rt_mq_create("dsp_rx", sizeof(profile_rx_message_t),
-                               DISPLAY_PROFILE_RX_QUEUE, RT_IPC_FLAG_FIFO);
-    if (!rx_messages)
+    if (display_profile_uart_open() != 0)
         return -2;
+
     thread = rt_thread_create("dsp_cfg", display_profile_uart_thread, NULL,
-                              DISPLAY_PROFILE_THREAD_STACK, 27, 10);
-    if (!thread)
+                              DISPLAY_PROFILE_THREAD_STACK, 20, 10);
+    if (!thread) {
+        rt_device_close(profile_uart);
+        profile_uart = RT_NULL;
         return -3;
-    if (rt_thread_startup(thread) != RT_EOK)
+    }
+    if (rt_thread_startup(thread) != RT_EOK) {
+        rt_device_close(profile_uart);
+        profile_uart = RT_NULL;
         return -4;
+    }
     manager_ready = 1;
+    display_profile_uart_send_ready();
     return 0;
 }
-
 int display_profile_touch_enabled(void)
 {
     display_profile_info_t active;
