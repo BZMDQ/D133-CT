@@ -17,6 +17,9 @@ extern void aic_board_sysclk_init(void);
 #include <aic_drv.h>
 #include <rthw.h>
 #include <rtthread.h>
+#if RT_DEBUG_INIT
+#include <aic_time.h>
+#endif
 
 extern size_t __heap_start;
 extern size_t __heap_end;
@@ -148,22 +151,66 @@ u32 aic_get_sys_heap_size(void)
  */
 void rt_hw_board_init(void)
 {
+#if RT_DEBUG_INIT
+    u64 init_start_us;
+#endif
+
 #ifdef RT_USING_HEAP
+#if RT_DEBUG_INIT
+    init_start_us = aic_get_time_us();
+#endif
     rt_system_heap_init((void *)&__heap_start, (void *)((u8 *)&__heap_end + aic_get_sys_heap_size()));
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] system_heap_init cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+#endif
 #if (!defined(QEMU_RUN) && defined(RT_USING_MEMHEAP))
+#if RT_DEBUG_INIT
+    init_start_us = aic_get_time_us();
+#endif
     aic_memheap_init();
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] memheap_init cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+#endif
 #endif
 #endif
 
+#if RT_DEBUG_INIT
+    init_start_us = aic_get_time_us();
+#endif
     aic_board_sysclk_init();
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] sysclk_init cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+    init_start_us = aic_get_time_us();
+#endif
     aic_board_pinmux_init();
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] pinmux_init cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+#endif
 
 #ifdef RT_USING_COMPONENTS_INIT
+#if RT_DEBUG_INIT
+    init_start_us = aic_get_time_us();
+#endif
     rt_components_board_init();
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] board_components cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+#endif
 #endif
 
 #if defined(RT_USING_CONSOLE) && defined(RT_USING_DEVICE)
+#if RT_DEBUG_INIT
+    init_start_us = aic_get_time_us();
+#endif
     rt_console_set_device(RT_CONSOLE_DEVICE_NAME);
+#if RT_DEBUG_INIT
+    rt_kprintf("[RT_INIT_STAGE] console_bind cost=%u us\n",
+               (unsigned int)(aic_get_time_us() - init_start_us));
+#endif
 #endif
 }
 

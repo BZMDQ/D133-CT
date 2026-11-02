@@ -26,4 +26,9 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.cpio.sig
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.json
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.cpio.sha256
+!downloads/d13x_d133cbv-hmi-nor_ota_initdiag_v1.0.19.cpio
+!downloads/d13x_d133cbv-hmi-nor_ota_initdiag_v1.0.19.cpio.sig
+!downloads/d13x_d133cbv-hmi-nor_ota_initdiag_v1.0.19.json
+!downloads/d13x_d133cbv-hmi-nor_ota_initdiag_v1.0.19.cpio.sha256
+!downloads/SHA256SUMS_initdiag_v1.0.19.txt
 !downloads/SHA256SUMS_current.txt

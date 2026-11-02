@@ -1,0 +1,11 @@
+scons: Reading SConscript files ...
+Newlib version:3.2.0
+scons: done reading SConscript files.
+scons: Building targets ...
+
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile
+scons: `.' is up to date.
+scons: done building targets.

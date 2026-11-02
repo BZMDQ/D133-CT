@@ -14,6 +14,7 @@
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
 .\scripts\build.ps1 -Target OS -LogName stage43_factory_v1.0.18_build.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName stage42_ota_v1.0.18_build.log
+.\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
 
 先生成配套 Bootloader，再生成 OS/工厂镜像。日常 OTA 不包含 SPL、ENV 或 DATA。生成镜像不代表板级验收；本工程没有自动连接开发板或写 Flash。
@@ -35,6 +36,8 @@
 仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码、当前工厂镜像和 v1.0.18 OTA 包及签名。工具箱 0.8.36 完整便携包、自定义目录安装程序和手动覆盖包位于 `downloads/`；工具箱界面不自动检查或安装更新。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
 
 开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。当前跟踪的 v1.0.18 OTA、签名与元数据位于 `downloads/`，Release 页面链接这些仓库文件；当前 Release 使用开发测试密钥，量产前必须替换为受控密钥并完成目标板验收。
+
+早期启动逐项计时使用单独的 v1.0.19 RT_DEBUG_INIT 诊断 OTA，见 [诊断包说明](docs/rt_init_profile_v1.0.19.md) 和 [诊断 Release](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.19-initdiag)。它会输出大量启动日志并增加启动耗时，仅用于分析初始化瓶颈，不作为生产固件；安装后版本变为 1.0.19，后续正式 OTA 需使用更高版本。
 
 ## 从仓库构建
 

@@ -1,4 +1,4 @@
-﻿param([ValidateSet('OS','Bootloader','OtaCandidate')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'))
+param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'))
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sdk=(Resolve-Path $SdkRoot).Path
@@ -32,9 +32,10 @@ $previousPath=$env:PATH;$previousPythonPath=$env:PYTHONPATH
 try {
     $env:PATH=(Split-Path $python)+';'+(Join-Path $sdk 'toolchain\bin')+';'+(Join-Path $sdk 'tools\env\tools\bin')+';'+$previousPath
     $env:PYTHONPATH=Join-Path $sdk 'tools\env\tools\Python27\Lib\site-packages\scons'
-$def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
+$isOtaTarget=$Target -eq 'OtaCandidate' -or $Target -eq 'OtaProfile'
+$def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaProfile'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
     $sourceImageCfg=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\image_cfg.json'
-    if($Target -eq 'OtaCandidate'){
+    if($isOtaTarget){
         $versionLine=Select-String -Path (Join-Path $sdk (Join-Path 'target\configs' $def)) -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
         if(!$versionLine){throw 'OTA candidate defconfig has no semantic firmware version'}
         $version=$versionLine.Matches[0].Groups[1].Value
@@ -50,12 +51,16 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
     try {
         & $python -c 'import SCons.Script; SCons.Script.main()' "--apply-def=$def"
         if($LASTEXITCODE){throw '加载 defconfig 失败'}
-        if($Target -eq 'OtaCandidate'){
+        if($isOtaTarget){
             # 避免候选配置的自标识指回工厂 profile，导致 SDK 静默复用旧镜像。
             $appliedProfile=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_PRJ_DEFCONFIG_FILENAME="([^"]+)"$' | Select-Object -First 1
             $appliedVersion=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
             if(!$appliedProfile -or $appliedProfile.Matches[0].Groups[1].Value -ne $def){throw 'OTA 候选 profile 自标识与所选配置不一致'}
             if(!$appliedVersion -or $appliedVersion.Matches[0].Groups[1].Value -ne $version){throw 'OTA 固件版本未写入当前 SDK 配置'}
+        }
+        if($Target -eq 'OtaProfile'){
+            $initProfile=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_RT_DEBUG_INIT_CONFIG=y$' | Select-Object -First 1
+            if(!$initProfile){throw 'RT 初始化诊断 profile 未启用逐项耗时日志'}
         }
         $buildLog=Join-Path $project "docs\$LogName"
         $previousErrorAction=$ErrorActionPreference

@@ -1,0 +1,284 @@
+# diff: scripts\build.ps1
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\build.ps1.before" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\scripts\\build.ps1"
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.19_init_profile_snapshot\build.ps1.before', LF will be replaced by CRLF the next time Git touches it
+index 297e059..092d7c4 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\build.ps1.before"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\scripts\\build.ps1"
+@@ -1,4 +1,4 @@
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\scripts\build.ps1', LF will be replaced by CRLF the next time Git touches it
+-﻿param([ValidateSet('OS','Bootloader','OtaCandidate')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'))
++param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'))
+ $ErrorActionPreference='Stop'
+ $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+ $sdk=(Resolve-Path $SdkRoot).Path
+@@ -32,9 +32,10 @@ $previousPath=$env:PATH;$previousPythonPath=$env:PYTHONPATH
+ try {
+     $env:PATH=(Split-Path $python)+';'+(Join-Path $sdk 'toolchain\bin')+';'+(Join-Path $sdk 'tools\env\tools\bin')+';'+$previousPath
+     $env:PYTHONPATH=Join-Path $sdk 'tools\env\tools\Python27\Lib\site-packages\scons'
+-$def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
++$isOtaTarget=$Target -eq 'OtaCandidate' -or $Target -eq 'OtaProfile'
++$def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaProfile'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
+     $sourceImageCfg=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\image_cfg.json'
+-    if($Target -eq 'OtaCandidate'){
++    if($isOtaTarget){
+         $versionLine=Select-String -Path (Join-Path $sdk (Join-Path 'target\configs' $def)) -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
+         if(!$versionLine){throw 'OTA candidate defconfig has no semantic firmware version'}
+         $version=$versionLine.Matches[0].Groups[1].Value
+@@ -50,13 +51,17 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
+     try {
+         & $python -c 'import SCons.Script; SCons.Script.main()' "--apply-def=$def"
+         if($LASTEXITCODE){throw '加载 defconfig 失败'}
+-        if($Target -eq 'OtaCandidate'){
++        if($isOtaTarget){
+             # 避免候选配置的自标识指回工厂 profile，导致 SDK 静默复用旧镜像。
+             $appliedProfile=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_PRJ_DEFCONFIG_FILENAME="([^"]+)"$' | Select-Object -First 1
+             $appliedVersion=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
+             if(!$appliedProfile -or $appliedProfile.Matches[0].Groups[1].Value -ne $def){throw 'OTA 候选 profile 自标识与所选配置不一致'}
+             if(!$appliedVersion -or $appliedVersion.Matches[0].Groups[1].Value -ne $version){throw 'OTA 固件版本未写入当前 SDK 配置'}
+         }
++        if($Target -eq 'OtaProfile'){
++            $initProfile=Select-String -Path (Join-Path $sdk '.config') -Pattern '^CONFIG_RT_DEBUG_INIT_CONFIG=y$' | Select-Object -First 1
++            if(!$initProfile){throw 'RT 初始化诊断 profile 未启用逐项耗时日志'}
++        }
+         $buildLog=Join-Path $project "docs\$LogName"
+         $previousErrorAction=$ErrorActionPreference
+         try {
+
+# diff: source\kernel\rt-thread\src\components.c
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.19_init_profile_snapshot\rt_components.c.original', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\kernel\rt-thread\src\components.c', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\rt_components.c.original" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\kernel\\rt-thread\\src\\components.c"
+index fd5f1bb..bf1159d 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\rt_components.c.original"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\kernel\\rt-thread\\src\\components.c"
+@@ -20,6 +20,7 @@
+ #include <rthw.h>
+ #include <rtthread.h>
+ #if RT_DEBUG_INIT
++#include <aic_core.h>
+ #include <aic_time.h>
+ #endif
+ #ifdef LPKG_USING_CPU_LOAD
+@@ -93,11 +94,17 @@ void rt_components_board_init(void)
+ #if RT_DEBUG_INIT
+     int result;
+     const struct rt_init_desc *desc;
++    uint64_t s_time;
++    uint64_t e_time;
++    /* 仅诊断 profile 输出每个板级初始化函数的执行耗时。 */
+     for (desc = &__rt_init_desc_rti_board_start; desc < &__rt_init_desc_rti_board_end; desc ++)
+     {
+         rt_kprintf("initialize %s", desc->fn_name);
++        s_time = aic_get_time_us();
+         result = desc->fn();
+-        rt_kprintf(":%d done\n", result);
++        e_time = aic_get_time_us();
++        rt_kprintf(":%d done (%u us)\n", result,
++                   (unsigned int)(e_time - s_time));
+     }
+ #else
+     volatile const init_fn_t *fn_ptr;
+@@ -120,6 +127,7 @@ void rt_components_init(void)
+     uint64_t s_time = 0;
+     uint64_t e_time = 0;
+ 
++    /* 仅诊断 profile 输出每个设备/组件/应用初始化函数的执行耗时。 */
+     rt_kprintf("do components initialization.\n");
+     for (desc = &__rt_init_desc_rti_board_end; desc < &__rt_init_desc_rti_end; desc ++)
+     {
+@@ -127,7 +135,8 @@ void rt_components_init(void)
+         s_time = aic_get_time_us();
+         result = desc->fn();
+         e_time = aic_get_time_us();
+-        rt_kprintf(":%d done (%d -> %d: %d us)\n", result, s_time, e_time, e_time-s_time);
++        rt_kprintf(":%d done (start=%u us, cost=%u us)\n", result,
++                   (unsigned int)s_time, (unsigned int)(e_time - s_time));
+     }
+ #else
+     volatile const init_fn_t *fn_ptr;
+@@ -242,6 +251,10 @@ void rt_application_init(void)
+  */
+ int rtthread_startup(void)
+ {
++#if RT_DEBUG_INIT
++    uint64_t stage_start_us;
++#endif
++
+ #ifndef GLOBAL_INT_SW_THRESHOLD_EN
+     rt_hw_interrupt_disable();
+ #endif
+@@ -249,7 +262,15 @@ int rtthread_startup(void)
+     /* board level initialization
+      * NOTE: please initialize heap inside board initialization.
+      */
++#if RT_DEBUG_INIT
++    /* RT_DEBUG_INIT 诊断构建才输出早期系统阶段耗时，生产构建无日志开销。 */
++    stage_start_us = aic_get_time_us();
++#endif
+     rt_hw_board_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] board_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - stage_start_us));
++#endif
+ 
+ #ifdef LPKG_USING_CPU_LOAD
+     rt_thread_inited_sethook(thread_init_hook);
+@@ -261,10 +282,24 @@ int rtthread_startup(void)
+     rt_show_version();
+ 
+     /* timer system initialization */
++#if RT_DEBUG_INIT
++    stage_start_us = aic_get_time_us();
++#endif
+     rt_system_timer_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] timer_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - stage_start_us));
++#endif
+ 
+     /* scheduler system initialization */
++#if RT_DEBUG_INIT
++    stage_start_us = aic_get_time_us();
++#endif
+     rt_system_scheduler_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] scheduler_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - stage_start_us));
++#endif
+ 
+ #ifdef RT_USING_SIGNALS
+     /* signal system initialization */
+@@ -272,7 +307,14 @@ int rtthread_startup(void)
+ #endif /* RT_USING_SIGNALS */
+ 
+     /* create init_thread */
++#if RT_DEBUG_INIT
++    stage_start_us = aic_get_time_us();
++#endif
+     rt_application_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] application_thread_create cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - stage_start_us));
++#endif
+ 
+     /* timer thread initialization */
+     rt_system_timer_thread_init();
+
+# diff: source\target\d13x\d133cbv-hmi-nor\board.c
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.19_init_profile_snapshot\board.c.original', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\target\d13x\d133cbv-hmi-nor\board.c', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\board.c.original" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\d13x\\d133cbv-hmi-nor\\board.c"
+index 0675c81..050c047 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\board.c.original"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\d13x\\d133cbv-hmi-nor\\board.c"
+@@ -17,6 +17,9 @@ extern void aic_board_sysclk_init(void);
+ #include <aic_drv.h>
+ #include <rthw.h>
+ #include <rtthread.h>
++#if RT_DEBUG_INIT
++#include <aic_time.h>
++#endif
+ 
+ extern size_t __heap_start;
+ extern size_t __heap_end;
+@@ -148,22 +151,66 @@ u32 aic_get_sys_heap_size(void)
+  */
+ void rt_hw_board_init(void)
+ {
++#if RT_DEBUG_INIT
++    u64 init_start_us;
++#endif
++
+ #ifdef RT_USING_HEAP
++#if RT_DEBUG_INIT
++    init_start_us = aic_get_time_us();
++#endif
+     rt_system_heap_init((void *)&__heap_start, (void *)((u8 *)&__heap_end + aic_get_sys_heap_size()));
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] system_heap_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++#endif
+ #if (!defined(QEMU_RUN) && defined(RT_USING_MEMHEAP))
++#if RT_DEBUG_INIT
++    init_start_us = aic_get_time_us();
++#endif
+     aic_memheap_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] memheap_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++#endif
+ #endif
+ #endif
+ 
++#if RT_DEBUG_INIT
++    init_start_us = aic_get_time_us();
++#endif
+     aic_board_sysclk_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] sysclk_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++    init_start_us = aic_get_time_us();
++#endif
+     aic_board_pinmux_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] pinmux_init cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++#endif
+ 
+ #ifdef RT_USING_COMPONENTS_INIT
++#if RT_DEBUG_INIT
++    init_start_us = aic_get_time_us();
++#endif
+     rt_components_board_init();
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] board_components cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++#endif
+ #endif
+ 
+ #if defined(RT_USING_CONSOLE) && defined(RT_USING_DEVICE)
++#if RT_DEBUG_INIT
++    init_start_us = aic_get_time_us();
++#endif
+     rt_console_set_device(RT_CONSOLE_DEVICE_NAME);
++#if RT_DEBUG_INIT
++    rt_kprintf("[RT_INIT_STAGE] console_bind cost=%u us\n",
++               (unsigned int)(aic_get_time_us() - init_start_us));
++#endif
+ #endif
+ }
+ 
+
+# diff: source\target\configs\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.19_init_profile_snapshot\sdk_ota_defconfig_before', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\target\configs\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\sdk_ota_defconfig_before" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig"
+index 3904e94..dd50db7 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.19_init_profile_snapshot\\sdk_ota_defconfig_before"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig"
+@@ -1,4 +1,4 @@
+-CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig"
++CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig"
+ CONFIG_PRJ_CHIP="d13x"
+ CONFIG_PRJ_BOARD="d133cbv-hmi-nor"
+ CONFIG_PRJ_KERNEL="rt-thread"
+@@ -58,7 +58,8 @@ CONFIG_AIC_USING_PSADC=y
+ CONFIG_AIC_USING_PSADC6=y
+ CONFIG_IDLE_THREAD_STACK_SIZE=1024
+ # CONFIG_RT_KSERVICE_USING_STDLIB is not set
+-# CONFIG_RT_DEBUG is not set
++CONFIG_RT_DEBUG=y
++CONFIG_RT_DEBUG_INIT_CONFIG=y
+ CONFIG_RT_MEMHEAP_BSET_MODE=y
+ CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
+ # CONFIG_RT_USING_MEMHEAP_AUTO_BINDING is not set
+@@ -136,7 +137,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.18"
++CONFIG_HMI_FW_VERSION="1.0.19"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+
