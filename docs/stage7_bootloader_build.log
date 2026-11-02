@@ -1,0 +1,191 @@
+scons: Reading SConscript files ...
+Mkdir("output\d13x_d133cbv-hmi-nor_baremetal_bootloader\images")
+scons: done reading SConscript files.
+scons: Building targets ...
+
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_baremetal_bootloader
+  CC application\baremetal\bootloader\cmd\aicupg.c
+  CC application\baremetal\bootloader\cmd\aicupg_detect.c
+  CC application\baremetal\bootloader\cmd\aicupg_erase.c
+  CC application\baremetal\bootloader\cmd\crc32.c
+  CC application\baremetal\bootloader\cmd\mem.c
+  CC application\baremetal\bootloader\cmd\nor_boot.c
+  CC application\baremetal\bootloader\cmd\part.c
+  CC application\baremetal\bootloader\cmd\progress_bar.c
+  CC application\baremetal\bootloader\cmd\ram_boot.c
+  CC application\baremetal\bootloader\cmd\reset.c
+  CC application\baremetal\bootloader\cmd\run.c
+  CC application\baremetal\bootloader\lib\absystem\absystem.c
+  CC application\baremetal\bootloader\lib\aicupg\aicupg_for_uart.c
+  CC application\baremetal\bootloader\lib\aicupg\basic_cmd.c
+  CC application\baremetal\bootloader\lib\aicupg\data_trans_layer.c
+  CC application\baremetal\bootloader\lib\aicupg\fwc_cmd.c
+  CC application\baremetal\bootloader\lib\aicupg\log_buf.c
+  CC application\baremetal\bootloader\lib\aicupg\mmc_fwc.c
+  CC application\baremetal\bootloader\lib\aicupg\nor_fwc.c
+  CC application\baremetal\bootloader\lib\aicupg\ram_fwc.c
+  CC application\baremetal\bootloader\lib\aicupg\uart_proto_layer.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_fat.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_fat_direct.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_fat_direct_mmc.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_fat_direct_nand.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_fat_direct_nor.c
+  CC application\baremetal\bootloader\lib\aicupg\upg_main.c
+  CC application\baremetal\bootloader\lib\common\boot_app.c
+  CC application\baremetal\bootloader\lib\common\boot_time.c
+  CC application\baremetal\bootloader\lib\common\config_parse.c
+  CC application\baremetal\bootloader\lib\common\crc16.c
+  CC application\baremetal\bootloader\lib\fitimage\fitimage.c
+  CC application\baremetal\bootloader\main.c
+  CC bsp\artinchip\drv\display\drv_de_core.c
+  CC bsp\artinchip\drv\display\drv_de_ui_layer.c
+  CC bsp\artinchip\drv\display\drv_de_vi_layer.c
+  CC bsp\artinchip\drv\display\drv_fb.c
+  CC bsp\artinchip\drv\display\drv_fb_helper.c
+  CC bsp\artinchip\drv\display\drv_lvds.c
+  CC bsp\artinchip\drv\display\panel\panel_com.c
+  CC bsp\artinchip\drv\display\panel\panel_simple.c
+  CC bsp\artinchip\drv\dma\drv_dma.c
+  CC bsp\artinchip\drv\gpio\aic_drv_gpio.c
+  CC bsp\artinchip\drv_bare\block\block_dev.c
+  CC bsp\artinchip\drv_bare\console\console.c
+  CC bsp\artinchip\drv_bare\efuse\efuse.c
+  CC bsp\artinchip\drv_bare\mtd\mtdcore.c
+  CC bsp\artinchip\drv_bare\mtd\mtdparts.c
+  CC bsp\artinchip\drv_bare\mtd\mtd_probe.c
+  CC bsp\artinchip\drv_bare\printf\printf_port.c
+  CC bsp\artinchip\drv_bare\printf\stdio_port.c
+  CC bsp\artinchip\drv_bare\psram\xspi_psram.c
+  CC bsp\artinchip\drv_bare\ringbuffer\ringbuffer.c
+  CC bsp\artinchip\drv_bare\rtc\drv_rtc.c
+  CC bsp\artinchip\drv_bare\sdmc\mmc.c
+  CC bsp\artinchip\drv_bare\sdmc\mmc_block.c
+  CC bsp\artinchip\drv_bare\sdmc\mmc_parts.c
+  CC bsp\artinchip\drv_bare\sdmc\rpmb.c
+  CC bsp\artinchip\drv_bare\sdmc\rpmb_sha256.c
+  CC bsp\artinchip\drv_bare\sdmc\sdcard.c
+  CC bsp\artinchip\drv_bare\sdmc\sdmc.c
+  CC bsp\artinchip\drv_bare\spinor\aic_flash_xip_def.c
+  CC bsp\artinchip\drv_bare\spinor\partition.c
+  CC bsp\artinchip\drv_bare\spinor\sfud_port.c
+  CC bsp\artinchip\drv_bare\uart\uart.c
+  CC bsp\artinchip\drv_bare\umm_heap\malloc_port.c
+  CC bsp\artinchip\drv_bare\umm_heap\newlib_syscalls.c
+  CC bsp\artinchip\drv_bare\umm_heap\umm_info.c
+  CC bsp\artinchip\drv_bare\umm_heap\umm_integrity.c
+  CC bsp\artinchip\drv_bare\umm_heap\umm_malloc.c
+  CC bsp\artinchip\drv_bare\umm_heap\umm_poison.c
+  CC bsp\artinchip\drv_bare\wdt\wdt.c
+  CC bsp\artinchip\hal\cmu\aic_hal_clk.c
+  CC bsp\artinchip\hal\cmu\aic_hal_fixed_rate_clk.c
+  CC bsp\artinchip\hal\cmu\aic_hal_pll_clk.c
+  CC bsp\artinchip\hal\cmu\v1\aic_hal_cpu_clk.c
+  CC bsp\artinchip\hal\cmu\v1\aic_hal_disp_clk.c
+  CC bsp\artinchip\hal\cmu\v1\aic_hal_fixed_parent_clk.c
+  CC bsp\artinchip\hal\cmu\v1\aic_hal_multi_parent_clk.c
+  CC bsp\artinchip\hal\cmu\v1\aic_hal_reset.c
+  CC bsp\artinchip\hal\display\aic_hal_de.c
+  CC bsp\artinchip\hal\dma\hal_dma_def_v1x.c
+  CC bsp\artinchip\hal\efuse\hal_efuse.c
+  CC bsp\artinchip\hal\gpio\aic_hal_gpio.c
+  CC bsp\artinchip\hal\qspi\hal_qspi_slave.c
+  CC bsp\artinchip\hal\qspi\hal_qspi_v1x.c
+  CC bsp\artinchip\hal\qspi\qspi_internal.c
+  CC bsp\artinchip\hal\rtc\hal_rtc.c
+  CC bsp\artinchip\hal\sdmc\bouncebuf.c
+  CC bsp\artinchip\hal\sdmc\hal_sdmc.c
+  CC bsp\artinchip\hal\syscfg\hal_syscfg_v1x.c
+  CC bsp\artinchip\hal\uart\aic_hal_uart.c
+  CC bsp\artinchip\hal\wdt\hal_wdt.c
+  CC bsp\artinchip\hal\wri\hal_wri.c
+  CC bsp\artinchip\hal\wri\hal_wri_v10-12.c
+  CC bsp\artinchip\hal\xspi\hal_xspi.c
+  CC bsp\artinchip\sys\d13x\aic_drv_irq.c
+  CC bsp\artinchip\sys\d13x\aic_gpio_id.c
+  CC bsp\artinchip\sys\d13x\aic_hal_clk.c
+  CC bsp\artinchip\sys\d13x\aic_hal_reset.c
+  CC bsp\artinchip\sys\d13x\boot_param.c
+  AS bsp\artinchip\sys\d13x\boot_param_gcc.S
+  CC bsp\artinchip\sys\d13x\boot_res_nand.c
+  CC bsp\artinchip\sys\d13x\isr.c
+  CC bsp\artinchip\sys\d13x\ram_param.c
+  AS bsp\artinchip\sys\d13x\startup_gcc.S
+  CC bsp\artinchip\sys\d13x\system.c
+  CC bsp\artinchip\sys\d13x\sys_freq.c
+  CC bsp\artinchip\sys\d13x\time.c
+  CC bsp\artinchip\sys\d13x\trap_c.c
+  AS bsp\artinchip\sys\d13x\vectors.S
+  CC bsp\common\crc32\crc32.c
+  CC bsp\common\image\image.c
+  CC bsp\common\partition\disk_part.c
+  CC bsp\common\partition\partition.c
+  CC bsp\common\private_param\private_param.c
+  CC bsp\common\utils\aic_string.c
+  CC bsp\common\utils\hexdump.c
+  CC bsp\common\utils\pinmux_utils.c
+  CC bsp\common\utils\show_speed.c
+  CC bsp\examples_bare\test-mtd\mtd.c
+  CC bsp\examples_bare\test-spinor\spinor.c
+  CC bsp\peripheral\spinor_sfud\src\sfud.c
+  CC bsp\peripheral\spinor_sfud\src\sfud_private.c
+  CC bsp\peripheral\spinor_sfud\src\sfud_qe.c
+  CC bsp\peripheral\spinor_sfud\src\sfud_sfdp.c
+  CC kernel\common\cmd\aic_axicfg_cmd.c
+  CC kernel\common\cmd\aic_cmd_base.c
+  CC kernel\common\cmd\aic_debug_cmd.c
+  CC kernel\common\cmd\aic_getopt.c
+  CC kernel\common\cmd\aic_memtest_cmd.c
+  CC kernel\common\cmd\aic_reboot_cmd.c
+  CC packages\artinchip\env\env.c
+  CC packages\artinchip\of\of.c
+  CC packages\third-party\cherryusb\class\aic\usbd_aicupg.c
+  CC packages\third-party\cherryusb\class\hub\usbh_hub.c
+  CC packages\third-party\cherryusb\class\msc\usbh_msc.c
+  CC packages\third-party\cherryusb\core\usb_otg.c
+  CC packages\third-party\cherryusb\core\usbd_core.c
+  CC packages\third-party\cherryusb\core\usbh_core.c
+  CC packages\third-party\cherryusb\demo\aicupg_for_usb.c
+  CC packages\third-party\cherryusb\demo\usbh_msc_template.c
+  CC packages\third-party\cherryusb\osal\usb_osal_baremetal.c
+  CC packages\third-party\cherryusb\port\aic\usb_dc_aic.c
+  CC packages\third-party\cherryusb\port\aic\usb_dc_aic_ll.c
+  CC packages\third-party\cherryusb\port\ehci\usb_glue_aic.c
+  CC packages\third-party\cherryusb\port\ehci\usb_hc_ehci.c
+  CC packages\third-party\dfs\src\dfs_cli.c
+  CC packages\third-party\dfs\src\dfs_posix.c
+  CC packages\third-party\dfs\src\dfs.c
+  CC packages\third-party\dfs\src\dfs_file.c
+  CC packages\third-party\dfs\src\dfs_fs.c
+  CC packages\third-party\dfs\filesystems\elmfat\dfs_elm.c
+  CC packages\third-party\dfs\filesystems\elmfat\ff.c
+  CC packages\third-party\dfs\filesystems\elmfat\ffunicode.c
+  CC packages\third-party\dfs\filesystems\elmfat\sdmc_disk\sdmc_disk.c
+  CC packages\third-party\dfs\filesystems\elmfat\usb_disk\usb_disk.c
+  CC kernel\common\osal\aic_osal.c
+  CC target\d13x\d133cbv-hmi-nor\board.c
+  CC target\d13x\d133cbv-hmi-nor\pinmux.c
+  CC target\d13x\d133cbv-hmi-nor\sys_clk.c
+  CC packages\third-party\fdtlib\fdt.c
+  CC packages\third-party\fdtlib\fdt_addresses.c
+  CC packages\third-party\fdtlib\fdt_empty_tree.c
+  CC packages\third-party\fdtlib\fdt_overlay.c
+  CC packages\third-party\fdtlib\fdt_ro.c
+  CC packages\third-party\fdtlib\fdt_rw.c
+  CC packages\third-party\fdtlib\fdt_strerror.c
+  CC packages\third-party\fdtlib\fdt_sw.c
+  CC packages\third-party\fdtlib\fdt_wip.c
+LINK output\d13x_d133cbv-hmi-nor_baremetal_bootloader\images\d13x.elf
+-rw-r--r-- 1 2898748 Oct 30 15:33 output/d13x_d133cbv-hmi-nor_baremetal_bootloader/images/d13x.elf
+
+riscv64-unknown-elf-objcopy -O binary output\d13x_d133cbv-hmi-nor_baremetal_bootloader\images\d13x.elf output/d13x_d133cbv-hmi-nor_baremetal_bootloader/images/d13x.bin
+riscv64-unknown-elf-size output\d13x_d133cbv-hmi-nor_baremetal_bootloader\images\d13x.elf
+   text	   data	    bss	    dec	    hex	filename
+ 271620	  11288	  52224	 335132	  51d1c	output/d13x_d133cbv-hmi-nor_baremetal_bootloader/images/d13x.elf
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/linked_size.py -m D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_baremetal_bootloader/images/d13x.map
+
+Luban-Lite is built successfully
+
+scons: done building targets.

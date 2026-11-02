@@ -1,0 +1,19 @@
+# 本机原始配置快照与历史构建产物
+00_原始配置/
+output/
+*.o
+*.elf
+*.map
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# OTA 私钥只保存在开发机
+keys/*.pem
+!keys/README.md
+
+# 仓库只分发当前工厂镜像，其它本地下载包不纳入版本控制
+downloads/*
+!downloads/d13x_d133cbv-hmi-nor_v1.0.16.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.16.img.sha256
+!downloads/SHA256SUMS_current.txt

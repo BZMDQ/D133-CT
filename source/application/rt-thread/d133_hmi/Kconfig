@@ -1,0 +1,19 @@
+config HMI_FW_VERSION
+    string "D133-控制终端 firmware semantic version"
+    default "1.0.0"
+
+config HMI_APP
+    bool
+    default y
+config HMI_NETWORK
+    bool "Enable D133 toolbox TCP OTA server"
+    default n
+config HMI_UI
+    bool "Enable D133-控制终端 application UI"
+    default n
+    select LPKG_USING_FREETYPE
+config HMI_SD_OTA
+    bool "Enable SD OTA shell entry"
+    default n
+
+

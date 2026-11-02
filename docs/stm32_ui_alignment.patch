@@ -1,0 +1,343 @@
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -16,8 +16,21 @@
+ 
+ #define HMI_FONT_PATH "/rodata/hmi/fonts/NotoSansSC-HMI.ttf"
+ 
++/* 复用 STM32F750 主界面的白底、浅蓝卡片和青蓝强调色。 */
++#define UI_COLOR_WHITE       0xFFFFFFU
++#define UI_COLOR_HEADER      0xF5F9FEU
++#define UI_COLOR_SURFACE     0xEAF4FFU
++#define UI_COLOR_SURFACE_ALT 0xDCECFBU
++#define UI_COLOR_BORDER      0xDCE4EEU
++#define UI_COLOR_ACCENT      0x087F91U
++#define UI_COLOR_BLUE        0x2778D4U
++#define UI_COLOR_VIOLET      0x7451BDU
++#define UI_COLOR_TEXT        0x1C2B41U
++#define UI_COLOR_MUTED       0x63748AU
++
+ static lv_obj_t *content;
+ static lv_obj_t *top;
++static lv_obj_t *page_title;
+ static lv_obj_t *details;
+ static lv_obj_t *table;
+ static lv_obj_t *pathbox;
+@@ -34,6 +47,7 @@
+ static lv_obj_t *mask_input;
+ static lv_obj_t *gw_input;
+ static lv_obj_t *nav_buttons[6];
++static lv_obj_t *nav_indicators[6];
+ static lv_font_t *hmi_font;
+ static lv_font_t *hmi_font_small;
+ static int image_preview_ready;
+@@ -95,6 +109,40 @@
+     lv_obj_set_pos(obj, x, y);
+     lv_obj_set_width(obj, width);
+     lv_obj_set_style_text_font(obj, body_font(), LV_PART_MAIN);
++    lv_obj_set_style_text_color(obj, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
++    return obj;
++}
++
++/* 创建 STM32 风格的浅蓝信息卡，卡片和强调条不拦截触摸事件。 */
++static lv_obj_t *panel(lv_obj_t *parent, int x, int y, int width, int height,
++                       uint32_t color, uint32_t accent)
++{
++    lv_obj_t *obj = lv_obj_create(parent);
++    lv_obj_t *rail;
++
++    lv_obj_set_pos(obj, x, y);
++    lv_obj_set_size(obj, width, height);
++    lv_obj_set_style_bg_color(obj, lv_color_hex(color), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
++    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
++    lv_obj_set_style_radius(obj, 8, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(obj, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++    lv_obj_move_background(obj);
++
++    if (accent != 0U) {
++        rail = lv_obj_create(obj);
++        lv_obj_set_pos(rail, 0, 0);
++        lv_obj_set_size(rail, 4, height);
++        lv_obj_set_style_bg_color(rail, lv_color_hex(accent), LV_PART_MAIN);
++        lv_obj_set_style_bg_opa(rail, LV_OPA_COVER, LV_PART_MAIN);
++        lv_obj_set_style_border_width(rail, 0, LV_PART_MAIN);
++        lv_obj_set_style_radius(rail, 0, LV_PART_MAIN);
++        lv_obj_set_style_pad_all(rail, 0, LV_PART_MAIN);
++        lv_obj_clear_flag(rail, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++    }
+     return obj;
+ }
+ 
+@@ -106,9 +154,14 @@
+ 
+     lv_obj_set_pos(obj, x, y);
+     lv_obj_set_size(obj, width, 48);
+-    lv_obj_set_style_radius(obj, 10, LV_PART_MAIN);
+-    lv_obj_set_style_bg_color(obj, lv_color_hex(0x2563EB), LV_PART_MAIN);
+-    lv_obj_set_style_text_color(obj, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_radius(obj, 8, LV_PART_MAIN);
++    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_BLUE), LV_PART_MAIN);
++    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_ACCENT),
++                              LV_PART_MAIN | LV_STATE_PRESSED);
++    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(obj, 0, LV_PART_MAIN);
++    lv_obj_set_style_text_color(obj, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
+     lv_obj_set_style_text_font(obj, small_font(), LV_PART_MAIN);
+     text_obj = lv_label_create(obj);
+     lv_label_set_text(text_obj, text);
+@@ -161,6 +214,12 @@
+     lv_textarea_set_text(obj, text);
+     lv_textarea_set_max_length(obj, 255);
+     lv_obj_set_style_text_font(obj, small_font(), LV_PART_MAIN);
++    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_text_color(obj, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
++    lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
++    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
++    lv_obj_set_style_radius(obj, 8, LV_PART_MAIN);
+     if (height < 60)
+         lv_textarea_set_one_line(obj, 1);
+     lv_obj_add_event_cb(obj, focus, LV_EVENT_FOCUSED, NULL);
+@@ -431,23 +490,44 @@
+     if (number >= 6)
+         return;
+     page = number;
++    lv_label_set_text(page_title, titles[number]);
+     for (i = 0; i < 6; i++) {
+         lv_obj_set_style_bg_color(nav_buttons[i],
+-            lv_color_hex(i == number ? 0x2563EB : 0xEAF0F8), LV_PART_MAIN);
++            lv_color_hex(i == number ? UI_COLOR_SURFACE_ALT : UI_COLOR_WHITE),
++            LV_PART_MAIN);
+         lv_obj_set_style_text_color(nav_buttons[i],
+-            lv_color_hex(i == number ? 0xFFFFFF : 0x334155), LV_PART_MAIN);
++            lv_color_hex(i == number ? UI_COLOR_ACCENT : UI_COLOR_MUTED),
++            LV_PART_MAIN);
++        if (i == number)
++            lv_obj_clear_flag(nav_indicators[i], LV_OBJ_FLAG_HIDDEN);
++        else
++            lv_obj_add_flag(nav_indicators[i], LV_OBJ_FLAG_HIDDEN);
+     }
+     lv_obj_clean(content);
+     details = table = pathbox = targetbox = editor = progress = NULL;
+-    label(content, titles[number], 20, 14, 720);
++    ip_input = mask_input = gw_input = NULL;
+ 
+     if (number == 0) {
+-        label(content, "D133CBS 工业控制终端\nA/B 系统与资源分区\n触控文件管理和固件升级",
+-              24, 76, 700);
+-        details = label(content, "服务启动中……", 24, 188, 700);
+-        button(content, "浏览 SD 卡", 24, 330, 220, navigation, (void *)(uintptr_t)1);
+-        button(content, "固件升级", 270, 330, 220, navigation, (void *)(uintptr_t)2);
++        panel(content, 24, 42, 736, 74, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
++        label(content, "D133CBS 工业控制终端", 44, 52, 690);
++        label(content, "系统运行概览与设备状态", 44, 82, 690);
++        panel(content, 24, 132, 356, 306, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
++        panel(content, 396, 132, 364, 306, UI_COLOR_SURFACE, UI_COLOR_BLUE);
++        label(content, "系统状态", 44, 148, 320);
++        details = label(content, "服务启动中……", 44, 190, 316);
++        label(content, "设备信息", 420, 148, 320);
++        label(content,
++              "产品型号：" HMI_PRODUCT "\n"
++              "硬件版本：" HMI_HARDWARE "\n"
++              "操作系统：RT-Thread\n"
++              "图形界面：LVGL 9.1\n"
++              "显示屏：1024 × 600 LVDS\n"
++              "启动存储：16 MiB SPI NOR",
++              420, 190, 320);
++        button(content, "浏览 SD 卡", 24, 458, 220, navigation, (void *)(uintptr_t)1);
++        button(content, "固件升级", 270, 458, 220, navigation, (void *)(uintptr_t)2);
+     } else if (number == 1) {
++        panel(content, 12, 36, 760, 458, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+         pathbox = input(content, folder, 16, 48, 720, 42);
+         targetbox = input(content, "/sdcard/new_folder", 16, 98, 720, 42);
+         for (i = 0; i < 7; i++)
+@@ -459,6 +539,11 @@
+         lv_table_set_column_count(table, 2);
+         lv_table_set_column_width(table, 0, 325);
+         lv_table_set_column_width(table, 1, 90);
++        lv_obj_set_style_bg_color(table, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
++        lv_obj_set_style_bg_opa(table, LV_OPA_COVER, LV_PART_MAIN);
++        lv_obj_set_style_border_color(table, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
++        lv_obj_set_style_border_width(table, 1, LV_PART_MAIN);
++        lv_obj_set_style_text_color(table, lv_color_hex(UI_COLOR_TEXT), LV_PART_ITEMS);
+         lv_obj_set_style_text_font(table, small_font(), LV_PART_ITEMS);
+         lv_obj_add_event_cb(table, table_event, LV_EVENT_VALUE_CHANGED, NULL);
+         editor = input(content, "", 465, 215, 270, 155);
+@@ -469,9 +554,10 @@
+                         16, 448, 720);
+         list_folder();
+     } else if (number == 2) {
++        panel(content, 20, 42, 744, 390, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+         label(content,
+               "SD 卡升级包：/sdcard/UPDATE/ota.cpio\n"
+-              "TCP 推送：研发工具箱 > D133CBS OTA\n"
++              "TCP 推送：研发工具箱，选择 D133CBS 开发板\n"
+               "签名校验通过后调用 ArtInChip 官方升级引擎。\n"
+               "升级期间请保持设备供电。",
+               24, 64, 710);
+@@ -479,9 +565,15 @@
+         progress = lv_bar_create(content);
+         lv_obj_set_pos(progress, 24, 250);
+         lv_obj_set_size(progress, 680, 24);
++        lv_obj_set_style_bg_color(progress, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
++        lv_obj_set_style_bg_opa(progress, LV_OPA_COVER, LV_PART_MAIN);
++        lv_obj_set_style_bg_color(progress, lv_color_hex(UI_COLOR_ACCENT), LV_PART_INDICATOR);
++        lv_obj_set_style_radius(progress, 8, LV_PART_MAIN);
++        lv_obj_set_style_radius(progress, 8, LV_PART_INDICATOR);
+         button(content, "从 SD 卡安装", 24, 320, 250, ota_action, (void *)(uintptr_t)1);
+         button(content, "重启设备", 300, 320, 220, ota_action, (void *)(uintptr_t)2);
+     } else if (number == 3) {
++        panel(content, 20, 42, 744, 430, UI_COLOR_SURFACE, UI_COLOR_BLUE);
+         label(content,
+               "产品型号：" HMI_PRODUCT "\n"
+               "硬件版本：" HMI_HARDWARE "\n"
+@@ -492,6 +584,7 @@
+               24, 70, 710);
+         details = label(content, "", 24, 270, 710);
+     } else if (number == 4) {
++        panel(content, 20, 42, 744, 405, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+         label(content, "RMII 以太网 / RTL8201F | TCP OTA 端口：8899",
+               24, 55, 710);
+         details = label(content, "正在等待以太网连接……", 24, 95, 710);
+@@ -504,7 +597,8 @@
+         label(content, "网络参数仅在本次运行期间生效，重启后恢复编译配置。",
+               24, 330, 710);
+     } else {
+-        details = label(content, "暂无系统日志。", 20, 55, 740);
++        panel(content, 20, 42, 744, 430, UI_COLOR_SURFACE, UI_COLOR_VIOLET);
++        details = label(content, "暂无系统日志。", 32, 62, 710);
+     }
+ }
+ 
+@@ -580,7 +674,7 @@
+             lv_label_set_text(image_status_label, image_status);
+         }
+     }
+-    snprintf(text, sizeof(text), "D133CBS | 系统槽 %c | 下次启动 %c | 资源槽 %c | SD 卡 %s",
++    snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
+              boot.current, boot.next, boot.resource,
+              sd_manager_ready() ? "已就绪" : "未插入");
+     lv_label_set_text(top, text);
+@@ -681,6 +775,11 @@
+ {
+     lv_obj_t *root = lv_screen_active();
+     lv_obj_t *nav;
++    lv_obj_t *header_band;
++    lv_obj_t *header_accent;
++    lv_obj_t *nav_divider;
++    lv_obj_t *brand_subtitle;
++    lv_obj_t *nav_footer;
+ 
+     rt_kprintf("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
+     /* 字体由只读资源分区提供；加载失败时不启动健康心跳，保留 A/B 回滚保护。 */
+@@ -706,23 +805,96 @@
+     if (!image_preview_ready)
+         system_manager_log("图片预览服务初始化失败");
+ 
+-    lv_obj_set_style_bg_color(root, lv_color_hex(0xF3F6FA), LV_PART_MAIN);
++    lv_obj_set_style_bg_color(root, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
++    header_band = lv_obj_create(root);
++    lv_obj_set_pos(header_band, 210, 0);
++    lv_obj_set_size(header_band, 814, 74);
++    lv_obj_set_style_bg_color(header_band, lv_color_hex(UI_COLOR_HEADER), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(header_band, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(header_band, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(header_band, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(header_band, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++    header_accent = lv_obj_create(root);
++    lv_obj_set_pos(header_accent, 210, 72);
++    lv_obj_set_size(header_accent, 814, 2);
++    lv_obj_set_style_bg_color(header_accent, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(header_accent, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(header_accent, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(header_accent, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(header_accent, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++
+     nav = lv_obj_create(root);
+     lv_obj_set_pos(nav, 0, 0);
+     lv_obj_set_size(nav, 210, 600);
+-    lv_obj_set_style_bg_color(nav, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_bg_color(nav, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(nav, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(nav, 0, LV_PART_MAIN);
+     lv_obj_set_style_radius(nav, 0, LV_PART_MAIN);
+-    label(nav, "D133CBS\n工业控制终端", 12, 14, 180);
+-    for (unsigned i = 0; i < 6; i++)
+-        nav_buttons[i] = button(nav, titles[i], 12, 82 + (int)i * 68,
++    lv_obj_set_style_pad_all(nav, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(nav, LV_OBJ_FLAG_SCROLLABLE);
++    label(nav, "D133CBS", 24, 18, 164);
++    brand_subtitle = label(nav, "工业控制终端", 24, 48, 164);
++    lv_obj_set_style_text_color(brand_subtitle, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
++    for (unsigned i = 0; i < 6; i++) {
++        lv_obj_t *button_text;
++
++        nav_buttons[i] = button(nav, titles[i], 12, 104 + (int)i * 64,
+                                 180, navigation, (void *)(uintptr_t)i);
+-
+-    top = label(root, "系统启动中……", 230, 25, 770);
++        lv_obj_set_height(nav_buttons[i], 52);
++        lv_obj_set_style_bg_color(nav_buttons[i], lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
++        lv_obj_set_style_text_color(nav_buttons[i], lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
++        lv_obj_set_style_border_width(nav_buttons[i], 0, LV_PART_MAIN);
++        lv_obj_set_style_shadow_width(nav_buttons[i], 0, LV_PART_MAIN);
++        button_text = lv_obj_get_child(nav_buttons[i], 0);
++        if (button_text) {
++            lv_obj_set_width(button_text, 150);
++            lv_obj_set_style_text_align(button_text, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
++            lv_obj_align(button_text, LV_ALIGN_LEFT_MID, 18, 0);
++        }
++        nav_indicators[i] = lv_obj_create(nav_buttons[i]);
++        lv_obj_set_pos(nav_indicators[i], 0, 7);
++        lv_obj_set_size(nav_indicators[i], 4, 38);
++        lv_obj_set_style_bg_color(nav_indicators[i], lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
++        lv_obj_set_style_bg_opa(nav_indicators[i], LV_OPA_COVER, LV_PART_MAIN);
++        lv_obj_set_style_border_width(nav_indicators[i], 0, LV_PART_MAIN);
++        lv_obj_set_style_radius(nav_indicators[i], 0, LV_PART_MAIN);
++        lv_obj_clear_flag(nav_indicators[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++        lv_obj_add_flag(nav_indicators[i], LV_OBJ_FLAG_HIDDEN);
++    }
++    nav_divider = lv_obj_create(root);
++    lv_obj_set_pos(nav_divider, 209, 0);
++    lv_obj_set_size(nav_divider, 1, 600);
++    lv_obj_set_style_bg_color(nav_divider, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(nav_divider, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(nav_divider, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(nav_divider, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++    nav_footer = label(nav, "ArtInChip Luban-Lite\nRT-Thread", 24, 526, 164);
++    lv_obj_set_style_text_color(nav_footer, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
++
++    page_title = label(root, "首页", 234, 18, 300);
++    lv_obj_set_style_text_color(page_title, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
++    top = label(root, "系统启动中……", 570, 17, 430);
++    lv_obj_set_height(top, 40);
++    lv_obj_set_style_bg_color(top, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(top, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_text_color(top, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
++    lv_obj_set_style_text_align(top, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
++    lv_obj_set_style_pad_hor(top, 12, LV_PART_MAIN);
++    lv_obj_set_style_pad_ver(top, 8, LV_PART_MAIN);
++    lv_obj_set_style_radius(top, 12, LV_PART_MAIN);
++    lv_obj_set_style_border_width(top, 0, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(top, 0, LV_PART_MAIN);
++
+     content = lv_obj_create(root);
+     lv_obj_set_pos(content, 225, 75);
+     lv_obj_set_size(content, 784, 510);
+-    lv_obj_set_style_bg_color(content, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+-    lv_obj_set_style_radius(content, 16, LV_PART_MAIN);
++    lv_obj_set_style_bg_color(content, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
++    lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(content, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(content, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+     keyboard = lv_keyboard_create(root);
+     lv_obj_set_size(keyboard, 1024, 235);
+     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);

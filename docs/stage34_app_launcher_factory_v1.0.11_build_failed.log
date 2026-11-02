@@ -1,0 +1,37 @@
+scons: Reading SConscript files ...
+Newlib version:3.2.0
+scons: done reading SConscript files.
+scons: Building targets ...
+
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
+  CC application\rt-thread\d133_hmi\app\app_manager.c
+  CC application\rt-thread\d133_hmi\boot_manager\boot_manager.c
+  CC application\rt-thread\d133_hmi\network\network_manager.c
+  CC application\rt-thread\d133_hmi\ota\ota_manager.c
+  CC application\rt-thread\d133_hmi\ota\ota_package.c
+  CC application\rt-thread\d133_hmi\ota\ota_sd.c
+  CC application\rt-thread\d133_hmi\ota\ota_signature.c
+  CC application\rt-thread\d133_hmi\storage\file_manager.c
+  CC application\rt-thread\d133_hmi\storage\sd_manager.c
+  CC application\rt-thread\d133_hmi\storage\storage_manager.c
+  CC application\rt-thread\d133_hmi\system\system_manager.c
+  CC application\rt-thread\d133_hmi\ui\hmi_logo.c
+  CC application\rt-thread\d133_hmi\ui\image_preview.c
+  CC application\rt-thread\d133_hmi\ui\ui_manager.c
+  CC bsp\artinchip\drv\display\drv_de_core.c
+  CC bsp\artinchip\drv\display\drv_de_ui_layer.c
+  CC bsp\artinchip\drv\display\drv_de_vi_layer.c
+  CC bsp\artinchip\drv\display\drv_fb.c
+  CC bsp\artinchip\drv\display\drv_fb_helper.c
+  CC bsp\artinchip\drv\display\drv_lvds.c
+application/rt-thread/d133_hmi/ui/ui_manager.c: In function 'screen':
+application/rt-thread/d133_hmi/ui/ui_manager.c:590:40: error: 'UI_COLOR_GREEN' undeclared (first use in this function); did you mean 'UI_COLOR_BLUE'?
+  590 |                  16, 290, 300, 156, 3, UI_COLOR_GREEN);
+      |                                        ^~~~~~~~~~~~~~
+      |                                        UI_COLOR_BLUE
+application/rt-thread/d133_hmi/ui/ui_manager.c:590:40: note: each undeclared identifier is reported only once for each function it appears in
+scons: *** [output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\application\rt-thread\d133_hmi\ui\ui_manager.o] Error 1
+scons: building terminated because of errors.

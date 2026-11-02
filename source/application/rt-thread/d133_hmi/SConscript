@@ -1,0 +1,16 @@
+from building import *
+import os
+cwd=GetCurrentDir()
+modules=['app','storage','boot_manager','system','ota']
+src=Glob('main.c')
+for module in modules:
+    src += Glob(module+'/*.c')
+if not GetDepend('HMI_SD_OTA'):
+    SrcRemove(src,'ota/ota_sd.c')
+if GetDepend('HMI_NETWORK'):
+    src += Glob('network/*.c')
+if GetDepend('HMI_UI'):
+    src += Glob('ui/*.c')
+inc=[cwd]+[cwd+'/'+m for m in modules+['network','ui']]
+group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
+Return('group')

@@ -1,0 +1,4344 @@
+--- a/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -6,15 +6,17 @@
+             "env":        { "size": "128k" },
+             "env_r":      { "size": "128k" },
+             "os":         { "size": "2m" },
+-            "rodata":     { "size": "12m" },
++            "os_r":       { "size": "2m" },
++            "rodata":     { "size": "5m" },
++            "rodata_r":   { "size": "5m" },
+             "data":       { "size": "1m" }
+         },
+     },
+     "image": {
+         "info": { // Header information about image
+             "platform": "d13x",
+-            "product": "demo88-nor",
+-            "version": "1.0.0",
++            "product": "d133cbv-hmi-nor",
++            "version": "1.0.7",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
+@@ -51,12 +53,12 @@
+             "os": {
+                 "file": "d13x_os.itb",
+                 "attr": ["mtd", "required"],
+-                "part": ["os"]
++                "part": ["os", "os_r"]
+             },
+             "rodata": {
+                 "file": "rodata.fatfs",
+                 "attr": ["mtd", "optional"],
+-                "part": ["rodata"]
++                "part": ["rodata", "rodata_r"]
+             },
+             "data": {
+                 "file": "data.lfs",
+@@ -112,3 +114,4 @@
+         },
+     },
+ }
++
+--- a/target/configs/d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig
+@@ -1,14 +1,21 @@
+-CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_demo88-nor_baremetal_bootloader_defconfig"
++CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig"
+ CONFIG_PRJ_CHIP="d13x"
+-CONFIG_PRJ_BOARD="demo88-nor"
++CONFIG_PRJ_BOARD="d133cbv-hmi-nor"
+ CONFIG_PRJ_KERNEL="baremetal"
+ CONFIG_PRJ_APP="bootloader"
+ CONFIG_PRJ_CUSTOM_LDS="application/baremetal/bootloader/ldscript/d13x_bootloader_gcc.ld"
+ CONFIG_AIC_USING_UART0=y
+ CONFIG_AIC_USING_QSPI0=y
+ CONFIG_AIC_QSPI0_DEVICE_SPINOR=y
++CONFIG_AIC_QSPI0_DEVICE_SPINOR_FREQ=100000000
++CONFIG_AIC_DEV_QSPI0_MAX_SRC_FREQ_HZ=100000000
++CONFIG_AIC_QSPI0_BUS_WIDTH_4=y
++CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
+ CONFIG_AIC_DISP_LVDS=y
+ CONFIG_AICFB_RGB565=y
++# CONFIG_AIC_DISP_BOOTUP_LOGO is not set
++# CONFIG_AIC_DISP_COLOR_BLOCK is not set
++# CONFIG_AIC_DISP_BLACK_SCREEN is not set
+ CONFIG_AIC_PANEL_ENABLE_GPIO="PE.13"
+ CONFIG_AIC_SCREEN_CROP=y
+ CONFIG_AIC_SCREEN_CROP_POS_Y=260
+@@ -22,6 +29,12 @@
+ CONFIG_AIC_USING_WDT=y
+ CONFIG_AIC_PSRAM_SW_SIZE=0x300000
+ CONFIG_AIC_INTERRUPTSTACK_SIZE=8192
++CONFIG_AIC_CLK_PLL_INT0_FREQ=480000000
++CONFIG_AIC_CLK_PLL_INT1_FREQ=1200000000
++CONFIG_AIC_CLK_CPU_FREQ=480000000
++CONFIG_AIC_CLK_AXI0_FREQ=200000000
++CONFIG_AIC_CLK_AHB0_FREQ=200000000
++CONFIG_AIC_CLK_APB0_FREQ=100000000
+ CONFIG_AIC_USING_SID=y
+ CONFIG_AIC_NORMALSTACK_SIZE=8192
+ CONFIG_AIC_BOOTLOADER_TEXT_SIZE=0x7FF00
+@@ -44,3 +57,6 @@
+ # CONFIG_LPKG_MPP is not set
+ CONFIG_AIC_ENV_INTERFACE=y
+ CONFIG_LPKG_USING_SFUD=y
++
++
++CONFIG_AIC_HMI_HEALTH_CONFIRM=y
+--- a/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -1,8 +1,8 @@
+-CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_demo88-nor_rt-thread_helloworld_defconfig"
++CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig"
+ CONFIG_PRJ_CHIP="d13x"
+-CONFIG_PRJ_BOARD="demo88-nor"
++CONFIG_PRJ_BOARD="d133cbv-hmi-nor"
+ CONFIG_PRJ_KERNEL="rt-thread"
+-CONFIG_PRJ_APP="helloworld"
++CONFIG_PRJ_APP="d133_hmi"
+ CONFIG_AIC_USING_FS_IMAGE_0=y
+ CONFIG_AIC_USING_FS_IMAGE_TYPE_FATFS_FOR_0=y
+ CONFIG_AIC_FS_IMAGE_DIR_0="rodata/"
+@@ -11,29 +11,33 @@
+ CONFIG_AIC_FS_IMAGE_DIR_1="data/"
+ CONFIG_AIC_FS_IMAGE_NAME_1="data.lfs"
+ CONFIG_LVGL_V_9=y
+-CONFIG_AIC_LVGL_DEMO=y
+-CONFIG_AIC_LVGL_DEMO_HUB_DEMO=y
++# CONFIG_AIC_LVGL_DEMO is not set
++
+ CONFIG_LV_COLOR_DEPTH=16
+ CONFIG_LV_CACHE_IMG_NUM=8
+ CONFIG_AIC_USING_UART0=y
+ CONFIG_AIC_USING_I2C2=y
+-CONFIG_AIC_USING_CAN0=y
++# CONFIG_AIC_USING_CAN0 is not set
+ CONFIG_AIC_USING_QSPI0=y
+ CONFIG_AIC_QSPI0_DEVICE_SPINOR=y
+-CONFIG_AIC_USING_TSEN=y
+-CONFIG_AIC_USING_TSEN_CPU=y
+-CONFIG_AIC_USING_TSEN_GPAI=y
+-CONFIG_AIC_USING_GPAI=y
+-CONFIG_AIC_USING_GPAI7=y
++CONFIG_AIC_QSPI0_DEVICE_SPINOR_FREQ=100000000
++CONFIG_AIC_DEV_QSPI0_MAX_SRC_FREQ_HZ=100000000
++CONFIG_AIC_QSPI0_BUS_WIDTH_4=y
++CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
++# CONFIG_AIC_USING_TSEN is not set
++# CONFIG_AIC_USING_TSEN_CPU is not set
++# CONFIG_AIC_USING_TSEN_GPAI is not set
++# CONFIG_AIC_USING_GPAI is not set
++# CONFIG_AIC_USING_GPAI7 is not set
+ CONFIG_AIC_DISP_LVDS=y
+ CONFIG_AICFB_RGB565=y
+ CONFIG_AIC_PAN_DISPLAY=y
+-CONFIG_AIC_STARTUP_UI_SHOW=y
++CONFIG_AIC_DISP_BOOTUP_LOGO=y
++# CONFIG_AIC_DISP_COLOR_BLOCK is not set
++CONFIG_AIC_DISP_BLACK_SCREEN=y
++# CONFIG_AIC_STARTUP_UI_SHOW is not set
+ CONFIG_AIC_PANEL_ENABLE_GPIO="PE.13"
+-CONFIG_AIC_USING_AUDIO=y
+-CONFIG_AIC_AUDIO_PA_ENABLE_GPIO="PD.10"
+-CONFIG_AIC_AUDIO_EN_PIN_LOW=y
+-CONFIG_AIC_AUDIO_SPK_1=y
++# CONFIG_AIC_USING_AUDIO is not set
+ CONFIG_AIC_USING_DMA=y
+ CONFIG_AIC_USING_WRI=y
+ CONFIG_AIC_USING_RTC=y
+@@ -42,6 +46,12 @@
+ CONFIG_AIC_INTERRUPTSTACK_SIZE=4096
+ CONFIG_AIC_CLK_PLL_FRA0_FREQ=792000000
+ CONFIG_AIC_CLK_PLL_FRA2_FREQ=1188000000
++CONFIG_AIC_CLK_PLL_INT0_FREQ=480000000
++CONFIG_AIC_CLK_PLL_INT1_FREQ=1200000000
++CONFIG_AIC_CLK_CPU_FREQ=480000000
++CONFIG_AIC_CLK_AXI0_FREQ=200000000
++CONFIG_AIC_CLK_AHB0_FREQ=200000000
++CONFIG_AIC_CLK_APB0_FREQ=100000000
+ CONFIG_AIC_USING_SID=y
+ CONFIG_AIC_USING_MTOP=y
+ CONFIG_AIC_USING_PSADC=y
+@@ -77,7 +87,7 @@
+ CONFIG_RT_USING_TOUCH=y
+ CONFIG_RT_TOUCH_PIN_IRQ=y
+ CONFIG_RT_USING_ULOG=y
+-CONFIG_ULOG_OUTPUT_LVL_I=y
++CONFIG_ULOG_OUTPUT_LVL_W=y
+ CONFIG_ULOG_TIME_USING_TIMESTAMP=y
+ CONFIG_ULOG_USING_FILTER=y
+ CONFIG_LPKG_USING_CPU_USAGE=y
+@@ -97,3 +107,39 @@
+ CONFIG_AIC_GPAI_TEST=y
+ CONFIG_AIC_TSEN_TEST=y
+ CONFIG_AIC_PSADC_TEST=y
++
++
++CONFIG_AIC_USING_SDMC1=y
++CONFIG_AIC_SDMC1_USING_HOTPLUG=y
++CONFIG_AIC_SDMC1_HOTPLUG_PIN="PC.6"
++
++
++
++CONFIG_AIC_ENV_INTERFACE=y
++CONFIG_AIC_AB_SYSTEM_INTERFACE=y
++CONFIG_AIC_HMI_HEALTH_CONFIRM=y
++CONFIG_LPKG_USING_OTA_DOWNLOADER=y
++CONFIG_OTA_DATA_DIRECT=y
++CONFIG_LPKG_USING_MBEDTLS=y
++CONFIG_HMI_APP=y
++
++CONFIG_HMI_SD_OTA=y
++CONFIG_HMI_NETWORK=y
++CONFIG_AIC_USING_GMAC0=y
++CONFIG_AIC_DEV_GMAC0_RMII=y
++CONFIG_AIC_DEV_GMAC0_PHY_EXTCLK=y
++CONFIG_AIC_DEV_GMAC0_PHYRST_GPIO="PE.6"
++CONFIG_AIC_DEV_GMAC0_PHYADDR=1
++CONFIG_AIC_USING_CLK_OUT2=y
++CONFIG_AIC_CLK_OUT2_FREQ=25000000
++CONFIG_RT_USING_LWIP=y
++CONFIG_RT_USING_NETDEV=y
++CONFIG_RT_LWIP_DHCP=y
++CONFIG_HMI_UI=y
++CONFIG_LPKG_USING_LVGL=y
++CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
++CONFIG_HMI_FW_VERSION="1.0.7"
++CONFIG_LV_FONT_MONTSERRAT_16=y
++CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
++CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
++CONFIG_LPKG_USING_FREETYPE=y
+--- a/packages/artinchip/env/Kconfig
++++ b/packages/artinchip/env/Kconfig
+@@ -39,3 +39,8 @@
+     default y
+ 
+ endif
++
++config AIC_HMI_HEALTH_CONFIRM
++    bool "Defer HMI A/B confirmation until application health checks"
++    depends on AIC_ENV_INTERFACE
++    default n
+--- a/packages/artinchip/env/absystem_os.c
++++ b/packages/artinchip/env/absystem_os.c
+@@ -74,7 +74,11 @@
+             goto aic_get_upgrade_status_err;
+         }
+ 
++#ifdef AIC_HMI_HEALTH_CONFIRM
++        ret = fw_env_flush();
++#else
+         fw_env_flush();
++#endif
+     } else if (strncmp(status, "0", 2) == 0) {
+         ret = 0;
+         goto aic_get_upgrade_status_err;
+@@ -176,7 +180,7 @@
+         goto aic_upgrade_end_out;
+ 
+     /* flush to flash */
+-    fw_env_flush();
++    ret = fw_env_flush();
+ 
+ aic_upgrade_end_out:
+ 
+@@ -300,7 +304,9 @@
+     const char *fs_type;
+ 
+     if (boot_dev != BD_SDMC0 && boot_dev != BD_SDMC1) {
++#ifndef AIC_HMI_HEALTH_CONFIRM
+         aic_ota_status_update();
++#endif
+ 
+         if (prio == 0) {
+             aic_get_rodata_to_mount(target);
+@@ -336,3 +342,5 @@
+ INIT_ENV_EXPORT(aic_absystem_mount_fs_prio0);
+ INIT_APP_LEVEL_EXPORT(aic_absystem_mount_fs_prio1, 1);
+ #endif
++
++
+--- a/application/baremetal/bootloader/lib/absystem/absystem.c
++++ b/application/baremetal/bootloader/lib/absystem/absystem.c
+@@ -14,6 +14,9 @@
+ #include <string.h>
+ #include <absystem.h>
+ #include <env.h>
++#ifdef AIC_HMI_HEALTH_CONFIRM
++#include <wdt.h>
++#endif
+ 
+ #define APPLICATION_PART           "os"
+ #define APPLICATION_PART_REDUNDAND "os_r"
+@@ -43,6 +46,12 @@
+         return ret;
+     }
+ 
++#ifdef AIC_HMI_HEALTH_CONFIRM
++    /* HMI 的 OS 与只读资源属于同一版本，回滚时必须成对切换。DATA 保持单分区。 */
++    next = fw_getenv("osAB_next");
++    ret = fw_env_write("rodataAB_next", next);
++    if (ret) return ret;
++#endif
+     ret = fw_env_write("bootcount", "0");
+     if (ret) {
+         pr_err("Env write fail\n");
+@@ -85,7 +94,11 @@
+ #ifdef AIC_ENV_DEBUG
+         printf("limit = %d, count =%d\n", limit, count);
+ #endif
++#ifdef AIC_HMI_HEALTH_CONFIRM
++        if (count >= limit) {
++#else
+         if (limit < count) {
++#endif
+             pr_warn(
+                 "The number of boot failed exceeds the limit, Version fallback now\n");
+ 
+@@ -95,6 +108,10 @@
+             }
+ 
+         } else {
++#ifdef AIC_HMI_HEALTH_CONFIRM
++            /* 试启动覆盖 FIT 加载失败及 OS 早期挂起；健康线程启动后接管看门狗。 */
++            if (wdt_init() || wdt_start(60000)) { ret = -1; goto aic_set_upgrade_status_err; }
++#endif
+             count++;
+             str = itoa(count, string, 10);
+ 
+@@ -105,7 +122,12 @@
+             }
+         }
+ 
++#ifdef AIC_HMI_HEALTH_CONFIRM
++        ret = fw_env_flush();
++        if (ret) goto aic_set_upgrade_status_err;
++#else
+         fw_env_flush();
++#endif
+     } else if (strncmp(status, "0", 2) == 0) {
+         ret = 0;
+     } else {
+@@ -206,3 +228,6 @@
+ 
+     return ret;
+ }
++
++
++
+--- a/application/baremetal/bootloader/cmd/nor_boot.c
++++ b/application/baremetal/bootloader/cmd/nor_boot.c
+@@ -45,6 +45,9 @@
+     ret = aic_ota_check();
+     if (ret) {
+         printf("Aic ota check error.\n");
++#ifdef AIC_HMI_HEALTH_CONFIRM
++        return ret;
++#endif
+     }
+ 
+     ret = aic_get_os_to_startup(target);
+@@ -82,3 +85,4 @@
+ }
+ 
+ CONSOLE_CMD(nor_boot, do_nor_boot, "Boot from NOR.");
++
+--- a/packages/artinchip/lvgl-ui/lv_demo.c
++++ b/packages/artinchip/lvgl-ui/lv_demo.c
+@@ -36,7 +36,11 @@
+ 
+ void lv_user_gui_init(void)
+ {
+-#if defined(AIC_LVGL_DEMO) && !defined(RT_USING_MODULE)
++#ifdef HMI_UI
++    /* HMI 控件在官方 LVGL 线程内创建，其他线程仅发送业务结果。 */
++    extern void hmi_ui_init(void);
++    hmi_ui_init();
++#elif defined(AIC_LVGL_DEMO) && !defined(RT_USING_MODULE)
+     aic_ui_init();
+ #endif
+ }
+@@ -50,3 +54,4 @@
+ INIT_LATE_APP_EXPORT(lvgl_thread_init);
+ #endif  // RT_USING_MODULE
+ #endif  // KERNEL_RTTHREAD
++
+--- a/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h
++++ b/packages/artinchip/lvgl-ui/lvgl_v9/lv_conf.h
+@@ -113,15 +113,21 @@
+ #define LV_FONT_MONTSERRAT_16       1
+ #endif /* LV_USE_DEMO_MUSIC */
+ 
+-/*FreeType library*/
+-#define LV_USE_FREETYPE 0
+-#if LV_USE_FREETYPE
+-    /*Let FreeType to use LVGL memory and file porting*/
++/* HMI 选择官方 FreeType 包时启用运行时字体；其他 SDK profile 维持默认关闭。 */
++#if defined(LPKG_USING_FREETYPE)
++    #define LV_USE_FREETYPE 1
+     #define LV_FREETYPE_USE_LVGL_PORT 0
++    #define LV_FREETYPE_CACHE_FT_GLYPH_CNT 256
++#else
++    #define LV_USE_FREETYPE 0
++#endif
+ 
+-    /*Cache count of the glyphs in FreeType. It means the number of glyphs that can be cached.
+-     *The higher the value, the more memory will be used.*/
+-    #define LV_FREETYPE_CACHE_FT_GLYPH_CNT 256
++/* HMI 图片预览复用 LVGL BMP 与 ArtInChip MPP 解码器，并限制 JPEG 输出分辨率。 */
++#if defined(HMI_UI)
++    #define LV_USE_BMP 1
++    #define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
++    #define MPP_JPEG_DEC_MAX_OUT_WIDTH 1024
++    #define MPP_JPEG_DEC_MAX_OUT_HEIGHT 600
+ #endif
+ 
+ #define LV_USE_GIF 1
+@@ -159,3 +165,4 @@
+ #endif
+ 
+ #endif // LV_CONF_H
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/app/app_manager.c
+@@ -0,0 +1,32 @@
++#include "app_manager.h"
++#include <rtthread.h>
++static int ready;
++static rt_tick_t boot_start_ms;
++int app_manager_ready(void){return ready;}
++unsigned int app_manager_boot_elapsed_ms(void)
++{
++    return (unsigned int)(rt_tick_get_millisecond() - boot_start_ms);
++}
++#include "storage_manager.h"
++#include "system_manager.h"
++#include "boot_manager.h"
++#include "ota_manager.h"
++#ifdef HMI_NETWORK
++#include "network_manager.h"
++#endif
++/* 按依赖顺序创建服务；初始化失败直接向启动线程报告错误。 */
++int app_manager_init(void)
++{
++    boot_start_ms=rt_tick_get_millisecond();
++    if(system_manager_init()||storage_manager_init()||ota_manager_init())return -1;
++    if(boot_manager_init())return -2;
++#ifdef HMI_NETWORK
++    if(network_manager_init())return -3;
++#endif
++    ready=1;system_manager_log("应用服务初始化完成");
++    rt_kprintf("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
++    return 0;
++}
++
++INIT_APP_EXPORT(app_manager_init);
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/app/app_manager.h
+@@ -0,0 +1,8 @@
++#ifndef HMI_APP_MANAGER_H
++#define HMI_APP_MANAGER_H
++int app_manager_init(void);
++int app_manager_ready(void);
++/* 返回 app_manager 初始化后的毫秒数，用于对照 LVGL 首帧启动标记。 */
++unsigned int app_manager_boot_elapsed_ms(void);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/assets/fonts/OFL.txt
+@@ -0,0 +1,93 @@
++Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
++
++This Font Software is licensed under the SIL Open Font License, Version 1.1.
++This license is copied below, and is also available with a FAQ at:
++http://scripts.sil.org/OFL
++
++
++-----------------------------------------------------------
++SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
++-----------------------------------------------------------
++
++PREAMBLE
++The goals of the Open Font License (OFL) are to stimulate worldwide
++development of collaborative font projects, to support the font creation
++efforts of academic and linguistic communities, and to provide a free and
++open framework in which fonts may be shared and improved in partnership
++with others.
++
++The OFL allows the licensed fonts to be used, studied, modified and
++redistributed freely as long as they are not sold by themselves. The
++fonts, including any derivative works, can be bundled, embedded, 
++redistributed and/or sold with any software provided that any reserved
++names are not used by derivative works. The fonts and derivatives,
++however, cannot be released under any other type of license. The
++requirement for fonts to remain under this license does not apply
++to any document created using the fonts or their derivatives.
++
++DEFINITIONS
++"Font Software" refers to the set of files released by the Copyright
++Holder(s) under this license and clearly marked as such. This may
++include source files, build scripts and documentation.
++
++"Reserved Font Name" refers to any names specified as such after the
++copyright statement(s).
++
++"Original Version" refers to the collection of Font Software components as
++distributed by the Copyright Holder(s).
++
++"Modified Version" refers to any derivative made by adding to, deleting,
++or substituting -- in part or in whole -- any of the components of the
++Original Version, by changing formats or by porting the Font Software to a
++new environment.
++
++"Author" refers to any designer, engineer, programmer, technical
++writer or other person who contributed to the Font Software.
++
++PERMISSION & CONDITIONS
++Permission is hereby granted, free of charge, to any person obtaining
++a copy of the Font Software, to use, study, copy, merge, embed, modify,
++redistribute, and sell modified and unmodified copies of the Font
++Software, subject to the following conditions:
++
++1) Neither the Font Software nor any of its individual components,
++in Original or Modified Versions, may be sold by itself.
++
++2) Original or Modified Versions of the Font Software may be bundled,
++redistributed and/or sold with any software, provided that each copy
++contains the above copyright notice and this license. These can be
++included either as stand-alone text files, human-readable headers or
++in the appropriate machine-readable metadata fields within text or
++binary files as long as those fields can be easily viewed by the user.
++
++3) No Modified Version of the Font Software may use the Reserved Font
++Name(s) unless explicit written permission is granted by the corresponding
++Copyright Holder. This restriction only applies to the primary font name as
++presented to the users.
++
++4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
++Software shall not be used to promote, endorse or advertise any
++Modified Version, except to acknowledge the contribution(s) of the
++Copyright Holder(s) and the Author(s) or with their explicit written
++permission.
++
++5) The Font Software, modified or unmodified, in part or in whole,
++must be distributed entirely under this license, and must not be
++distributed under any other license. The requirement for fonts to
++remain under this license does not apply to any document created
++using the Font Software.
++
++TERMINATION
++This license becomes null and void if any of the above conditions are
++not met.
++
++DISCLAIMER
++THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
++MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
++OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
++COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
++DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
++OTHER DEALINGS IN THE FONT SOFTWARE.
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/assets/fonts/README-Noto.txt
+@@ -0,0 +1,71 @@
++Noto Sans SC Variable Font
++==========================
++
++This download contains Noto Sans SC as both a variable font and static fonts.
++
++Noto Sans SC is a variable font with this axis:
++  wght
++
++This means all the styles are contained in a single file:
++  NotoSansSC-VariableFont_wght.ttf
++
++If your app fully supports variable fonts, you can now pick intermediate styles
++that aren’t available as static fonts. Not all apps support variable fonts, and
++in those cases you can use the static font files for Noto Sans SC:
++  static/NotoSansSC-Thin.ttf
++  static/NotoSansSC-ExtraLight.ttf
++  static/NotoSansSC-Light.ttf
++  static/NotoSansSC-Regular.ttf
++  static/NotoSansSC-Medium.ttf
++  static/NotoSansSC-SemiBold.ttf
++  static/NotoSansSC-Bold.ttf
++  static/NotoSansSC-ExtraBold.ttf
++  static/NotoSansSC-Black.ttf
++
++Get started
++-----------
++
++1. Install the font files you want to use
++
++2. Use your app's font picker to view the font family and all the
++available styles
++
++Learn more about variable fonts
++-------------------------------
++
++  https://developers.google.com/web/fundamentals/design-and-ux/typography/variable-fonts
++  https://variablefonts.typenetwork.com
++  https://medium.com/variable-fonts
++
++In desktop apps
++
++  https://theblog.adobe.com/can-variable-fonts-illustrator-cc
++  https://helpx.adobe.com/nz/photoshop/using/fonts.html#variable_fonts
++
++Online
++
++  https://developers.google.com/fonts/docs/getting_started
++  https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Fonts/Variable_Fonts_Guide
++  https://developer.microsoft.com/en-us/microsoft-edge/testdrive/demos/variable-fonts
++
++Installing fonts
++
++  MacOS: https://support.apple.com/en-us/HT201749
++  Linux: https://www.google.com/search?q=how+to+install+a+font+on+gnu%2Blinux
++  Windows: https://support.microsoft.com/en-us/help/314960/how-to-install-or-remove-a-font-in-windows
++
++Android Apps
++
++  https://developers.google.com/fonts/docs/android
++  https://developer.android.com/guide/topics/ui/look-and-feel/downloadable-fonts
++
++License
++-------
++Please read the full license text (OFL.txt) to understand the permissions,
++restrictions and requirements for usage, redistribution, and modification.
++
++You can use them in your products & projects – print or digital,
++commercial or otherwise.
++
++This isn't legal advice, please consider consulting a lawyer and see the full
++license for all details.
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/assets/ota_public.pem
+@@ -0,0 +1,8 @@
++-----BEGIN PUBLIC KEY-----
++MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA42MoGGq4igw8jw4meHZe8raS7r+QsgJp
++YKnq9qfY9Bgp9ZBgsZx2tA5gXdVd4lLgJbSNsdQffXsmynDE712qn9ZvkfGypwGkViamYCiKf5vZ
++OAsjrthnp9f8Fyo0w8IxODnzbBPThm19pckspQrvBQSK94bRMt/9+1+VAvsu43djwW6udRxI3xz1
++i4wjj4pGWnXg6dB/frkREA1XNlMOb1vp9V5KEq9JpgXTampwJWiHoHqE+SjmCW3qjHzcDV+UHFbh
++5Vha1lI/GwgvxxWiiC2IlnCM6IpNqrdWya+h/SaUeCEeHCah1xqmjD4eFQJZbBmwJ7FDW1N+XPHg
++8RMAXQIDAQAB
++-----END PUBLIC KEY-----
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/assets/version.txt
+@@ -0,0 +1 @@
++D133CBS HMI 1.0.0
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+@@ -0,0 +1,58 @@
++#include "boot_manager.h"
++#include "system_manager.h"
++#include "ota_package.h"
++#include <stdio.h>
++#include <rtthread.h>
++#include <rtdevice.h>
++#include <env.h>
++#include <absystem_os.h>
++#include <dfs_fs.h>
++#include <string.h>
++static boot_status_t state;
++static int pending_at_boot;
++static volatile rt_tick_t heartbeat;
++static struct rt_mutex lock;
++void boot_manager_get(boot_status_t *out){rt_mutex_take(&lock,RT_WAITING_FOREVER);*out=state;rt_mutex_release(&lock);}
++void boot_manager_ui_heartbeat(void){heartbeat=rt_tick_get();}
++int boot_manager_confirm(void)
++{
++    int r=aic_ota_status_update();
++    if(!r){rt_mutex_take(&lock,RT_WAITING_FOREVER);state.pending=0;state.confirmed=1;rt_mutex_release(&lock);
++        char record[128];snprintf(record,sizeof(record),"confirmed version=%s target=%c",HMI_VERSION,state.current);system_manager_record_upgrade(record);system_manager_log("新系统健康检查通过，启动槽位已确认");}
++    rt_kprintf("[boot] health confirmation=%d\n",r);return r;
++}
++static void monitor(void *arg)
++{
++    rt_device_t wdt=rt_device_find("wdt");rt_uint32_t timeout=15;unsigned healthy=0;int watchdog_ok=0;
++    /* 持续检查 UI 心跳和必要文件系统；失败时不确认，交给看门狗复位和官方计数回滚。 */
++    if(wdt&&!rt_device_init(wdt)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_SET_TIMEOUT,&timeout)&&!rt_device_control(wdt,RT_DEVICE_CTRL_WDT_START,0))watchdog_ok=1;
++    if(!watchdog_ok)system_manager_log("看门狗未能启动，已阻止新系统健康确认");
++    while(1){
++        boot_status_t snapshot;boot_manager_get(&snapshot);
++        struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata"),*data=dfs_filesystem_lookup("/data");
++        int ok=watchdog_ok && rt_device_find("gt911") && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro&&data&&!strcmp(ro->path,"/rodata")&&!strcmp(data->path,"/data");
++        if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
++        rt_thread_mdelay(1000);
++    }
++}
++int boot_manager_refresh(void)
++{
++    char *v;if(fw_env_open())return -1;rt_mutex_take(&lock,RT_WAITING_FOREVER);
++    v=fw_getenv("osAB_now");state.current=v?v[0]:'?';v=fw_getenv("osAB_next");state.next=v?v[0]:'?';
++    v=fw_getenv("rodataAB_now");state.resource=v?v[0]:'?';v=fw_getenv("upgrade_available");state.pending=v&&v[0]=='1';
++    rt_mutex_release(&lock);fw_env_close();return 0;
++}
++int boot_manager_init(void)
++{
++    rt_thread_t t;rt_mutex_init(&lock,"bootstate",RT_IPC_FLAG_PRIO);if(boot_manager_refresh())return -1;
++    /* 只确认本次开机时已经处于试启动状态的系统，旧系统绝不能确认刚提交的下一槽。 */
++        pending_at_boot=state.pending;state.confirmed=!state.pending;
++    char previous[160];if(!system_manager_upgrade_state(previous,sizeof(previous))&&strstr(previous,"committed")){
++        char *target=strstr(previous,"target=");
++        if(target&&!state.pending&&target[7]&&target[7]!=state.current){system_manager_log("检测到启动回滚，系统与资源已切回上一槽位");system_manager_record_upgrade("rolled_back");}
++    }
++    t=rt_thread_create("hmi_health",monitor,0,3072,20,10);return t?rt_thread_startup(t):-1;
++}
++
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/boot_manager/boot_manager.h
+@@ -0,0 +1,11 @@
++#ifndef HMI_BOOT_MANAGER_H
++#define HMI_BOOT_MANAGER_H
++/* 槽位快照由管理器缓存，UI 不直接打开 ENV。 */
++typedef struct {char current,next,resource;int pending,confirmed;} boot_status_t;
++int boot_manager_init(void);
++void boot_manager_ui_heartbeat(void);
++void boot_manager_get(boot_status_t *out);
++int boot_manager_confirm(void);
++int boot_manager_refresh(void);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/Kconfig
+@@ -0,0 +1,19 @@
++config HMI_FW_VERSION
++    string "D133CBS firmware semantic version"
++    default "1.0.0"
++
++config HMI_APP
++    bool
++    default y
++config HMI_NETWORK
++    bool "Enable D133 toolbox TCP OTA server"
++    default n
++config HMI_UI
++    bool "Enable D133 six-page HMI"
++    default n
++    select LPKG_USING_FREETYPE
++config HMI_SD_OTA
++    bool "Enable SD OTA shell entry"
++    default n
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/main.c
+@@ -0,0 +1,2 @@
++/* 服务通过 RT-Thread INIT_APP_EXPORT 启动，早于官方 LVGL late-app 线程。 */
++int main(void){return 0;}
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/network/network_manager.c
+@@ -0,0 +1,108 @@
++#include "network_manager.h"
++#include "ota_manager.h"
++#include "ota_package.h"
++#include "file_manager.h"
++#include "sd_manager.h"
++#include "system_manager.h"
++#include "boot_manager.h"
++#include <rtthread.h>
++#include <lwip/sockets.h>
++#include <lwip/netif.h>
++#include <netdev.h>
++#include <aic_crc32.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#define OP_INFO 0xD100
++#define OP_BEGIN 0xD101
++#define OP_DATA 0xD102
++#define OP_COMMIT 0xD103
++#define OP_SIGNATURE 0xD104
++#define STAGING "/sdcard/UPDATE/ota.cpio.part"
++#define PACKAGE "/sdcard/UPDATE/ota.cpio"
++static unsigned char payload[16384];
++static int exact(int fd,void *data,unsigned size,int sending)
++{unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
++static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
++{uint32_t h[5];memcpy(h,"LNET",4);h[1]=op;h[2]=status;h[3]=length;h[4]=crc32(crc32(0,(void*)h,16),body,length);return exact(fd,h,20,1)||exact(fd,(void*)body,length,1);}
++void network_manager_status(char *out,unsigned cap)
++{if(netif_default)rt_snprintf(out,cap,"以太网%s | IP：%s | TCP %u",netif_is_link_up(netif_default)?"已连接":"未连接",ipaddr_ntoa(&netif_default->ip_addr),D133_TCP_PORT);else rt_snprintf(out,cap,"以太网初始化中 | TCP %u",D133_TCP_PORT);}
++static void session(int fd)
++{
++    uint32_t h[5],total=0,written=0;unsigned char sha[32],actual[32];char version[32]={0};FILE *file=0;int active=0;
++    struct timeval timeout={120,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
++    while(!exact(fd,h,20,0)){
++        if(memcmp(h,"LNET",4)||h[3]>sizeof(payload))break;
++        if(exact(fd,payload,h[3],0))break;
++        if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
++                if(h[1]==OP_INFO){
++            char info[384];boot_status_t boot;boot_manager_get(&boot);
++            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s}",boot.current,boot.next,boot.confirmed?"true":"false");
++            if(reply(fd,h[1],0,info,length))break;
++            continue;
++        }
++        if(h[1]==OP_BEGIN){
++            hmi_ota_status_t state;ota_manager_get(&state);uint64_t capacity,free_bytes;
++            if(active||h[3]!=132||(state.state!=OTA_IDLE&&state.state!=OTA_FAILED)){reply(fd,h[1],3,0,0);continue;}
++            memcpy(&total,payload,4);
++            if(!total||total>7*1024*1024+8192||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
++            if(!sd_manager_ready()||file_manager_capacity("/sdcard",&capacity,&free_bytes)||free_bytes<total+65536){reply(fd,h[1],5,0,0);continue;}
++            memcpy(sha,payload+4,32);memcpy(version,payload+100,32);mkdir("/sdcard/UPDATE",0777);file=fopen(STAGING,"wb");if(!file){reply(fd,h[1],5,0,0);continue;}
++            written=0;active=1;reply(fd,h[1],0,&written,4);continue;
++        }
++        if(h[1]==OP_DATA){
++            if(!active||h[2]!=written||!h[3]||h[3]>total-written){reply(fd,h[1],6,0,0);break;}
++            if(fwrite(payload,1,h[3],file)!=h[3]){reply(fd,h[1],5,0,0);break;}written+=h[3];if(reply(fd,h[1],0,&written,4))break;continue;
++        }
++                if(h[1]==OP_SIGNATURE){
++            if(!active||!h[3]||h[3]>512||file_manager_write(STAGING ".sig",payload,h[3])){reply(fd,h[1],9,0,0);break;}
++            reply(fd,h[1],0,0,0);continue;
++        }
++        if(h[1]==OP_COMMIT){
++            if(!active||written!=total||h[3]){reply(fd,h[1],6,0,0);break;}
++            int close_result=fclose(file);file=0;active=0;
++            if(close_result||ota_package_sha256(STAGING,actual)||memcmp(sha,actual,32)){reply(fd,h[1],9,0,0);break;}
++            /* 完整收到并校验摘要后才替换 SD 暂存包；官方 OTA 再次预检后才写 Flash。 */
++            remove(PACKAGE);remove(PACKAGE ".sig");if(rename(STAGING ".sig",PACKAGE ".sig")||rename(STAGING,PACKAGE)||ota_manager_request(PACKAGE,sha,version,1)){reply(fd,h[1],3,0,0);break;}
++            hmi_ota_status_t state;unsigned wait;
++            for(wait=0;wait<1800;wait++){ota_manager_get(&state);if(state.state==OTA_READY||state.state==OTA_FAILED)break;rt_thread_mdelay(100);}
++            if(wait==1800||state.state!=OTA_READY){reply(fd,h[1],wait==1800?14:(uint32_t)(-state.error),0,0);break;}
++            reply(fd,h[1],0,&written,4);rt_thread_mdelay(500);ota_manager_reboot();break;
++        }
++        reply(fd,h[1],11,0,0);break;
++    }
++    if(file)fclose(file);
++    /* 断线只保留未激活的暂存文件，绝不提交 ENV。 */
++}
++static void server(void *unused)
++{
++    int listener=socket(AF_INET,SOCK_STREAM,0);struct sockaddr_in addr;int yes=1;
++    if(listener<0){system_manager_log("TCP 服务套接字创建失败");return;}setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(D133_TCP_PORT);addr.sin_addr.s_addr=INADDR_ANY;
++    if(bind(listener,(void*)&addr,sizeof(addr))||listen(listener,1)){closesocket(listener);system_manager_log("TCP 服务端口绑定或监听失败");return;}
++    system_manager_log("D133CBS 工具箱 OTA 服务已启动，端口 8899");while(1){int fd=accept(listener,0,0);if(fd<0){rt_thread_mdelay(100);continue;}session(fd);closesocket(fd);}
++}
++typedef struct {char ip[16],mask[16],gateway[16];int dhcp;} network_config_t;
++static rt_mq_t config_queue;
++static void configure_worker(void *unused)
++{
++    network_config_t c;ip_addr_t ip,mask,gw;
++    while(1){rt_mq_recv(config_queue,&c,sizeof(c),RT_WAITING_FOREVER);
++        if(!netdev_default){system_manager_log("网络设备尚未就绪");continue;}
++        if(c.dhcp){netdev_dhcp_enabled(netdev_default,RT_TRUE);system_manager_log("已启用 DHCP，等待获取地址");continue;}
++        if(!ipaddr_aton(c.ip,&ip)||!ipaddr_aton(c.mask,&mask)||!ipaddr_aton(c.gateway,&gw)){system_manager_log("IPv4 参数无效");continue;}
++        netdev_dhcp_enabled(netdev_default,RT_FALSE);netdev_set_ipaddr(netdev_default,&ip);netdev_set_netmask(netdev_default,&mask);netdev_set_gw(netdev_default,&gw);system_manager_log("静态 IPv4 参数已应用（仅本次运行有效）");
++    }
++}
++int network_manager_configure(const char *ip,const char *mask,const char *gw,int dhcp)
++{
++    network_config_t c;memset(&c,0,sizeof(c));if(!ip||!mask||!gw||strlen(ip)>15||strlen(mask)>15||strlen(gw)>15)return -1;
++    snprintf(c.ip,16,"%s",ip);snprintf(c.mask,16,"%s",mask);snprintf(c.gateway,16,"%s",gw);c.dhcp=dhcp;return config_queue?rt_mq_send(config_queue,&c,sizeof(c)):-1;
++}
++int network_manager_init(void)
++{
++    rt_thread_t t;config_queue=rt_mq_create("netcfg",sizeof(network_config_t),2,RT_IPC_FLAG_FIFO);if(!config_queue)return -1;
++    t=rt_thread_create("hmi_netcfg",configure_worker,0,3072,24,10);if(!t)return -1;rt_thread_startup(t);
++    t=rt_thread_create("hmi_tcp",server,0,8192,23,10);return t?rt_thread_startup(t):-1;
++}
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/network/network_manager.h
+@@ -0,0 +1,8 @@
++#ifndef HMI_NETWORK_MANAGER_H
++#define HMI_NETWORK_MANAGER_H
++#define D133_TCP_PORT 8899
++int network_manager_init(void);
++int network_manager_configure(const char *ip,const char *mask,const char *gateway,int dhcp);
++void network_manager_status(char *out,unsigned capacity);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_manager.c
+@@ -0,0 +1,69 @@
++#include "ota_manager.h"
++#include "ota_package.h"
++#include "ota_signature.h"
++#include "boot_manager.h"
++#include "system_manager.h"
++#include <rtthread.h>
++#include <stdbool.h>
++#include <mbedtls/sha256.h>
++#include <ota.h>
++#include <env.h>
++#include <absystem_os.h>
++#include <stdio.h>
++#include <string.h>
++typedef struct {char path[256],version[32];unsigned char sha[32];int has_sha,remote;} job_t;
++static rt_mq_t queue;static struct rt_mutex mutex;static hmi_ota_status_t status;static volatile int decision;static ota_signature_verifier_t verifier;
++void ota_manager_set_signature_verifier(ota_signature_verifier_t v){verifier=v;}
++void ota_manager_get(hmi_ota_status_t *out){rt_mutex_take(&mutex,RT_WAITING_FOREVER);*out=status;rt_mutex_release(&mutex);}
++static void update(hmi_ota_state_t s,unsigned p,int err){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=err;rt_mutex_release(&mutex);}
++void ota_manager_decide(int accept){decision=accept?1:-1;}
++void ota_manager_reboot(void){extern void rt_hw_cpu_reset(void);rt_hw_cpu_reset();}
++static void worker(void *unused)
++{
++    job_t j;char version[32],buf[2048];unsigned char hash[32];FILE *f;long total,written;size_t n;int error,initialized,hash_initialized;mbedtls_sha256_context stream_hash;
++    while(1){rt_mq_recv(queue,&j,sizeof(j),RT_WAITING_FOREVER);error=-1;initialized=0;hash_initialized=0;f=0;
++        if(j.remote){decision=0;update(OTA_CONFIRM,0,0);for(unsigned i=0;i<600&&decision==0;i++)rt_thread_mdelay(100);if(decision!=1){error=-14;goto fail;}}
++        update(OTA_CHECK,0,0);
++        if(ota_package_check(j.path,version)){error=-20;goto fail;}
++        if(j.version[0]&&strcmp(j.version,version)){error=-21;goto fail;}
++        if(ota_package_sha256(j.path,hash)){error=-22;goto fail;}
++        if(j.has_sha&&memcmp(hash,j.sha,32)){error=-23;goto fail;}
++        /* 必须通过配置的签名验证器；无后端或签名无效均拒绝升级。 */
++        if(!verifier||verifier(j.path,hash)){error=-24;goto fail;}
++        rt_mutex_take(&mutex,RT_WAITING_FOREVER);snprintf(status.version,32,"%s",version);rt_mutex_release(&mutex);
++        f=fopen(j.path,"rb");if(!f)goto fail;fseek(f,0,SEEK_END);total=ftell(f);rewind(f);written=0;
++        /* 每次事务重置官方状态，避免失败重试沿用上一包的成员完成标志。 */
++        extern bool os_status,rodatafs_status,datafs_status;os_status=rodatafs_status=datafs_status=0;
++                mbedtls_sha256_init(&stream_hash);if(mbedtls_sha256_starts_ret(&stream_hash,0))goto fail;hash_initialized=1;
++        if(ota_init())goto fail;
++        initialized=1;update(OTA_WRITE,0,0);
++        while((n=fread(buf,1,sizeof(buf),f))){if(mbedtls_sha256_update_ret(&stream_hash,(unsigned char*)buf,n)){error=-22;goto fail;}if(ota_shard_download_fun(buf,n)<0){error=-25;goto fail;}written+=n;update(OTA_WRITE,(unsigned)(written*100/total),0);}
++        if(ferror(f)||!os_status||!rodatafs_status){error=-26;goto fail;}
++        unsigned char written_hash[32];if(mbedtls_sha256_finish_ret(&stream_hash,written_hash)||memcmp(written_hash,hash,32)){error=-23;goto fail;}mbedtls_sha256_free(&stream_hash);hash_initialized=0;
++        fclose(f);f=0;ota_deinit();initialized=0;
++                char record[160];boot_status_t boot;boot_manager_get(&boot);
++        snprintf(record,sizeof(record),"prepared version=%s target=%c",version,boot.current=='A'?'B':'A');
++        if(system_manager_record_upgrade(record)){error=-28;goto fail;}
++        if(aic_upgrade_end()){error=-27;goto fail;}
++        snprintf(record,sizeof(record),"committed version=%s target=%c",version,boot.current=='A'?'B':'A');
++        if(system_manager_record_upgrade(record))system_manager_log("警告：ENV 已提交，但升级状态文件写入失败");
++        boot_manager_refresh();update(OTA_READY,100,0);rt_kprintf("[ota] verified inactive slots ready; reboot required\n");continue;
++fail:if(f)fclose(f);if(initialized)ota_deinit();if(hash_initialized)mbedtls_sha256_free(&stream_hash);update(OTA_FAILED,0,error);char failure_record[128];snprintf(failure_record,sizeof(failure_record),"failed error=%d version=%s",error,j.version[0]?j.version:"unknown");system_manager_record_upgrade(failure_record);{char log_text[128];snprintf(log_text,sizeof(log_text),"升级失败，错误码：%d，版本：%s",error,j.version[0]?j.version:"未知");system_manager_log(log_text);}rt_kprintf("[ota] failed=%d; current slot retained\n",error);
++    }
++}
++int ota_manager_init(void){rt_thread_t t;verifier=ota_signature_verify;rt_mutex_init(&mutex,"otastate",RT_IPC_FLAG_PRIO);queue=rt_mq_create("otajob",sizeof(job_t),1,RT_IPC_FLAG_FIFO);if(!queue)return -1;t=rt_thread_create("hmi_ota",worker,0,8192,21,10);return t?rt_thread_startup(t):-1;}
++int ota_manager_request(const char *path,const unsigned char *sha,const char *version,int remote)
++{
++    job_t j;int r;memset(&j,0,sizeof(j));if(!path||strlen(path)>=sizeof(j.path))return -1;
++    rt_mutex_take(&mutex,RT_WAITING_FOREVER);if(status.state!=OTA_IDLE&&status.state!=OTA_FAILED){rt_mutex_release(&mutex);return -3;}status.state=OTA_CHECK;status.remote=remote;status.error=0;status.percent=0;if(version)snprintf(status.version,32,"%s",version);else status.version[0]=0;rt_mutex_release(&mutex);
++    snprintf(j.path,sizeof(j.path),"%s",path);if(version)snprintf(j.version,32,"%s",version);if(sha){memcpy(j.sha,sha,32);j.has_sha=1;}j.remote=remote;r=rt_mq_send(queue,&j,sizeof(j));if(r)update(OTA_FAILED,0,r);return r;
++}
++
++
++
++
++
++
++
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_manager.h
+@@ -0,0 +1,15 @@
++#ifndef HMI_OTA_MANAGER_H
++#define HMI_OTA_MANAGER_H
++#include <stdint.h>
++typedef enum { OTA_IDLE,OTA_CONFIRM,OTA_CHECK,OTA_WRITE,OTA_READY,OTA_FAILED } hmi_ota_state_t;
++typedef struct {hmi_ota_state_t state;unsigned percent;int error,remote;char version[32];} hmi_ota_status_t;
++int ota_manager_init(void);
++int ota_manager_request(const char *path,const unsigned char *sha,const char *version,int remote);
++void ota_manager_decide(int accept);
++void ota_manager_get(hmi_ota_status_t *out);
++void ota_manager_reboot(void);
++/* 产品可注册签名验证器；无验证器时明确返回未支持，不伪造验证成功。 */
++typedef int (*ota_signature_verifier_t)(const char *path,const unsigned char digest[32]);
++void ota_manager_set_signature_verifier(ota_signature_verifier_t verify);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_package.c
+@@ -0,0 +1,112 @@
++#include "ota_package.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <mbedtls/sha256.h>
++
++static int hex8(const char *p,uint32_t *value)
++{
++    unsigned i;*value=0;
++    for(i=0;i<8;i++){
++        unsigned c=(unsigned char)p[i],digit;
++        if(c>='0'&&c<='9')digit=c-'0';
++        else if(c>='a'&&c<='f')digit=c-'a'+10;
++        else if(c>='A'&&c<='F')digit=c-'A'+10;
++        else return -1;
++        *value=(*value<<4)|digit;
++    }
++    return 0;
++}
++static void trim(char *s)
++{
++    size_t n=strlen(s);while(n&&s[n-1]==' ')s[--n]=0;
++    while(*s==' ')memmove(s,s+1,strlen(s));
++}
++/* ota_info.bin 的字段清单固定为官方 OS 与 RODATA 映射，拒绝额外目标。 */
++static int metadata_check(const unsigned char meta[512],char version[32],uint32_t archive_size)
++{
++    static const char *expected[]={"[image]","$SIZE","$VERSION","[file]",
++                                   "ota_info.bin:file;","d13x_os.itb:os;",
++                                   "rodata.fatfs:rodata;"};
++    char line[128],size_text[32],version_text[32];unsigned index=0,pos=4;size_t n;
++    size_text[0]=version_text[0]=0;
++    while(pos<512){
++        unsigned start=pos;
++        if(meta[pos]==0||meta[pos]==0xff)break;
++        while(pos<512&&meta[pos])pos++;
++        n=pos-start;if(pos>=512||!n||n>=sizeof(line))return -1;
++        memcpy(line,meta+start,n);line[n]=0;trim(line);
++        if(index>=sizeof(expected)/sizeof(expected[0]))return -1;
++        if(index==1){
++            const char *a="size = \"",*end;
++            if(strncmp(line,a,strlen(a))||(end=strchr(line+strlen(a),'"'))==NULL||end[1]!=';'||end==line+strlen(a))return -1;
++            n=(size_t)(end-(line+strlen(a)));if(n>=sizeof(size_text))return -1;
++            memcpy(size_text,line+strlen(a),n);size_text[n]=0;
++            for(n=0;size_text[n];n++)if(size_text[n]<'0'||size_text[n]>'9')return -1;
++        }else if(index==2){
++            const char *a="version = \"",*end;
++            if(strncmp(line,a,strlen(a))||(end=strchr(line+strlen(a),'"'))==NULL||end[1]!=';')return -1;
++            n=(size_t)(end-(line+strlen(a)));if(!n||n>=sizeof(version_text))return -1;
++            memcpy(version_text,line+strlen(a),n);version_text[n]=0;
++        }else if(strcmp(line,expected[index]))return -1;
++        index++;pos++;
++    }
++    /* 仅允许 mkenvimage 的 0xFF 填充，禁止第二段隐藏配置。 */
++    for(;pos<512;pos++)if(meta[pos]!=0&&meta[pos]!=0xff)return -1;
++    if(index!=7||!size_text[0]||!version_text[0]||strtoul(size_text,NULL,10)!=archive_size)return -1;
++    snprintf(version,32,"%s",version_text);return 0;
++}
++int ota_version_newer(const char *s)
++{
++    unsigned a,b,c,x,y,z;char tail;
++    if(sscanf(s,"%u.%u.%u%c",&a,&b,&c,&tail)!=3||sscanf(HMI_VERSION,"%u.%u.%u",&x,&y,&z)!=3)return 0;
++    return a>x||(a==x&&(b>y||(b==y&&c>z)));
++}
++int ota_package_sha256(const char *path,unsigned char hash[32])
++{
++    FILE *f=fopen(path,"rb");unsigned char b[2048];size_t n;int r=0;mbedtls_sha256_context ctx;
++    if(!f)return -1;
++    mbedtls_sha256_init(&ctx);r=mbedtls_sha256_starts_ret(&ctx,0);
++    while(!r&&(n=fread(b,1,sizeof(b),f)))r=mbedtls_sha256_update_ret(&ctx,b,n);
++    if(ferror(f))r=-1;
++    if(!r)r=mbedtls_sha256_finish_ret(&ctx,hash);
++    mbedtls_sha256_free(&ctx);fclose(f);return r;
++}
++int ota_package_check(const char *path,char version[32])
++{
++    FILE *f=fopen(path,"rb");char header[110],name[64],buffer[2048];unsigned char meta[512];
++    uint32_t size,names,expected,sum,mode,remaining,archive_size;unsigned seen=0;int result=-1,tail;long file_size;
++    if(!f)return -1;
++    if(fseek(f,0,SEEK_END)||(file_size=ftell(f))<0||fseek(f,0,SEEK_SET)){fclose(f);return -1;}
++    archive_size=(uint32_t)file_size;version[0]=0;
++    while(fread(header,1,sizeof(header),f)==sizeof(header)){
++        if(memcmp(header,"070702",6)||hex8(header+14,&mode)||hex8(header+54,&size)||hex8(header+94,&names)||hex8(header+102,&expected)||!names||names>sizeof(name))goto done;
++        if(fread(name,1,names,f)!=names||name[names-1]||memchr(name,0,names-1))goto done;
++        if(fseek(f,(4-((110+names)&3))&3,SEEK_CUR))goto done;
++        if(!strcmp(name,"TRAILER!!!")){
++            if(size||expected||seen!=7||!ota_version_newer(version))goto done;
++            while((tail=fgetc(f))!=EOF)if(tail)goto done;
++            if(ferror(f))goto done;
++            result=0;goto done;
++        }
++        if((mode&0170000)!=0100000)goto done;
++        unsigned flag=0;
++        if(!strcmp(name,"ota_info.bin")&&size==512)flag=1;
++        else if(!strcmp(name,"d13x_os.itb")&&size&&size<=2097152)flag=2;
++        else if(!strcmp(name,"rodata.fatfs")&&size&&size<=5242880)flag=4;
++        if(!flag||(seen&flag)||(!seen&&flag!=1))goto done;
++        seen|=flag;sum=0;remaining=size;uint32_t offset=0;
++        while(remaining){size_t n=remaining>sizeof(buffer)?sizeof(buffer):remaining;
++            if(fread(buffer,1,n,f)!=n)goto done;
++            for(size_t i=0;i<n;i++)sum+=(unsigned char)buffer[i];
++            if(flag==1){memcpy(meta+offset,buffer,n);offset+=(uint32_t)n;}
++            remaining-=(uint32_t)n;
++        }
++        if(sum!=expected)goto done;
++        if(flag==1&&metadata_check(meta,version,archive_size))goto done;
++        if(fseek(f,(4-(size&3))&3,SEEK_CUR))goto done;
++    }
++done:fclose(f);return result;
++}
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_package.h
+@@ -0,0 +1,18 @@
++#ifndef HMI_OTA_PACKAGE_H
++#define HMI_OTA_PACKAGE_H
++#include <rtconfig.h>
++#include <stdint.h>
++#ifdef CONFIG_HMI_FW_VERSION
++#define HMI_VERSION CONFIG_HMI_FW_VERSION
++#else
++#define HMI_VERSION "1.0.0"
++#endif
++#define HMI_PRODUCT "D133CBS"
++#define HMI_HARDWARE "D133CBV-QFN88-V1-2"
++/* 严格预检：CPIO CRC、完整结尾、文件白名单、槽位容量和版本均在写 Flash 前验证。 */
++int ota_package_check(const char *path,char version[32]);
++int ota_version_newer(const char *version);
++int ota_package_sha256(const char *path,unsigned char digest[32]);
++#endif
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_sd.c
+@@ -0,0 +1,7 @@
++#include "ota_sd.h"
++#include "ota_manager.h"
++#include <rtthread.h>
++/* 用户主动调用命令后，由 OTA 工作线程校验包和签名，命令线程不直接写 Flash。 */
++int ota_sd_start(void){return ota_manager_request("/sdcard/UPDATE/ota.cpio",0,0,0);}
++static void sd_ota_command(void){rt_kprintf("[sd-ota] request=%d\n",ota_sd_start());}
++MSH_CMD_EXPORT_ALIAS(sd_ota_command,hmi_sd_ota,Install signed SD CPIO to inactive slots);
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_sd.h
+@@ -0,0 +1,4 @@
++#ifndef HMI_OTA_SD_H
++#define HMI_OTA_SD_H
++int ota_sd_start(void);
++#endif
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_signature.c
+@@ -0,0 +1,14 @@
++#include "ota_signature.h"
++#include <stdio.h>
++#include <string.h>
++#include <mbedtls/pk.h>
++int ota_signature_verify(const char *path,const unsigned char hash[32])
++{
++    char pem[2048]={0},name[280];unsigned char signature[512];size_t n,keylen;FILE *f;int result=-1;mbedtls_pk_context key;
++    snprintf(name,sizeof(name),"%s.sig",path);f=fopen(name,"rb");if(!f)return -1;n=fread(signature,1,sizeof(signature),f);if(fgetc(f)!=EOF||ferror(f)){fclose(f);return -1;}fclose(f);if(!n)return -1;
++    f=fopen("/rodata/hmi/ota_public.pem","rb");if(!f)return -2;keylen=fread(pem,1,sizeof(pem)-1,f);if(fgetc(f)!=EOF||ferror(f)){fclose(f);return -2;}fclose(f);
++    mbedtls_pk_init(&key);result=mbedtls_pk_parse_public_key(&key,(unsigned char*)pem,keylen+1);
++    if(!result&&!mbedtls_pk_can_do(&key,MBEDTLS_PK_RSA))result=-3;
++    if(!result)result=mbedtls_pk_verify(&key,MBEDTLS_MD_SHA256,hash,32,signature,n);
++    mbedtls_pk_free(&key);return result;
++}
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ota/ota_signature.h
+@@ -0,0 +1,5 @@
++#ifndef HMI_OTA_SIGNATURE_H
++#define HMI_OTA_SIGNATURE_H
++/* RSA/SHA256 验证；公钥随只读资源部署，签名为 path + .sig。 */
++int ota_signature_verify(const char *path,const unsigned char digest[32]);
++#endif
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/SConscript
+@@ -0,0 +1,16 @@
++from building import *
++import os
++cwd=GetCurrentDir()
++modules=['app','storage','boot_manager','system','ota']
++src=Glob('main.c')
++for module in modules:
++    src += Glob(module+'/*.c')
++if not GetDepend('HMI_SD_OTA'):
++    SrcRemove(src,'ota/ota_sd.c')
++if GetDepend('HMI_NETWORK'):
++    src += Glob('network/*.c')
++if GetDepend('HMI_UI'):
++    src += Glob('ui/*.c')
++inc=[cwd]+[cwd+'/'+m for m in modules+['network','ui']]
++group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
++Return('group')
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/file_manager.c
+@@ -0,0 +1,49 @@
++#include "file_manager.h"
++#include <stdio.h>
++#include <string.h>
++#include <dirent.h>
++#include <sys/stat.h>
++#include <dfs_fs.h>
++#include <unistd.h>
++/* 所有函数仅供存储/OTA 工作线程调用，禁止从 LVGL 回调直接调用。 */
++int file_manager_list(const char *path, fm_list_t *out)
++{
++    DIR *dir; struct dirent *e; struct stat st; char full[FM_PATH_MAX];
++    if (!path || !out) return -1;
++    memset(out,0,sizeof(*out)); dir=opendir(path); if(!dir) return -2;
++    while((e=readdir(dir))!=NULL) {
++        if(!strcmp(e->d_name,".") || !strcmp(e->d_name,"..")) continue;
++        if(out->count==FM_LIST_MAX) {out->truncated=1; break;}
++        if(snprintf(full,sizeof(full),"%s/%s",path,e->d_name)>=(int)sizeof(full)) {out->truncated=1;continue;}
++        if(stat(full,&st)) continue;
++        fm_entry_t *v=&out->entries[out->count++];
++        snprintf(v->name,sizeof(v->name),"%s",e->d_name);
++        v->directory=S_ISDIR(st.st_mode); v->size=st.st_size;
++    }
++    closedir(dir); return 0;
++}
++int file_manager_read(const char *p,void *b,size_t n,size_t *got)
++{ FILE *f; if(!p||!b||!got)return -1; f=fopen(p,"rb");if(!f)return -2; *got=fread(b,1,n,f);int r=ferror(f)?-3:0;fclose(f);return r; }
++int file_manager_write(const char *p,const void *b,size_t n)
++{ FILE *f;if(!p||(!b&&n))return -1;f=fopen(p,"wb");if(!f)return -2;int r=fwrite(b,1,n,f)==n?0:-3;if(fclose(f)&&!r)r=-3;return r; }
++int file_manager_copy(const char *a,const char *b)
++{
++    char buf[2048];size_t n;int r=0;FILE *in,*out;
++    if(!a||!b||!strcmp(a,b))return -1;
++    in=fopen(a,"rb");if(!in)return -2;
++    /* 使用独占创建，复制失败不覆盖用户已有文件。 */
++    out=fopen(b,"rb");if(out){fclose(out);fclose(in);return -4;}
++    out=fopen(b,"wb");if(!out){fclose(in);return -2;}
++    while((n=fread(buf,1,sizeof(buf),in))>0)if(fwrite(buf,1,n,out)!=n){r=-3;break;}
++    if(ferror(in))r=-3;
++    fclose(in);
++    if(fclose(out))r=-3;
++    return r;
++}
++int file_manager_delete(const char *p){return p?remove(p):-1;}
++int file_manager_mkdir(const char *p){return p?mkdir(p,0777):-1;}
++int file_manager_rename(const char *a,const char *b){return a&&b?rename(a,b):-1;}
++int file_manager_size(const char *p,uint32_t *n){struct stat s;if(!p||!n||stat(p,&s))return -1;*n=s.st_size;return 0;}
++int file_manager_capacity(const char *p,uint64_t *total,uint64_t *avail)
++{struct statfs s;if(!p||!total||!avail||dfs_statfs(p,&s))return -1;*total=(uint64_t)s.f_blocks*s.f_bsize;*avail=(uint64_t)s.f_bfree*s.f_bsize;return 0;}
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/file_manager.h
+@@ -0,0 +1,20 @@
++#ifndef HMI_FILE_MANAGER_H
++#define HMI_FILE_MANAGER_H
++#include <stddef.h>
++#include <stdint.h>
++#define FM_PATH_MAX 256
++#define FM_LIST_MAX 32
++/* 文件服务错误码：0 成功，负值表示参数、路径或 IO 错误。 */
++typedef struct { char name[256]; uint32_t size; int directory; } fm_entry_t;
++typedef struct { unsigned count; int truncated; fm_entry_t entries[FM_LIST_MAX]; } fm_list_t;
++int file_manager_list(const char *path, fm_list_t *out);
++int file_manager_read(const char *path, void *buf, size_t capacity, size_t *read_size);
++int file_manager_write(const char *path, const void *buf, size_t size);
++int file_manager_copy(const char *from, const char *to);
++int file_manager_delete(const char *path);
++int file_manager_mkdir(const char *path);
++int file_manager_rename(const char *from, const char *to);
++int file_manager_size(const char *path, uint32_t *size);
++int file_manager_capacity(const char *path, uint64_t *total, uint64_t *free_bytes);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/sd_manager.c
+@@ -0,0 +1,11 @@
++#include "sd_manager.h"
++#include <rtthread.h>
++#include <dfs_fs.h>
++#include <string.h>
++/* 插拔和自动挂载复用官方 SDMC1 热插拔线程及 board.c 挂载表。 */
++int sd_manager_init(void){rt_kprintf("[sd] SDMC1 /sdcard; detect PC.6\n");return 0;}
++int sd_manager_ready(void)
++{
++    struct dfs_filesystem *fs=dfs_filesystem_lookup("/sdcard");
++    return fs && fs->path && !strcmp(fs->path,"/sdcard");
++}
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/sd_manager.h
+@@ -0,0 +1,5 @@
++#ifndef HMI_SD_MANAGER_H
++#define HMI_SD_MANAGER_H
++int sd_manager_init(void);
++int sd_manager_ready(void);
++#endif
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/storage_manager.c
+@@ -0,0 +1,50 @@
++#include "storage_manager.h"
++#include "sd_manager.h"
++#include <rtthread.h>
++#include <string.h>
++static rt_mq_t jobs,results;
++/* 请求和结果均按值复制；工作线程不持有任何 LVGL 对象。 */
++static void worker(void *arg)
++{
++    storage_request_t q;static storage_result_t r;size_t n;
++    while(1){if(rt_mq_recv(jobs,&q,sizeof(q),RT_WAITING_FOREVER)!=RT_EOK)continue;
++        memset(&r,0,sizeof(r));r.op=q.op;
++        switch(q.op){
++        case ST_LIST:r.error=file_manager_list(q.path,&r.list);break;
++        case ST_COPY:r.error=file_manager_copy(q.path,q.target);break;
++        case ST_DELETE:r.error=file_manager_delete(q.path);break;
++        case ST_MKDIR:r.error=file_manager_mkdir(q.path);break;
++        case ST_RENAME:r.error=file_manager_rename(q.path,q.target);break;
++        case ST_READ:n=0;r.error=file_manager_read(q.path,r.data,sizeof(r.data)-1,&n);r.length=n;break;
++        case ST_WRITE:r.error=q.length<=sizeof(q.data)?file_manager_write(q.path,q.data,q.length):-1;break;
++        case ST_CAPACITY:r.error=file_manager_capacity(q.path,&r.total,&r.free_bytes);break;
++        default:r.error=-1;break;}
++        rt_kprintf("[storage] op=%d result=%d %s\n",q.op,r.error,q.path);
++        /* 结果队列背压仅等待工作线程，LVGL 始终非阻塞轮询。 */
++        while(rt_mq_send(results,&r,sizeof(r))!=RT_EOK)rt_thread_mdelay(20);
++    }
++}
++int storage_manager_init(void)
++{
++    rt_thread_t t;sd_manager_init();jobs=rt_mq_create("fsjobs",sizeof(storage_request_t),4,RT_IPC_FLAG_FIFO);
++    results=rt_mq_create("fsdone",sizeof(storage_result_t),4,RT_IPC_FLAG_FIFO);
++    if(!jobs||!results)return -1;
++    t=rt_thread_create("hmi_fs",worker,0,4096,22,10);if(!t)return -1;return rt_thread_startup(t);
++}
++static int safe_path(const char *p)
++{
++    return memchr(p,0,FM_PATH_MAX)&&!strncmp(p,"/sdcard",7)&&(p[7]==0||p[7]=='/')&&!strstr(p,"/../")&&!strstr(p,"/..")&&!strstr(p,"/./");
++}
++int storage_manager_submit(const storage_request_t *q)
++{
++    if(!q||!jobs||!safe_path(q->path))return -1;
++    if((q->op==ST_COPY||q->op==ST_RENAME)&&!safe_path(q->target))return -1;
++    /* OTA 专用暂存目录由升级服务独占，文件页不能修改正在验证的升级包。 */
++    if(q->op!=ST_LIST&&q->op!=ST_READ&&q->op!=ST_CAPACITY){
++        if(!strcmp(q->path,"/sdcard")||!strncmp(q->path,"/sdcard/UPDATE",14)||!strncmp(q->target,"/sdcard/UPDATE",14))return -5;
++    }
++    return rt_mq_send(jobs,q,sizeof(*q));
++}
++int storage_manager_poll(storage_result_t *r){return r&&results?rt_mq_recv(results,r,sizeof(*r),0):-1;}
++
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/storage/storage_manager.h
+@@ -0,0 +1,10 @@
++#ifndef HMI_STORAGE_MANAGER_H
++#define HMI_STORAGE_MANAGER_H
++#include "file_manager.h"
++typedef enum {ST_LIST,ST_COPY,ST_DELETE,ST_MKDIR,ST_RENAME,ST_READ,ST_WRITE,ST_CAPACITY} storage_op_t;
++typedef struct {storage_op_t op;char path[FM_PATH_MAX],target[FM_PATH_MAX];char data[512];unsigned length;} storage_request_t;
++typedef struct {storage_op_t op;int error;fm_list_t list;char data[512];unsigned length;uint64_t total,free_bytes;} storage_result_t;
++int storage_manager_init(void);
++int storage_manager_submit(const storage_request_t *request);
++int storage_manager_poll(storage_result_t *result);
++#endif
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/system/system_manager.c
+@@ -0,0 +1,42 @@
++#include "system_manager.h"
++#include <rtthread.h>
++#include <string.h>
++#include <stdio.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <unistd.h>
++static struct rt_mutex lock;static char logbuf[2048];static rt_mq_t messages;
++/* 持久化由专用日志线程完成，LVGL 只写有界队列。 */
++static void logger(void *arg)
++{
++    char line[512];struct stat st;
++    while(1){rt_mq_recv(messages,line,sizeof(line),RT_WAITING_FOREVER);
++        if(!stat("/data/hmi.log",&st)&&st.st_size>65536){remove("/data/hmi.log.1");rename("/data/hmi.log","/data/hmi.log.1");}
++        FILE *f=fopen("/data/hmi.log","ab");if(f){fprintf(f,"%lu %s\n",(unsigned long)(rt_tick_get()/RT_TICK_PER_SECOND),line);fclose(f);}
++    }
++}
++int system_manager_init(void)
++{
++    rt_thread_t t;FILE *f;rt_mutex_init(&lock,"hmilog",RT_IPC_FLAG_PRIO);
++    f=fopen("/data/hmi.log","rb");if(f){fseek(f,0,SEEK_END);long n=ftell(f);if(n>2047)fseek(f,n-2047,SEEK_SET);else rewind(f);fread(logbuf,1,2047,f);fclose(f);}
++    messages=rt_mq_create("hmilogs",512,8,RT_IPC_FLAG_FIFO);if(!messages)return -1;
++    t=rt_thread_create("hmi_logger",logger,0,3072,25,10);if(!t)return -1;rt_thread_startup(t);system_manager_log("D133CBS 控制终端启动");return 0;
++}
++void system_manager_log(const char *s)
++{
++    char line[512];snprintf(line,sizeof(line),"%.510s",s);unsigned n=strlen(line);
++    rt_mutex_take(&lock,RT_WAITING_FOREVER);if(strlen(logbuf)+n+2>=sizeof(logbuf))logbuf[0]=0;strcat(logbuf,line);strcat(logbuf,"\n");rt_mutex_release(&lock);
++    if(messages)rt_mq_send(messages,line,sizeof(line));
++    rt_kprintf("[hmi] %s\n",line);
++}
++void system_manager_logs(char *out,unsigned n){if(!n)return;rt_mutex_take(&lock,RT_WAITING_FOREVER);rt_strncpy(out,logbuf,n-1);out[n-1]=0;rt_mutex_release(&lock);}
++/* 只供 OTA/健康线程调用，必须在返回前落盘。ENV 仍是启动状态的权威来源。 */
++int system_manager_record_upgrade(const char *message)
++{
++    int fd=open("/data/upgrade.state",O_WRONLY|O_CREAT|O_TRUNC,0600);if(fd<0)return -1;size_t n=strlen(message);int r=write(fd,message,n)==n?0:-1;if(!r&&fsync(fd))r=-1;if(close(fd))r=-1;return r;
++}
++int system_manager_upgrade_state(char *out,unsigned cap)
++{
++    FILE *f;if(!out||!cap)return -1;out[0]=0;f=fopen("/data/upgrade.state","rb");if(!f)return -1;size_t n=fread(out,1,cap-1,f);out[n]=0;int r=ferror(f)?-1:0;fclose(f);return r;
++}
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/system/system_manager.h
+@@ -0,0 +1,9 @@
++#ifndef HMI_SYSTEM_MANAGER_H
++#define HMI_SYSTEM_MANAGER_H
++int system_manager_init(void);
++void system_manager_log(const char *message);
++int system_manager_record_upgrade(const char *message);
++int system_manager_upgrade_state(char *out,unsigned capacity);
++void system_manager_logs(char *out,unsigned capacity);
++#endif
++
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -0,0 +1,447 @@
++#include "image_preview.h"
++#include "file_manager.h"
++#include <rtthread.h>
++#include <aic_core.h>
++#include <sys/stat.h>
++#include <string.h>
++#include <stdio.h>
++#include <ctype.h>
++
++#define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
++#define IMAGE_PREVIEW_WIDTH_MAX 1024U
++#define IMAGE_PREVIEW_HEIGHT_MAX 768U
++#define IMAGE_PREVIEW_LVFS_PREFIX "L:"
++
++typedef struct {
++    char path[FM_PATH_MAX];
++} image_preview_job_t;
++
++typedef enum {
++    IMAGE_KIND_UNSUPPORTED = 0,
++    IMAGE_KIND_JPEG,
++    IMAGE_KIND_PNG,
++    IMAGE_KIND_BMP
++} image_kind_t;
++
++static struct rt_mutex state_lock;
++static rt_mq_t job_queue;
++static int manager_ready;
++static image_preview_state_t current_state = IMAGE_PREVIEW_IDLE;
++static int last_error;
++static int cancel_requested;
++static int decoder_opened;
++static lv_image_decoder_dsc_t decoder_dsc;
++static lv_image_dsc_t preview_image;
++static char preview_source_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
++
++enum {
++    IMAGE_PREVIEW_ERR_NONE = 0,
++    IMAGE_PREVIEW_ERR_PATH = -1,
++    IMAGE_PREVIEW_ERR_SIZE = -2,
++    IMAGE_PREVIEW_ERR_FORMAT = -3,
++    IMAGE_PREVIEW_ERR_DECODE = -4,
++    IMAGE_PREVIEW_ERR_CANCELLED = -5
++};
++
++static int extension_equal(const char *left, const char *right)
++{
++    while (*left && *right) {
++        if (tolower((unsigned char)*left) != tolower((unsigned char)*right))
++            return 0;
++        left++;
++        right++;
++    }
++    return *left == 0 && *right == 0;
++}
++
++static image_kind_t image_kind(const char *path)
++{
++    const char *extension;
++
++    if (!path)
++        return IMAGE_KIND_UNSUPPORTED;
++    extension = strrchr(path, '.');
++    if (!extension)
++        return IMAGE_KIND_UNSUPPORTED;
++    if (extension_equal(extension, ".jpg") || extension_equal(extension, ".jpeg"))
++        return IMAGE_KIND_JPEG;
++    if (extension_equal(extension, ".png"))
++        return IMAGE_KIND_PNG;
++    if (extension_equal(extension, ".bmp"))
++        return IMAGE_KIND_BMP;
++    return IMAGE_KIND_UNSUPPORTED;
++}
++
++int image_preview_supported(const char *path)
++{
++    return image_kind(path) != IMAGE_KIND_UNSUPPORTED;
++}
++
++static int preview_cancelled(void)
++{
++    int cancelled;
++
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    cancelled = cancel_requested;
++    rt_mutex_release(&state_lock);
++    return cancelled;
++}
++
++static void release_decode_resources(void)
++{
++    if (decoder_opened) {
++        lv_image_decoder_close(&decoder_dsc);
++        decoder_opened = 0;
++        memset(&decoder_dsc, 0, sizeof(decoder_dsc));
++    }
++    memset(&preview_image, 0, sizeof(preview_image));
++}
++
++static int dimensions_supported(const lv_image_header_t *header)
++{
++    return header && header->w > 0 && header->h > 0 &&
++           header->w <= IMAGE_PREVIEW_WIDTH_MAX &&
++           header->h <= IMAGE_PREVIEW_HEIGHT_MAX;
++}
++
++/* 各解码器输出统一归一化到屏幕原生 RGB565，避免格式映射造成通道偏色。 */
++static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
++{
++    lv_image_header_t source_header = decoded->header;
++    rt_uint8_t *pixels;
++    rt_uint32_t source_stride = source_header.stride;
++    rt_uint32_t destination_stride;
++    rt_uint32_t source_pixel_size;
++    rt_uint32_t y;
++    rt_uint32_t x;
++    size_t destination_size;
++
++    if (source_header.cf == LV_COLOR_FORMAT_RGB565) {
++        preview_image.header = source_header;
++        preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
++        preview_image.data_size = decoded->data_size;
++        preview_image.data = decoded->unaligned_data;
++        preview_image.reserved = decoded;
++        return IMAGE_PREVIEW_ERR_NONE;
++    }
++
++    if (source_header.cf == LV_COLOR_FORMAT_RGB888)
++        source_pixel_size = 3U;
++    else if (source_header.cf == LV_COLOR_FORMAT_ARGB8888 ||
++             source_header.cf == LV_COLOR_FORMAT_XRGB8888)
++        source_pixel_size = 4U;
++    else
++        return IMAGE_PREVIEW_ERR_FORMAT;
++
++    if (source_stride < (rt_uint32_t)source_header.w * source_pixel_size)
++        return IMAGE_PREVIEW_ERR_SIZE;
++
++    destination_stride = lv_draw_buf_width_to_stride(source_header.w,
++                                                      LV_COLOR_FORMAT_RGB565);
++    destination_size = (size_t)destination_stride * source_header.h;
++    if (!destination_stride || destination_stride > source_stride ||
++        destination_size > decoded->data_size)
++        return IMAGE_PREVIEW_ERR_SIZE;
++
++    pixels = (rt_uint8_t *)lv_draw_buf_align(decoded->unaligned_data,
++                                             LV_COLOR_FORMAT_RGB888);
++    if (!pixels)
++        return IMAGE_PREVIEW_ERR_DECODE;
++
++    for (y = 0; y < source_header.h; y++) {
++        rt_uint8_t *source_row = pixels + (size_t)y * source_stride;
++        rt_uint8_t *destination_row = pixels + (size_t)y * destination_stride;
++
++        for (x = 0; x < source_header.w; x++) {
++            const rt_uint8_t *source_pixel = source_row + x * source_pixel_size;
++            rt_uint8_t blue = source_pixel[0];
++            rt_uint8_t green = source_pixel[1];
++            rt_uint8_t red = source_pixel[2];
++            rt_uint8_t alpha = source_header.cf == LV_COLOR_FORMAT_ARGB8888 ?
++                               source_pixel[3] : 0xFF;
++            rt_uint32_t inverse_alpha = 0xFFU - alpha;
++            uint32_t red32;
++            uint32_t green32;
++            uint32_t blue32;
++            uint16_t rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                         ((uint16_t)(green & 0xFCU) << 3) |
++                                         ((uint16_t)blue >> 3));
++
++            if (alpha != 0xFFU) {
++                if (source_header.flags & LV_IMAGE_FLAGS_PREMULTIPLIED) {
++                    red32 = red + (0x11U * inverse_alpha + 127U) / 255U;
++                    green32 = green + (0x18U * inverse_alpha + 127U) / 255U;
++                    blue32 = blue + (0x27U * inverse_alpha + 127U) / 255U;
++                } else {
++                    red32 = (red * alpha + 0x11U * inverse_alpha + 127U) / 255U;
++                    green32 = (green * alpha + 0x18U * inverse_alpha + 127U) / 255U;
++                    blue32 = (blue * alpha + 0x27U * inverse_alpha + 127U) / 255U;
++                }
++                red = (rt_uint8_t)(red32 > 0xFFU ? 0xFFU : red32);
++                green = (rt_uint8_t)(green32 > 0xFFU ? 0xFFU : green32);
++                blue = (rt_uint8_t)(blue32 > 0xFFU ? 0xFFU : blue32);
++                rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                    ((uint16_t)(green & 0xFCU) << 3) |
++                                    ((uint16_t)blue >> 3));
++            }
++
++            memcpy(destination_row + x * 2U, &rgb565, sizeof(rgb565));
++        }
++    }
++
++    preview_image.header = source_header;
++    preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
++    preview_image.header.cf = LV_COLOR_FORMAT_RGB565;
++    preview_image.header.stride = destination_stride;
++    preview_image.data_size = (uint32_t)destination_size;
++    preview_image.data = pixels;
++    preview_image.reserved = decoded;
++    aicos_dcache_clean_range((unsigned long *)pixels, (int64_t)destination_size);
++    rt_kprintf("[image_preview] MPP color format %u normalized to RGB565: %u x %u\n",
++               (unsigned)source_header.cf, source_header.w, source_header.h);
++    return IMAGE_PREVIEW_ERR_NONE;
++}
++
++static int decode_mpp_image(const lv_image_header_t *header)
++{
++    lv_image_decoder_args_t args = {0};
++    int result;
++
++    if (!dimensions_supported(header))
++        return IMAGE_PREVIEW_ERR_SIZE;
++
++    args.no_cache = true;
++    memset(&decoder_dsc, 0, sizeof(decoder_dsc));
++    if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
++        rt_kprintf("[image_preview] SDK MPP 解码失败：%s\n", preview_source_path);
++        return IMAGE_PREVIEW_ERR_DECODE;
++    }
++    decoder_opened = 1;
++    if (!decoder_dsc.decoded || !decoder_dsc.decoded->unaligned_data ||
++        (decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB565 &&
++         decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB888 &&
++         decoder_dsc.header.cf != LV_COLOR_FORMAT_ARGB8888 &&
++         decoder_dsc.header.cf != LV_COLOR_FORMAT_XRGB8888)) {
++        rt_kprintf("[image_preview] 解码器输出格式无效：%s\n", preview_source_path);
++        lv_image_decoder_close(&decoder_dsc);
++        decoder_opened = 0;
++        memset(&decoder_dsc, 0, sizeof(decoder_dsc));
++        return IMAGE_PREVIEW_ERR_FORMAT;
++    }
++
++    /* 各种源格式在工作线程归一为 RGB565，避免 LVGL/GE2D 对格式解释不一致。 */
++    result = normalize_decoded_frame_to_rgb565(decoder_dsc.decoded);
++    if (result != IMAGE_PREVIEW_ERR_NONE) {
++        lv_image_decoder_close(&decoder_dsc);
++        decoder_opened = 0;
++        memset(&decoder_dsc, 0, sizeof(decoder_dsc));
++    }
++    return result;
++}
++
++static int load_image(const char *path)
++{
++    struct stat st;
++    lv_image_header_t header = {0};
++    image_kind_t kind = image_kind(path);
++    size_t path_len;
++
++    if (kind == IMAGE_KIND_UNSUPPORTED)
++        return IMAGE_PREVIEW_ERR_FORMAT;
++    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
++        (uint64_t)st.st_size > IMAGE_PREVIEW_FILE_MAX) {
++        rt_kprintf("[image_preview] 文件不可读或大小无效：%s\n", path);
++        return IMAGE_PREVIEW_ERR_SIZE;
++    }
++
++    path_len = strlen(path);
++    if (path_len + 2 >= sizeof(preview_source_path))
++        return IMAGE_PREVIEW_ERR_PATH;
++    preview_source_path[0] = IMAGE_PREVIEW_LVFS_PREFIX[0];
++    preview_source_path[1] = IMAGE_PREVIEW_LVFS_PREFIX[1];
++    memcpy(preview_source_path + 2, path, path_len + 1);
++    /* FAT32 不区分大小写；统一扩展名小写以匹配 SDK 解码器后缀判断。 */
++    {
++        char *extension = strrchr(preview_source_path, '.');
++        if (extension) {
++            while (*extension) {
++                *extension = (char)tolower((unsigned char)*extension);
++                extension++;
++            }
++        }
++    }
++
++    if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
++        rt_kprintf("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
++        return IMAGE_PREVIEW_ERR_DECODE;
++    }
++    if (!dimensions_supported(&header)) {
++        rt_kprintf("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
++                   path, header.w, header.h);
++        return IMAGE_PREVIEW_ERR_SIZE;
++    }
++    if (preview_cancelled())
++        return IMAGE_PREVIEW_ERR_CANCELLED;
++
++    /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
++    return decode_mpp_image(&header);
++}
++
++static const char *error_text(int error)
++{
++    switch (error) {
++    case IMAGE_PREVIEW_ERR_PATH: return "图片路径无效。";
++    case IMAGE_PREVIEW_ERR_SIZE: return "图片文件超过 4 MiB，或分辨率超出 1024×768 解码限制。";
++    case IMAGE_PREVIEW_ERR_FORMAT: return "图片格式不支持，请选择基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
++    case IMAGE_PREVIEW_ERR_CANCELLED: return "已取消图片加载。";
++    case IMAGE_PREVIEW_ERR_DECODE:
++    default: return "SDK 解码器无法识别图片；请使用基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
++    }
++}
++
++static void image_worker(void *parameter)
++{
++    image_preview_job_t job;
++
++    LV_UNUSED(parameter);
++    while (1) {
++        int result;
++        int cancelled;
++
++        if (rt_mq_recv(job_queue, &job, sizeof(job), RT_WAITING_FOREVER) != RT_EOK)
++            continue;
++        result = load_image(job.path);
++        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++        cancelled = cancel_requested || result == IMAGE_PREVIEW_ERR_CANCELLED;
++        rt_mutex_release(&state_lock);
++
++        if (cancelled) {
++            release_decode_resources();
++            rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++            current_state = IMAGE_PREVIEW_IDLE;
++            cancel_requested = 0;
++            last_error = IMAGE_PREVIEW_ERR_NONE;
++            rt_mutex_release(&state_lock);
++            continue;
++        }
++
++        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++        last_error = result;
++        current_state = result == IMAGE_PREVIEW_ERR_NONE ? IMAGE_PREVIEW_READY : IMAGE_PREVIEW_FAILED;
++        rt_mutex_release(&state_lock);
++    }
++}
++
++int image_preview_init(void)
++{
++    rt_thread_t thread;
++
++    if (manager_ready)
++        return 0;
++    if (rt_mutex_init(&state_lock, "imgprev", RT_IPC_FLAG_PRIO) != RT_EOK)
++        return -1;
++    job_queue = rt_mq_create("imgprev", sizeof(image_preview_job_t), 1, RT_IPC_FLAG_FIFO);
++    if (!job_queue)
++        return -2;
++    thread = rt_thread_create("hmi_imgprev", image_worker, NULL, 8192, 26, 10);
++    if (!thread)
++        return -3;
++    if (rt_thread_startup(thread) != RT_EOK)
++        return -4;
++    manager_ready = 1;
++    return 0;
++}
++
++int image_preview_request(const char *path)
++{
++    image_preview_job_t job = {0};
++
++    if (!manager_ready || !path || strlen(path) >= sizeof(job.path))
++        return -1;
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    if (!job_queue || current_state != IMAGE_PREVIEW_IDLE) {
++        rt_mutex_release(&state_lock);
++        return -2;
++    }
++    current_state = IMAGE_PREVIEW_LOADING;
++    cancel_requested = 0;
++    last_error = IMAGE_PREVIEW_ERR_NONE;
++    snprintf(job.path, sizeof(job.path), "%s", path);
++    rt_mutex_release(&state_lock);
++
++    if (rt_mq_send(job_queue, &job, sizeof(job)) != RT_EOK) {
++        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++        current_state = IMAGE_PREVIEW_IDLE;
++        rt_mutex_release(&state_lock);
++        return -3;
++    }
++    return 0;
++}
++
++image_preview_state_t image_preview_status(char *text, size_t text_size)
++{
++    image_preview_state_t state;
++    int error;
++    const char *status;
++
++    if (!manager_ready) {
++        if (text && text_size)
++            snprintf(text, text_size, "图片预览服务未就绪。");
++        return IMAGE_PREVIEW_IDLE;
++    }
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    state = current_state;
++    error = last_error;
++    rt_mutex_release(&state_lock);
++
++    if (!text || !text_size)
++        return state;
++    if (state == IMAGE_PREVIEW_LOADING)
++        status = "正在读取并解码图片……";
++    else if (state == IMAGE_PREVIEW_READY)
++        status = "图片已加载。";
++    else if (state == IMAGE_PREVIEW_FAILED)
++        status = error_text(error);
++    else
++        status = "选择 SD 卡图片进行预览。";
++    snprintf(text, text_size, "%s", status);
++    return state;
++}
++
++const lv_image_dsc_t *image_preview_get_image(void)
++{
++    const lv_image_dsc_t *image = NULL;
++
++    if (!manager_ready)
++        return NULL;
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    if (current_state == IMAGE_PREVIEW_READY)
++        image = &preview_image;
++    rt_mutex_release(&state_lock);
++    return image;
++}
++
++void image_preview_cancel(void)
++{
++    int release_now = 0;
++
++    if (!manager_ready)
++        return;
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    if (current_state == IMAGE_PREVIEW_LOADING) {
++        cancel_requested = 1;
++    } else if (current_state == IMAGE_PREVIEW_READY || current_state == IMAGE_PREVIEW_FAILED) {
++        current_state = IMAGE_PREVIEW_RELEASING;
++        release_now = 1;
++    }
++    rt_mutex_release(&state_lock);
++
++    if (release_now) {
++        release_decode_resources();
++        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++        current_state = IMAGE_PREVIEW_IDLE;
++        cancel_requested = 0;
++        last_error = IMAGE_PREVIEW_ERR_NONE;
++        rt_mutex_release(&state_lock);
++    }
++}
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ui/image_preview.h
+@@ -0,0 +1,23 @@
++#ifndef HMI_IMAGE_PREVIEW_H
++#define HMI_IMAGE_PREVIEW_H
++
++#include <stddef.h>
++#include "lvgl.h"
++
++typedef enum {
++    IMAGE_PREVIEW_IDLE = 0,
++    IMAGE_PREVIEW_LOADING,
++    IMAGE_PREVIEW_READY,
++    IMAGE_PREVIEW_FAILED,
++    IMAGE_PREVIEW_RELEASING
++} image_preview_state_t;
++
++/* 图片文件读取和解码在线程内完成；返回给界面的只是只读图像描述符。 */
++int image_preview_init(void);
++int image_preview_supported(const char *path);
++int image_preview_request(const char *path);
++image_preview_state_t image_preview_status(char *text, size_t text_size);
++const lv_image_dsc_t *image_preview_get_image(void);
++void image_preview_cancel(void);
++
++#endif
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -0,0 +1,740 @@
++#include "ui_manager.h"
++#include "app_manager.h"
++#include "lvgl.h"
++#include <rtthread.h>
++#include "storage_manager.h"
++#include "sd_manager.h"
++#include "ota_manager.h"
++#include "ota_package.h"
++#include "boot_manager.h"
++#include "network_manager.h"
++#include "system_manager.h"
++#include "image_preview.h"
++#include <stdio.h>
++#include <string.h>
++#include <stdint.h>
++
++#define HMI_FONT_PATH "/rodata/hmi/fonts/NotoSansSC-HMI.ttf"
++
++static lv_obj_t *content;
++static lv_obj_t *top;
++static lv_obj_t *details;
++static lv_obj_t *table;
++static lv_obj_t *pathbox;
++static lv_obj_t *targetbox;
++static lv_obj_t *editor;
++static lv_obj_t *progress;
++static lv_obj_t *keyboard;
++static lv_obj_t *remote_dialog;
++static lv_obj_t *image_overlay;
++static lv_obj_t *image_area;
++static lv_obj_t *image_status_label;
++static lv_obj_t *image_object;
++static lv_obj_t *ip_input;
++static lv_obj_t *mask_input;
++static lv_obj_t *gw_input;
++static lv_obj_t *nav_buttons[6];
++static lv_font_t *hmi_font;
++static lv_font_t *hmi_font_small;
++static int image_preview_ready;
++static int first_render_logged;
++static int first_flush_logged;
++static unsigned page;
++static char folder[256] = "/sdcard";
++static fm_list_t files;
++static storage_request_t pending;
++
++static const char *titles[] = {
++    "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志"
++};
++
++static const lv_font_t *body_font(void)
++{
++    return hmi_font ? hmi_font : &lv_font_montserrat_16;
++}
++
++static const lv_font_t *small_font(void)
++{
++    return hmi_font_small ? hmi_font_small : body_font();
++}
++
++/* 在 LVGL 首次完成渲染和显示提交时记录 RT-Thread 阶段耗时。 */
++static void boot_display_timing(lv_event_t *event)
++{
++    lv_event_code_t code = lv_event_get_code(event);
++
++    if (code == LV_EVENT_RENDER_READY && !first_render_logged) {
++        first_render_logged = 1;
++        rt_kprintf("[boot_time] lvgl_render_ready=%u ms\n",
++                   app_manager_boot_elapsed_ms());
++    } else if (code == LV_EVENT_FLUSH_FINISH && !first_flush_logged) {
++        first_flush_logged = 1;
++        rt_kprintf("[boot_time] display_flush_return=%u ms\n",
++                   app_manager_boot_elapsed_ms());
++    }
++}
++
++/* 弹窗创建完成后递归设置字体，保证标题、正文和按钮都能显示中文。 */
++static void apply_dialog_font(lv_obj_t *obj)
++{
++    uint32_t i;
++
++    if (!obj)
++        return;
++    lv_obj_set_style_text_font(obj, small_font(), LV_PART_MAIN);
++    for (i = 0; i < lv_obj_get_child_count(obj); i++)
++        apply_dialog_font(lv_obj_get_child(obj, (int32_t)i));
++}
++
++static lv_obj_t *label(lv_obj_t *parent, const char *text,
++                       int x, int y, int width)
++{
++    lv_obj_t *obj = lv_label_create(parent);
++
++    lv_label_set_text(obj, text);
++    lv_obj_set_pos(obj, x, y);
++    lv_obj_set_width(obj, width);
++    lv_obj_set_style_text_font(obj, body_font(), LV_PART_MAIN);
++    return obj;
++}
++
++static lv_obj_t *button(lv_obj_t *parent, const char *text, int x, int y,
++                        int width, lv_event_cb_t callback, void *user_data)
++{
++    lv_obj_t *obj = lv_button_create(parent);
++    lv_obj_t *text_obj;
++
++    lv_obj_set_pos(obj, x, y);
++    lv_obj_set_size(obj, width, 48);
++    lv_obj_set_style_radius(obj, 10, LV_PART_MAIN);
++    lv_obj_set_style_bg_color(obj, lv_color_hex(0x2563EB), LV_PART_MAIN);
++    lv_obj_set_style_text_color(obj, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_text_font(obj, small_font(), LV_PART_MAIN);
++    text_obj = lv_label_create(obj);
++    lv_label_set_text(text_obj, text);
++    lv_obj_set_width(text_obj, width - 12);
++    lv_obj_set_style_text_align(text_obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
++    lv_obj_set_style_text_font(text_obj, small_font(), LV_PART_MAIN);
++    lv_obj_center(text_obj);
++    lv_obj_add_event_cb(obj, callback, LV_EVENT_CLICKED, user_data);
++    return obj;
++}
++
++static void close_dialog(lv_event_t *event)
++{
++    lv_msgbox_close(lv_event_get_user_data(event));
++}
++
++static void message(const char *text)
++{
++    lv_obj_t *box = lv_msgbox_create(NULL);
++    lv_obj_t *button_obj;
++
++    lv_msgbox_add_title(box, "提示");
++    lv_msgbox_add_text(box, text);
++    button_obj = lv_msgbox_add_footer_button(box, "确定");
++    lv_obj_add_event_cb(button_obj, close_dialog, LV_EVENT_CLICKED, box);
++    apply_dialog_font(box);
++}
++
++static void keyboard_event(lv_event_t *event)
++{
++    if (lv_event_get_code(event) == LV_EVENT_READY ||
++        lv_event_get_code(event) == LV_EVENT_CANCEL)
++        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
++}
++
++static void focus(lv_event_t *event)
++{
++    lv_keyboard_set_textarea(keyboard, lv_event_get_target(event));
++    lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_move_foreground(keyboard);
++}
++
++static lv_obj_t *input(lv_obj_t *parent, const char *text,
++                       int x, int y, int width, int height)
++{
++    lv_obj_t *obj = lv_textarea_create(parent);
++
++    lv_obj_set_pos(obj, x, y);
++    lv_obj_set_size(obj, width, height);
++    lv_textarea_set_text(obj, text);
++    lv_textarea_set_max_length(obj, 255);
++    lv_obj_set_style_text_font(obj, small_font(), LV_PART_MAIN);
++    if (height < 60)
++        lv_textarea_set_one_line(obj, 1);
++    lv_obj_add_event_cb(obj, focus, LV_EVENT_FOCUSED, NULL);
++    return obj;
++}
++
++static void submit(storage_request_t *request)
++{
++    if (storage_manager_submit(request))
++        message("文件服务繁忙，请稍后重试。");
++}
++
++static void list_folder(void)
++{
++    storage_request_t request = {0};
++
++    request.op = ST_LIST;
++    snprintf(request.path, sizeof(request.path), "%s", folder);
++    submit(&request);
++}
++
++static void screen(unsigned number);
++
++static void navigation(lv_event_t *event)
++{
++    screen((unsigned)(uintptr_t)lv_event_get_user_data(event));
++}
++
++static void close_image_preview(lv_event_t *event)
++{
++    lv_obj_t *overlay = image_overlay;
++
++    LV_UNUSED(event);
++    image_overlay = NULL;
++    image_area = NULL;
++    image_status_label = NULL;
++    image_object = NULL;
++    if (overlay)
++        lv_obj_delete(overlay);
++    image_preview_cancel();
++}
++
++static void show_image_preview(const char *path)
++{
++    lv_obj_t *root;
++    lv_obj_t *back_button;
++    lv_coord_t screen_width;
++    lv_coord_t screen_height;
++
++    if (!image_preview_ready) {
++        message("图片预览服务未就绪。");
++        return;
++    }
++    if (image_preview_request(path)) {
++        message("图片正在加载，或预览服务繁忙。");
++        return;
++    }
++
++    if (keyboard)
++        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
++    root = lv_screen_active();
++    screen_width = lv_obj_get_width(root);
++    screen_height = lv_obj_get_height(root);
++    image_overlay = lv_obj_create(root);
++    if (!image_overlay) {
++        image_preview_cancel();
++        message("无法创建图片预览窗口。");
++        return;
++    }
++    lv_obj_set_pos(image_overlay, 0, 0);
++    lv_obj_set_size(image_overlay, screen_width, screen_height);
++    lv_obj_set_style_bg_color(image_overlay, lv_color_hex(0x111827), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(image_overlay, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(image_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(image_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_outline_width(image_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(image_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(image_overlay, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(image_overlay, LV_OBJ_FLAG_SCROLLABLE);
++
++    image_area = lv_obj_create(image_overlay);
++    lv_obj_set_pos(image_area, 0, 0);
++    lv_obj_set_size(image_area, screen_width, screen_height);
++    lv_obj_set_style_bg_color(image_area, lv_color_hex(0x111827), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(image_area, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(image_area, 0, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(image_area, 0, LV_PART_MAIN);
++    lv_obj_set_style_outline_width(image_area, 0, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(image_area, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(image_area, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(image_area, LV_OBJ_FLAG_SCROLLABLE);
++
++    /* 状态栏覆盖在全屏图片上方，保留完整画面区域。 */
++    image_status_label = label(image_overlay, "正在读取并解码图片……",
++                                148, 22, screen_width - 164);
++    lv_label_set_long_mode(image_status_label, LV_LABEL_LONG_DOT);
++    lv_obj_set_style_text_color(image_status_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_bg_color(image_status_label, lv_color_hex(0x111827), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(image_status_label, LV_OPA_70, LV_PART_MAIN);
++    lv_obj_set_style_pad_hor(image_status_label, 10, LV_PART_MAIN);
++    lv_obj_set_style_pad_ver(image_status_label, 8, LV_PART_MAIN);
++
++    /* 返回键始终固定在屏幕左上角，覆盖图片且便于触摸。 */
++    back_button = button(image_overlay, "返回", 16, 16, 112,
++                         close_image_preview, NULL);
++    lv_obj_set_height(back_button, 56);
++    lv_obj_move_foreground(image_overlay);
++}
++
++static void table_event(lv_event_t *event)
++{
++    uint32_t row;
++    uint32_t column;
++
++    LV_UNUSED(event);
++    lv_table_get_selected_cell(table, &row, &column);
++    LV_UNUSED(column);
++    if (row && row <= files.count) {
++        char path[FM_PATH_MAX];
++        size_t folder_len = strlen(folder);
++        size_t name_len = strlen(files.entries[row - 1].name);
++
++        if (folder_len + name_len + 2 > sizeof(path)) {
++            message("文件路径过长。");
++            return;
++        }
++        memcpy(path, folder, folder_len);
++        path[folder_len] = '/';
++        memcpy(path + folder_len + 1, files.entries[row - 1].name, name_len + 1);
++        lv_textarea_set_text(pathbox, path);
++    }
++}
++
++static void confirmed_file(lv_event_t *event)
++{
++    lv_obj_t *box = lv_event_get_user_data(event);
++
++    submit(&pending);
++    lv_msgbox_close(box);
++}
++
++static void file_action(lv_event_t *event)
++{
++    unsigned operation = (unsigned)(uintptr_t)lv_event_get_user_data(event);
++    storage_request_t request = {0};
++
++    if (operation == 100) {
++        list_folder();
++        return;
++    }
++    if (operation == 101) {
++        char *slash = strrchr(folder, '/');
++        if (slash && slash != folder)
++            *slash = 0;
++        else
++            strcpy(folder, "/sdcard");
++        list_folder();
++        return;
++    }
++
++    request.op = (storage_op_t)operation;
++    snprintf(request.path, sizeof(request.path), "%s", lv_textarea_get_text(pathbox));
++    snprintf(request.target, sizeof(request.target), "%s", lv_textarea_get_text(targetbox));
++    if (operation == 102) {
++        for (unsigned i = 0; i < files.count; i++) {
++            const char *name = strrchr(request.path, '/');
++            if (name && !strcmp(name + 1, files.entries[i].name) &&
++                files.entries[i].directory) {
++                snprintf(folder, sizeof(folder), "%s", request.path);
++                list_folder();
++                return;
++            }
++        }
++        if (image_preview_supported(request.path)) {
++            show_image_preview(request.path);
++            return;
++        }
++        request.op = ST_READ;
++    }
++    if (request.op == ST_MKDIR)
++        snprintf(request.path, sizeof(request.path), "%s", request.target);
++    if (request.op == ST_WRITE) {
++        snprintf(request.data, sizeof(request.data), "%s", lv_textarea_get_text(editor));
++        request.length = strlen(request.data);
++    }
++    if (request.op == ST_DELETE || request.op == ST_WRITE) {
++        char text[FM_PATH_MAX + 64];
++        lv_obj_t *box;
++        lv_obj_t *button_obj;
++
++        pending = request;
++        snprintf(text, sizeof(text), "%s\n%s",
++                 request.op == ST_DELETE ? "确认删除此文件？" : "确认写入此文件？",
++                 request.path);
++        box = lv_msgbox_create(NULL);
++        lv_msgbox_add_title(box, "操作确认");
++        lv_msgbox_add_text(box, text);
++        button_obj = lv_msgbox_add_footer_button(box, "执行");
++        lv_obj_add_event_cb(button_obj, confirmed_file, LV_EVENT_CLICKED, box);
++        button_obj = lv_msgbox_add_footer_button(box, "取消");
++        lv_obj_add_event_cb(button_obj, close_dialog, LV_EVENT_CLICKED, box);
++        apply_dialog_font(box);
++        return;
++    }
++    submit(&request);
++}
++
++static void confirm_sd(lv_event_t *event)
++{
++    lv_msgbox_close(lv_event_get_user_data(event));
++    if (ota_manager_request("/sdcard/UPDATE/ota.cpio", NULL, NULL, 0))
++        message("升级服务繁忙，请稍后重试。");
++}
++
++static void confirm_reboot(lv_event_t *event)
++{
++    lv_msgbox_close(lv_event_get_user_data(event));
++    ota_manager_reboot();
++}
++
++static void ota_action(lv_event_t *event)
++{
++    unsigned action = (unsigned)(uintptr_t)lv_event_get_user_data(event);
++    lv_obj_t *box = lv_msgbox_create(NULL);
++    lv_obj_t *button_obj;
++
++    lv_msgbox_add_title(box, action == 1 ? "确认安装升级包？" : "确认重启系统？");
++    lv_msgbox_add_text(box, action == 1 ?
++        "系统将校验签名并更新非活动系统槽和资源槽。成功后设备会自动重启。\n请保持供电。" :
++        "即将重启设备，请确认当前操作已保存。重启期间请保持供电。");
++    button_obj = lv_msgbox_add_footer_button(box, "确认");
++    lv_obj_add_event_cb(button_obj, action == 1 ? confirm_sd : confirm_reboot,
++                        LV_EVENT_CLICKED, box);
++    button_obj = lv_msgbox_add_footer_button(box, "取消");
++    lv_obj_add_event_cb(button_obj, close_dialog, LV_EVENT_CLICKED, box);
++    apply_dialog_font(box);
++}
++
++static void remote_answer(lv_event_t *event)
++{
++    ota_manager_decide((int)(uintptr_t)lv_event_get_user_data(event));
++    if (remote_dialog) {
++        lv_msgbox_close(remote_dialog);
++        remote_dialog = NULL;
++    }
++}
++
++static void apply_network(lv_event_t *event)
++{
++    int dhcp = (int)(uintptr_t)lv_event_get_user_data(event);
++
++    if (network_manager_configure(lv_textarea_get_text(ip_input),
++                                  lv_textarea_get_text(mask_input),
++                                  lv_textarea_get_text(gw_input), dhcp))
++        message("网络配置繁忙，或 IPv4 参数格式无效。");
++}
++
++static void screen(unsigned number)
++{
++    static const char *file_buttons[] = {
++        "刷新", "上一级", "打开 / 读取", "新建文件夹", "复制", "重命名", "删除"
++    };
++    static const unsigned file_operations[] = {
++        100, 101, 102, ST_MKDIR, ST_COPY, ST_RENAME, ST_DELETE
++    };
++    unsigned i;
++
++    if (number >= 6)
++        return;
++    page = number;
++    for (i = 0; i < 6; i++) {
++        lv_obj_set_style_bg_color(nav_buttons[i],
++            lv_color_hex(i == number ? 0x2563EB : 0xEAF0F8), LV_PART_MAIN);
++        lv_obj_set_style_text_color(nav_buttons[i],
++            lv_color_hex(i == number ? 0xFFFFFF : 0x334155), LV_PART_MAIN);
++    }
++    lv_obj_clean(content);
++    details = table = pathbox = targetbox = editor = progress = NULL;
++    label(content, titles[number], 20, 14, 720);
++
++    if (number == 0) {
++        label(content, "D133CBS 工业控制终端\nA/B 系统与资源分区\n触控文件管理和固件升级",
++              24, 76, 700);
++        details = label(content, "服务启动中……", 24, 188, 700);
++        button(content, "浏览 SD 卡", 24, 330, 220, navigation, (void *)(uintptr_t)1);
++        button(content, "固件升级", 270, 330, 220, navigation, (void *)(uintptr_t)2);
++    } else if (number == 1) {
++        pathbox = input(content, folder, 16, 48, 720, 42);
++        targetbox = input(content, "/sdcard/new_folder", 16, 98, 720, 42);
++        for (i = 0; i < 7; i++)
++            button(content, file_buttons[i], 16 + (int)i * 104, 150, 98,
++                   file_action, (void *)(uintptr_t)file_operations[i]);
++        table = lv_table_create(content);
++        lv_obj_set_pos(table, 16, 215);
++        lv_obj_set_size(table, 435, 215);
++        lv_table_set_column_count(table, 2);
++        lv_table_set_column_width(table, 0, 325);
++        lv_table_set_column_width(table, 1, 90);
++        lv_obj_set_style_text_font(table, small_font(), LV_PART_ITEMS);
++        lv_obj_add_event_cb(table, table_event, LV_EVENT_VALUE_CHANGED, NULL);
++        editor = input(content, "", 465, 215, 270, 155);
++        lv_textarea_set_max_length(editor, 511);
++        button(content, "保存文本", 465, 385, 125, file_action, (void *)(uintptr_t)ST_WRITE);
++        button(content, "容量查询", 600, 385, 135, file_action, (void *)(uintptr_t)ST_CAPACITY);
++        details = label(content, "选择文件后可读取、复制、重命名或删除。",
++                        16, 448, 720);
++        list_folder();
++    } else if (number == 2) {
++        label(content,
++              "SD 卡升级包：/sdcard/UPDATE/ota.cpio\n"
++              "TCP 推送：研发工具箱 > D133CBS OTA\n"
++              "签名校验通过后调用 ArtInChip 官方升级引擎。\n"
++              "升级期间请保持设备供电。",
++              24, 64, 710);
++        details = label(content, "等待升级操作。", 24, 190, 710);
++        progress = lv_bar_create(content);
++        lv_obj_set_pos(progress, 24, 250);
++        lv_obj_set_size(progress, 680, 24);
++        button(content, "从 SD 卡安装", 24, 320, 250, ota_action, (void *)(uintptr_t)1);
++        button(content, "重启设备", 300, 320, 220, ota_action, (void *)(uintptr_t)2);
++    } else if (number == 3) {
++        label(content,
++              "产品型号：" HMI_PRODUCT "\n"
++              "硬件版本：" HMI_HARDWARE "\n"
++              "固件版本：" HMI_VERSION "\n"
++              "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
++              "图形库：LVGL 9.1 | 显示：1024 × 600 LVDS\n"
++              "启动存储：16 MiB SPI NOR | DATA：单分区",
++              24, 70, 710);
++        details = label(content, "", 24, 270, 710);
++    } else if (number == 4) {
++        label(content, "RMII 以太网 / RTL8201F | TCP OTA 端口：8899",
++              24, 55, 710);
++        details = label(content, "正在等待以太网连接……", 24, 95, 710);
++        label(content, "IPv4 地址 / 子网掩码 / 网关", 24, 140, 710);
++        ip_input = input(content, "192.168.1.200", 24, 175, 220, 44);
++        mask_input = input(content, "255.255.255.0", 260, 175, 220, 44);
++        gw_input = input(content, "192.168.1.1", 495, 175, 220, 44);
++        button(content, "应用静态地址", 24, 250, 240, apply_network, NULL);
++        button(content, "启用 DHCP", 290, 250, 220, apply_network, (void *)(uintptr_t)1);
++        label(content, "网络参数仅在本次运行期间生效，重启后恢复编译配置。",
++              24, 330, 710);
++    } else {
++        details = label(content, "暂无系统日志。", 20, 55, 740);
++    }
++}
++
++static const char *ota_state_text(hmi_ota_state_t state)
++{
++    switch (state) {
++    case OTA_CONFIRM: return "等待确认";
++    case OTA_CHECK:   return "正在校验";
++    case OTA_WRITE:   return "正在写入";
++    case OTA_READY:   return "升级完成，准备重启";
++    case OTA_FAILED:  return "升级失败";
++    case OTA_IDLE:
++    default:          return "空闲";
++    }
++}
++
++static void timer(lv_timer_t *timer_obj)
++{
++    static storage_result_t result;
++    static hmi_ota_state_t previous_state = OTA_IDLE;
++    static unsigned ready_ticks;
++    char text[2048];
++    char network[160];
++    boot_status_t boot;
++    hmi_ota_status_t ota;
++    image_preview_state_t image_state;
++    const lv_image_dsc_t *image_dsc;
++    char image_status[128];
++
++    LV_UNUSED(timer_obj);
++    boot_manager_ui_heartbeat();
++    boot_manager_get(&boot);
++    ota_manager_get(&ota);
++    network_manager_status(network, sizeof(network));
++
++    if (image_overlay && image_status_label) {
++        image_state = image_preview_status(image_status, sizeof(image_status));
++        if (image_state == IMAGE_PREVIEW_READY && image_area) {
++            image_dsc = image_preview_get_image();
++            if (image_dsc && !image_object) {
++                uint32_t scale_x;
++                uint32_t scale_y;
++                uint32_t scale;
++
++                image_object = lv_image_create(image_area);
++                if (image_object) {
++                    lv_image_set_src(image_object, image_dsc);
++                    lv_image_set_antialias(image_object, false);
++                    /* 向上取整并选择较大的缩放比例，裁掉多余边缘以铺满屏幕。 */
++                    scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
++                               image_dsc->header.w - 1U) / image_dsc->header.w;
++                    scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
++                               image_dsc->header.h - 1U) / image_dsc->header.h;
++                    scale = scale_x > scale_y ? scale_x : scale_y;
++                    if (scale == 0U)
++                        scale = 1U;
++                    lv_image_set_scale(image_object, scale);
++                    lv_obj_center(image_object);
++                } else {
++                    snprintf(image_status, sizeof(image_status), "图片控件创建失败。");
++                }
++            }
++            if (image_dsc && image_object) {
++                snprintf(image_status, sizeof(image_status), "已加载图片：%u × %u",
++                         image_dsc->header.w, image_dsc->header.h);
++            }
++        }
++        if (image_state == IMAGE_PREVIEW_READY && image_object) {
++            /* 图片显示后收起状态条，不遮挡全屏画面。 */
++            lv_obj_add_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++        } else {
++            lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++            lv_label_set_text(image_status_label, image_status);
++        }
++    }
++    snprintf(text, sizeof(text), "D133CBS | 系统槽 %c | 下次启动 %c | 资源槽 %c | SD 卡 %s",
++             boot.current, boot.next, boot.resource,
++             sd_manager_ready() ? "已就绪" : "未插入");
++    lv_label_set_text(top, text);
++
++    if (ota.state == OTA_READY && !ota.remote) {
++        if (++ready_ticks >= 15)
++            ota_manager_reboot();
++    } else {
++        ready_ticks = 0;
++    }
++    if (ota.state != previous_state) {
++        snprintf(text, sizeof(text), "升级状态：%s，进度：%u%%，错误码：%d",
++                 ota_state_text(ota.state), ota.percent, ota.error);
++        system_manager_log(text);
++        if (ota.state == OTA_FAILED)
++            message(text);
++        previous_state = ota.state;
++    }
++    if (ota.state == OTA_CONFIRM && !remote_dialog) {
++        lv_obj_t *button_obj;
++        remote_dialog = lv_msgbox_create(NULL);
++        lv_msgbox_add_title(remote_dialog, "远程升级确认");
++        lv_msgbox_add_text(remote_dialog,
++            "电脑工具箱请求安装固件。确认后将写入非活动系统槽和资源槽。\n是否继续？");
++        button_obj = lv_msgbox_add_footer_button(remote_dialog, "允许升级");
++        lv_obj_add_event_cb(button_obj, remote_answer, LV_EVENT_CLICKED,
++                            (void *)(uintptr_t)1);
++        button_obj = lv_msgbox_add_footer_button(remote_dialog, "拒绝");
++        lv_obj_add_event_cb(button_obj, remote_answer, LV_EVENT_CLICKED, NULL);
++        apply_dialog_font(remote_dialog);
++    }
++    if (ota.state != OTA_CONFIRM && remote_dialog) {
++        lv_msgbox_close(remote_dialog);
++        remote_dialog = NULL;
++    }
++
++    while (storage_manager_poll(&result) == 0) {
++        if (result.error) {
++            snprintf(text, sizeof(text), "文件操作失败，错误码：%d", result.error);
++            message(text);
++            continue;
++        }
++        if (page == 1 && result.op == ST_LIST) {
++            files = result.list;
++            lv_table_set_row_count(table, files.count + 1);
++            lv_table_set_cell_value(table, 0, 0, folder);
++            lv_table_set_cell_value(table, 0, 1, "大小");
++            for (unsigned i = 0; i < files.count; i++) {
++                lv_table_set_cell_value(table, i + 1, 0, files.entries[i].name);
++                if (files.entries[i].directory)
++                    snprintf(text, sizeof(text), "文件夹");
++                else
++                    snprintf(text, sizeof(text), "%lu",
++                             (unsigned long)files.entries[i].size);
++                lv_table_set_cell_value(table, i + 1, 1, text);
++            }
++            if (details) {
++                snprintf(text, sizeof(text), "当前目录：%s，共 %u 项%s",
++                         folder, files.count, files.truncated ? "（列表已截断）" : "");
++                lv_label_set_text(details, text);
++            }
++        } else if (page == 1 && result.op == ST_READ) {
++            lv_textarea_set_text(editor, result.data);
++        } else if (result.op == ST_CAPACITY) {
++            snprintf(text, sizeof(text), "总容量：%lu MiB，可用：%lu MiB",
++                     (unsigned long)(result.total >> 20),
++                     (unsigned long)(result.free_bytes >> 20));
++            message(text);
++        } else if (page == 1) {
++            list_folder();
++        }
++    }
++
++    if (details) {
++        if (page == 0 || page == 3) {
++            snprintf(text, sizeof(text),
++                     "网络：%s\n系统槽位：%c | 下次启动：%c | 资源槽位：%c\n"
++                     "健康状态：%s\n运行时间：%lu 秒",
++                     network, boot.current, boot.next, boot.resource,
++                     boot.confirmed ? "已确认" : "健康检查中",
++                     (unsigned long)(rt_tick_get() / RT_TICK_PER_SECOND));
++            lv_label_set_text(details, text);
++        } else if (page == 2) {
++            snprintf(text, sizeof(text), "状态：%s | 进度：%u%% | 错误码：%d | 版本：%s",
++                     ota_state_text(ota.state), ota.percent, ota.error, ota.version);
++            lv_label_set_text(details, text);
++            lv_bar_set_value(progress, ota.percent, LV_ANIM_OFF);
++        } else if (page == 4) {
++            lv_label_set_text(details, network);
++        } else if (page == 5) {
++            system_manager_logs(text, sizeof(text));
++            lv_label_set_text(details, text);
++        }
++    }
++}
++
++void hmi_ui_init(void)
++{
++    lv_obj_t *root = lv_screen_active();
++    lv_obj_t *nav;
++
++    rt_kprintf("[boot_time] hmi_ui_enter=%u ms\n",app_manager_boot_elapsed_ms());
++    /* 字体由只读资源分区提供；加载失败时不启动健康心跳，保留 A/B 回滚保护。 */
++    hmi_font = lv_freetype_font_create(HMI_FONT_PATH,
++        LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 18, LV_FREETYPE_FONT_STYLE_NORMAL);
++    if (!hmi_font) {
++        lv_obj_t *error = lv_label_create(root);
++        lv_label_set_text(error, "Chinese font load failed; check /rodata/hmi/fonts.");
++        lv_obj_set_pos(error, 20, 30);
++        rt_kprintf("[hmi] Chinese font load failed; health confirmation blocked\n");
++        return;
++    }
++    /* 两种界面字号复用同一个字体实例，避免重复创建 FreeType 字体对象。 */
++    hmi_font_small = hmi_font;
++    rt_kprintf("[boot_time] chinese_font_ready=%u ms\n",app_manager_boot_elapsed_ms());
++    lv_obj_set_style_text_font(root, body_font(), LV_PART_MAIN);
++    if (!app_manager_ready()) {
++        label(root, "应用服务初始化失败，请检查串口日志。", 20, 30, 900);
++        rt_kprintf("[hmi] application services are not ready; health confirmation blocked\n");
++        return;
++    }
++    image_preview_ready = image_preview_init() == 0;
++    if (!image_preview_ready)
++        system_manager_log("图片预览服务初始化失败");
++
++    lv_obj_set_style_bg_color(root, lv_color_hex(0xF3F6FA), LV_PART_MAIN);
++    nav = lv_obj_create(root);
++    lv_obj_set_pos(nav, 0, 0);
++    lv_obj_set_size(nav, 210, 600);
++    lv_obj_set_style_bg_color(nav, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_radius(nav, 0, LV_PART_MAIN);
++    label(nav, "D133CBS\n工业控制终端", 12, 14, 180);
++    for (unsigned i = 0; i < 6; i++)
++        nav_buttons[i] = button(nav, titles[i], 12, 82 + (int)i * 68,
++                                180, navigation, (void *)(uintptr_t)i);
++
++    top = label(root, "系统启动中……", 230, 25, 770);
++    content = lv_obj_create(root);
++    lv_obj_set_pos(content, 225, 75);
++    lv_obj_set_size(content, 784, 510);
++    lv_obj_set_style_bg_color(content, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
++    lv_obj_set_style_radius(content, 16, LV_PART_MAIN);
++    keyboard = lv_keyboard_create(root);
++    lv_obj_set_size(keyboard, 1024, 235);
++    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
++    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_ALL, NULL);
++    screen(0);
++    lv_timer_create(timer, 200, NULL);
++    if (lv_display_get_default()) {
++        lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,
++                                LV_EVENT_RENDER_READY, NULL);
++        lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,
++                                LV_EVENT_FLUSH_FINISH, NULL);
++    }
++    rt_kprintf("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
++}
+--- /dev/null
++++ b/application/rt-thread/d133_hmi/ui/ui_manager.h
+@@ -0,0 +1,5 @@
++#ifndef HMI_UI_MANAGER_H
++#define HMI_UI_MANAGER_H
++/* 唯一入口由官方 LVGL 线程的 lv_user_gui_init 调用。 */
++void hmi_ui_init(void);
++#endif
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/board.c
+@@ -0,0 +1,269 @@
++/*
++ * Copyright (c) 2022-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors: weilin.peng@artinchip.com
++ */
++#include <aic_core.h>
++#include <ram_param.h>
++#include <rtconfig.h>
++#include "board.h"
++
++extern void aic_board_pinmux_init(void);
++extern void aic_board_sysclk_init(void);
++
++#if defined(KERNEL_RTTHREAD)
++#include <aic_drv.h>
++#include <rthw.h>
++#include <rtthread.h>
++
++extern size_t __heap_start;
++extern size_t __heap_end;
++
++#ifdef RT_USING_MEMHEAP
++extern size_t __psram_cma_heap_start;
++extern size_t __psram_cma_heap_end;
++
++struct aic_memheap
++{
++    aic_mem_region_t    type;
++    char *              name;
++    void *              begin_addr;
++    void *              end_addr;
++    struct rt_memheap   heap;
++    struct rt_mutex     lock;
++};
++
++struct aic_memheap aic_memheaps[] = {
++#ifdef AIC_TCM_EN
++    {MEM_ITCM, "heap_itcm", (void *)&__itcm_heap_start, (void *)&__itcm_heap_end},
++    {MEM_DTCM, "heap_dtcm", (void *)&__dtcm_heap_start, (void *)&__dtcm_heap_end},
++#endif
++#if defined(AIC_SRAM0_SW_EN) && !defined(AIC_DEFAULT_SYS_HEAP_SRAM)
++    {MEM_SRAM0_SW, "heap_sram0_sw", (void *)&__sram_s0_sw_heap_start, (void *)&__sram_s0_sw_heap_end},
++#endif
++#ifdef AIC_SRAM1_SW_EN
++    {MEM_SRAM1_SW, "heap_sram1_sw", (void *)&__sram_s1_sw_heap_start, (void *)&__sram_s1_sw_heap_end},
++#endif
++#ifdef AIC_SRAM1_CMA_EN
++    //{MEM_SRAM1_CMA, "heap_sram1_cma", (void *)&__sram_s1_cma_heap_start, (void *)&__sram_s1_cma_heap_end},
++#endif
++#if defined(AIC_PSRAM_SW_EN) && !defined(AIC_DEFAULT_SYS_HEAP_PSRAM)
++    {MEM_PSRAM_SW, "heap_psram_sw", (void *)&__psram_sw_heap_start, (void *)&__psram_sw_heap_end},
++#endif
++#ifdef AIC_PSRAM_CMA_EN
++    //{MEM_PSRAM_CMA, "heap_cma", (void *)&__psram_cma_heap_start, (void *)&__psram_cma_heap_end},
++#endif
++#if defined(AIC_PSRAM_CMA_EN) || defined(AIC_SRAM1_CMA_EN)
++    {MEM_CMA, "heap_cma", (void *)&__cma_heap_start, (void *)&__cma_heap_end},
++#endif
++};
++
++void aic_memheap_init(void)
++{
++    rt_ubase_t begin_align;
++    rt_ubase_t end_align;
++    int i = 0;
++
++    for (i=0; i<sizeof(aic_memheaps)/sizeof(struct aic_memheap); i++) {
++#if AIC_PSRAM_SIZE
++#ifdef AIC_PSRAM_SW_EN
++    #if !defined(AIC_DEFAULT_SYS_HEAP_PSRAM)
++        if (aic_memheaps[i].type == MEM_PSRAM_SW) {
++            aic_memheaps[i].end_addr += (aic_get_ram_size() - AIC_PSRAM_SIZE);
++        }
++    #endif
++#endif
++#endif
++        begin_align = RT_ALIGN((rt_ubase_t)aic_memheaps[i].begin_addr, RT_ALIGN_SIZE);
++        end_align   = RT_ALIGN_DOWN((rt_ubase_t)aic_memheaps[i].end_addr, RT_ALIGN_SIZE);
++        RT_ASSERT(end_align > begin_align);
++
++        rt_memheap_init(&aic_memheaps[i].heap, aic_memheaps[i].name,
++                        (void *)begin_align, end_align - begin_align);
++        rt_mutex_init(&aic_memheaps[i].lock, aic_memheaps[i].name, RT_IPC_FLAG_PRIO);
++    }
++}
++
++void *aic_memheap_malloc(int type, size_t size)
++{
++    void *ptr;
++    int i = 0;
++
++    for (i=0; i<sizeof(aic_memheaps)/sizeof(struct aic_memheap); i++) {
++        if (aic_memheaps[i].type == type)
++            break;
++    }
++    if (i >= sizeof(aic_memheaps)/sizeof(struct aic_memheap))
++        return NULL;
++
++    /* Enter critical zone */
++    rt_mutex_take(&aic_memheaps[i].lock, RT_WAITING_FOREVER);
++    /* allocate memory block from system heap */
++    ptr = rt_memheap_alloc(&aic_memheaps[i].heap, size);
++    /* Exit critical zone */
++    rt_mutex_release(&aic_memheaps[i].lock);
++
++    return ptr;
++}
++
++void aic_memheap_free(int type, void *rmem)
++{
++    int i = 0;
++
++    if (rmem == RT_NULL)
++        return;
++
++    for (i=0; i<sizeof(aic_memheaps)/sizeof(struct aic_memheap); i++) {
++        if (aic_memheaps[i].type == type)
++            break;
++    }
++    if (i >= sizeof(aic_memheaps)/sizeof(struct aic_memheap))
++        return;
++
++    /* Enter critical zone */
++    rt_mutex_take(&aic_memheaps[i].lock, RT_WAITING_FOREVER);
++    rt_memheap_free(rmem);
++    /* Exit critical zone */
++    rt_mutex_release(&aic_memheaps[i].lock);
++}
++
++u32 aic_get_sys_heap_size(void)
++{
++#if AIC_PSRAM_SIZE
++#ifdef AIC_PSRAM_SW_EN
++    #if defined(AIC_DEFAULT_SYS_HEAP_PSRAM)
++    if (aic_get_ram_size() > AIC_PSRAM_SIZE)
++        return aic_get_ram_size() - AIC_PSRAM_SIZE;
++    #endif
++#endif
++#endif
++    return 0;
++}
++#endif
++
++/**
++ * This function will initial smart-evb board.
++ */
++void rt_hw_board_init(void)
++{
++#ifdef RT_USING_HEAP
++    rt_system_heap_init((void *)&__heap_start, (void *)((u8 *)&__heap_end + aic_get_sys_heap_size()));
++#if (!defined(QEMU_RUN) && defined(RT_USING_MEMHEAP))
++    aic_memheap_init();
++#endif
++#endif
++
++    aic_board_sysclk_init();
++    aic_board_pinmux_init();
++
++#ifdef RT_USING_COMPONENTS_INIT
++    rt_components_board_init();
++#endif
++
++#if defined(RT_USING_CONSOLE) && defined(RT_USING_DEVICE)
++    rt_console_set_device(RT_CONSOLE_DEVICE_NAME);
++#endif
++}
++
++#ifdef AIC_USING_PM
++void rt_pm_board_level_power_off(void)
++{
++    rt_base_t pin;
++
++    pin = rt_pin_get(AIC_BOARD_LEVEL_POWER_PIN);
++    if (pin < 0)
++        return;
++
++    rt_pin_mode(pin, PIN_MODE_OUTPUT);
++    rt_pin_write(pin, 0);
++}
++
++void rt_pm_board_level_power_on(void)
++{
++    rt_base_t pin;
++
++    pin = rt_pin_get(AIC_BOARD_LEVEL_POWER_PIN);
++    if (pin < 0)
++        return;
++
++    rt_pin_mode(pin, PIN_MODE_OUTPUT);
++    rt_pin_write(pin, 1);
++}
++#endif
++
++#elif defined(KERNEL_FREERTOS)
++#elif defined(KERNEL_BAREMETAL)
++#include <aic_tlsf.h>
++
++void aic_hw_board_init(void)
++{
++#ifdef TLSF_MEM_HEAP
++    aic_tlsf_heap_init();
++#endif
++    aic_board_sysclk_init();
++    aic_board_pinmux_init();
++}
++#endif
++
++#ifdef RT_USING_DFS_MNTTABLE
++#include <dfs_fs.h>
++/*@}*/
++#ifdef RT_USING_DFS_ROMFS
++#include "dfs_romfs.h"
++static const struct romfs_dirent _mountpoint_root[] =
++{
++    {ROMFS_DIRENT_DIR, "ram", RT_NULL, 0},
++    {ROMFS_DIRENT_DIR, "data", RT_NULL, 0},
++    {ROMFS_DIRENT_DIR, "rodata", RT_NULL, 0},
++    {ROMFS_DIRENT_DIR, "sdcard", RT_NULL, 0},
++    {ROMFS_DIRENT_DIR, "udisk", RT_NULL, 0},
++#if defined(AIC_FLASH_NUM_TWO)
++    {ROMFS_DIRENT_DIR, "extra", RT_NULL, 0},
++#endif
++};
++const struct romfs_dirent romfs_root =
++{
++    ROMFS_DIRENT_DIR, "/", (rt_uint8_t *)_mountpoint_root, ARRAY_SIZE(_mountpoint_root)
++};
++#endif
++const struct dfs_mount_tbl mount_table[] = {
++#ifdef RT_USING_DFS_ROMFS
++    {RT_NULL, "/", "rom", 0, &romfs_root, DFS_MOUNT_PRIO_EARLY},
++#endif
++#ifdef LPKG_RAMDISK_TYPE_INITDATA
++    {"ramdisk0", "/ram", "elm", 0, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++#ifndef AIC_AB_SYSTEM_INTERFACE
++#if (defined(AIC_USING_FS_IMAGE_TYPE_FATFS_FOR_0) || defined(AIC_USING_FS_IMAGE_TYPE_FATFS_FOR_1))
++    {"blk_rodata", "/rodata", "elm", MS_RDONLY, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++#endif
++#ifdef LPKG_USING_LITTLEFS
++    {"data", "/data", "lfs", 0, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++#ifdef LPKG_USING_DFS_UFFS
++    {"data", "/data", "uffs", 0, 0, DFS_MOUNT_PRIO_LATE},
++#endif
++#ifdef AIC_USING_SDMC1
++    {"sd1", "/sdcard", "elm", 0, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++#if (defined(AIC_USING_USB0_HOST) || defined(AIC_USING_USB0_OTG) || defined(AIC_USING_USB1_HOST))
++    {"udisk", "/udisk", "elm", 0, 0, 0xFF},
++#endif
++#ifdef AIC_SECONED_FLASH_NOR
++    {"extra", "/extra", "lfs", 0, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++#ifdef AIC_SECONED_FLASH_NAND
++    {"blk_extra", "/extra", "elm", 0, 0, DFS_MOUNT_PRIO_EARLY},
++#endif
++    {0}
++};
++#endif
++
++void show_board_version(void)
++{
++    aic_show_ram_size();
++    printf("Board: %s\n\n", PRJ_BOARD);
++}
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/include/board.h
+@@ -0,0 +1,20 @@
++/*
++ * Copyright (c) 2022, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors: weilin.peng@artinchip.com
++ */
++
++#ifndef __AIC_BOARD_H__
++#define __AIC_BOARD_H__
++
++#include <rtconfig.h>
++
++#if defined(KERNEL_RTTHREAD)
++#elif defined(KERNEL_FREERTOS)
++#elif defined(KERNEL_BAREMETAL)
++void aic_hw_board_init(void);
++#endif
++
++#endif /* __AIC_BOARD_H__ */
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/pack/pbp_cfg.json
+@@ -0,0 +1,674 @@
++{
++	"psram": {
++
++		"cfg0": { //OPI APS3208K 8M PSRAM
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03020001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030303",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++				"proto": "0x40030204",
++				"id":    "0x80c980c9",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000002", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x19000000",
++				"proto1": "0xc0000402",
++				"buf1":   "0x80000000",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80020002",
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00060003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0xAA55AA55", // training_value1
++				"buf1": "0x55AA55AA", // training_value2
++				"buf2": "0x02080100", //byte0:read_hold (0x02); byte1:write_hold (0x08); byte3:axi_read_first(0x01); byte4: bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		"cfg1": { //OPI APS3208K 4M PSRAM
++			"common": {
++				"clock":      "192000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x01020001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030303",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++				"proto": "0x40030204",
++				"id":    "0x80c980c9",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000002", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x1a000000",
++				"proto1": "0xc0000402",
++				"buf1":   "0x80000000",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80020002",
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00060003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0xAA55AA55",
++				"buf1": "0x55AA55AA",
++				"buf2": "0x04080100", //byte0:read_hold (0x04); byte1:write_hold (0x08); byte3:axi_read_first(0x01); byte4: bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		"cfg2": { // XCCELA AP12816 16M PSRAM
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03000001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030304", //cmd_lines, addr_lines, data_lines, addr_width
++				"psram_cfg1": "0x02000001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060405",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060403",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++
++				"proto": "0x40040104",
++				"id":    "0xdd8ddd8d",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000001", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x11000000",
++				"proto1": "0xc0000401",
++				"buf1":   "0x20000000",
++				"proto2": "0xc0000801",
++				"buf2":   "0x4c000000",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80070002", //cmd: byte[0]=0x80; dummy: byte[1]=0x07; addr: byte[2]=0x08; len: byte[3]=0x02;
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00070003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x5555aaaa",
++				"buf1": "0xaaaa5555",
++				"buf2": "0x05050101", //byte0:read_hold; byte1:write_hold; byte3:axi_read_first; byte4:bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		"cfg9": { // APS6408L-OBx9 (8MB x2) 16M, fuse 0x08; clone of cfg2, id only
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03000001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030304", //cmd_lines, addr_lines, data_lines, addr_width
++				"psram_cfg1": "0x02000001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060405",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060403",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++
++				"proto": "0x40040104",
++				"id":    "0x8b8d8b8d",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000001", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x11000000",
++				"proto1": "0xc0000401",
++				"buf1":   "0x20000000",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80070002", //cmd: byte[0]=0x80; dummy: byte[1]=0x07; addr: byte[2]=0x08; len: byte[3]=0x02;
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00070003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0xAA55AA55", // x8 training value
++				"buf1": "0x55AA55AA",
++				"buf2": "0x04040100", //byte0:read_hold; byte1:write_hold; byte3:axi_read_first; byte4:bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++
++		"cfg3": { // XCCELA UnilC SCKW18X12816 16M PSRAM
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03000001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030304", //cmd_lines, addr_lines, data_lines, addr_width
++				"psram_cfg1": "0x02000001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060405",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060403",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++
++				"proto": "0x40040104",
++				"id":    "0xc59ac59a",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000001", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x10000000",
++				"proto1": "0xc0000401",
++				"buf1":   "0x20000000",
++				"proto2": "0xc0000801",
++				"buf2":   "0x4c000000",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80070002", //cmd: byte[0]=0x80; dummy: byte[1]=0x07; addr: byte[2]=0x08; len: byte[3]=0x02;
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00070003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x5555aaaa",
++				"buf1": "0xaaaa5555",
++				"buf2": "0x05050101", //byte0:read_hold; byte1:write_hold; byte3:axi_read_first; byte4:bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++
++		"cfg4": { // XCCELA AP25616 32M PSRAM
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x116d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03000001",
++				"xspi_ldo":   "0x17", //1.92V
++				"psram_cfg0": "0x03030304", //cmd_lines, addr_lines, data_lines, addr_width
++				"psram_cfg1": "0x02000001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060405",
++				"xspi_cs0_iocfg4": "0x26",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060403",
++				"xspi_cs1_iocfg4": "0x26",
++			},
++			"reset": {
++				"proto": "0xff000001",
++				"buf":   "0x00ffffff",
++			},
++			"getid": {
++
++				"proto": "0x40040104",
++				"id":    "0xdf8ddf8d",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				"proto0": "0xc0000001", //cmd: byte[0]=0xc0; dummy: byte[1]=0x00; addr: byte[2]=0x00; len: byte[3]=0x02;
++				"buf0":   "0x11000000",
++				"proto1": "0xc0000401",
++				"buf1":   "0x20000000",
++				"proto2": "0xc0000801",
++				"buf2":   "0x4c000000",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x80070002", //cmd: byte[0]=0x80; dummy: byte[1]=0x07; addr: byte[2]=0x08; len: byte[3]=0x02;
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0x00070003",
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x5555aaaa",
++				"buf1": "0xaaaa5555",
++				"buf2": "0x05050101", //byte0:read_hold; byte1:write_hold; byte3:axi_read_first; byte4:bit mode
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		"cfg5": { // W957D6NKR 16M, HyperBus x16, PARALLEL (fuse 0x05)
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x115d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03010001", //cs0+cs1, HyperBus, DDR
++				"xspi_ldo":   "0x17",
++				"psram_cfg0": "0x03030304",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x36",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x36",
++			},
++			"reset": {
++				// CR1 write (software reset): cmd 0x60, 16-bit addr 0x0801, len 4
++				// MSB byte first on the wire: chip receives 0xAFC1
++				"proto": "0x60080104",
++				"buf":   "0xafc10000",
++			},
++			"getid": {
++				// ID Reg 0 read: cmd 0xc0, dummy 4, addr 0x00, len 4
++				"proto": "0xc0040004",
++				"id":    "0x0c860c86",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				// CR0 write: cmd 0x60, 16-bit addr 0x0800, len 4
++				// MSB byte first on the wire: chip receives 0x8F27
++				"proto0": "0x60080004",
++				"buf0":   "0x8f270000",
++				"proto1": "0xffffffff",
++				"buf1":   "0xffffffff",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x20070002", //write cmd 0x20, dummy 7, len 2
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0xa0070003", //read cmd 0xa0, dummy 7, len 3
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x5555aaaa",
++				"buf1": "0xaaaa5555",
++				"buf2": "0x02020001", //byte0:read_hold (0x02); byte1:write_hold (0x02); byte2:axi_read_first (0x01); byte3:bit mode (0x01, x16)
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		// W956D8NKR 16M, HyperRAM 2.1 x8, PARALLEL (fuse 0x06)
++		"cfg6": {
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x115d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03010001", //cs0+cs1, HyperBus, DDR
++				"xspi_ldo":   "0x17",
++				"psram_cfg0": "0x03030304",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x36",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x36",
++			},
++			"reset": {
++				// CR1 write (software reset): cmd 0x60, 16-bit addr 0x0801, len 4
++				"proto": "0x60080104",
++				"buf":   "0xafc10000", //chip receives 0xAFC1
++			},
++			"getid": {
++				// ID Reg 0 read: cmd 0xc0, dummy 4, addr 0x00, len 4
++				"proto": "0xc0040004",
++				"id":    "0x860c860c",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				// CR0 write: cmd 0x60, 16-bit addr 0x0800, len 4
++				"proto0": "0x60080004",
++				"buf0":   "0x8f270000", //chip receives 0x8F27
++				"proto1": "0xffffffff",
++				"buf1":   "0xffffffff",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x20070002", //write cmd 0x20, dummy 7, len 2
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0xa0070003", //read cmd 0xa0, dummy 7, len 3
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x55aa55aa",
++				"buf1": "0xaa55aa55",
++				"buf2": "0x02020000", //byte0:read_hold (0x02); byte1:write_hold (0x02); byte2:axi_read_first (0x01); byte3:bit mode (0x00, x8)
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		// W955D8MKY 8M, HyperBus x8, PARALLEL (fuse 0x08)
++		"cfg7": {
++			"common": {
++				"clock":      "198000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x115d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x03010001", //cs0+cs1, HyperBus, DDR
++				"xspi_ldo":   "0x17",
++				"psram_cfg0": "0x03030304",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x36",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x36",
++			},
++			"reset": {
++				// CR1 write with default value (no software reset): cmd 0x60, 16-bit addr 0x0801, len 4
++				"proto": "0x60080104",
++				"buf":   "0xff810000", //chip receives 0xFF81 (CR1 default)
++			},
++			"getid": {
++				// ID Reg 0 read: cmd 0xe0, dummy 4, addr 0x00, len 4
++				"proto": "0xe0040004",
++				"id":    "0x5f005f00",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				// CR0 write: cmd 0x60, 16-bit addr 0x0800, len 4
++				"proto0": "0x60080004",
++				"buf0":   "0x8f170000", //chip receives 0x8F17
++				"proto1": "0xffffffff",
++				"buf1":   "0xffffffff",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x20060002", //write cmd 0x20, dummy 6, len 2
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0xa0060003", //read cmd 0xa0, dummy 6, len 3
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x55aa55aa",
++				"buf1": "0xaa55aa55",
++				"buf2": "0x02020000", //byte0:read_hold (0x02); byte1:write_hold (0x02); byte2:axi_read_first (0x01); byte3:bit mode (0x00, x8)
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++		// W955D8MKY 4M, HyperBus x8, SINGLE (fuse 0x07)
++		"cfg8": {
++			"common": {
++				"clock":      "192000000",
++				"cs0_pins":   "0x0",
++				"cs1_pins":   "0x0",
++				"xspi_ctl":   "0x115d",
++				"xspi_tcr":   "0x280011",
++				"xspi_cfg":   "0x01010001", //cs0 only, HyperBus, DDR
++				"xspi_ldo":   "0x17",
++				"psram_cfg0": "0x03030304",
++				"psram_cfg1": "0x00400001",
++				"xspi_cs0_iocfg1": "0x02020202",
++				"xspi_cs0_iocfg2": "0x02020202",
++				"xspi_cs0_iocfg3": "0x36060503",
++				"xspi_cs0_iocfg4": "0x36",
++				"xspi_cs1_iocfg1": "0x02020202",
++				"xspi_cs1_iocfg2": "0x02020202",
++				"xspi_cs1_iocfg3": "0x36060503",
++				"xspi_cs1_iocfg4": "0x36",
++			},
++			"reset": {
++				// CR1 write with default value (no software reset): cmd 0x60, 16-bit addr 0x0801, len 4
++				"proto": "0x60080104",
++				"buf":   "0xff810000", //chip receives 0xFF81 (CR1 default)
++			},
++			"getid": {
++				// ID Reg 0 read: cmd 0xe0, dummy 4, addr 0x00, len 4
++				"proto": "0xe0040004",
++				"id":    "0x5f005f00",
++				"buf":   "0xffffffff",
++			},
++			"init": {
++				// CR0 write: cmd 0x60, 16-bit addr 0x0800, len 4
++				"proto0": "0x60080004",
++				"buf0":   "0x8f170000", //chip receives 0x8F17
++				"proto1": "0xffffffff",
++				"buf1":   "0xffffffff",
++				"proto2": "0xffffffff",
++				"buf2":   "0xffffffff",
++				"proto3": "0xffffffff",
++				"buf3":   "0xffffffff",
++			},
++			"xip_cfg": {
++				"wr_proto": "0x20060002", //write cmd 0x20, dummy 6, len 2
++				"wr_buf":   "0xffffffff",
++				"rd_proto": "0xa0060003", //read cmd 0xa0, dummy 6, len 3
++				"rd_buf":   "0xffffffff",
++			},
++			"backup": {
++				"buf0": "0x55aa55aa",
++				"buf1": "0xaa55aa55",
++				"buf2": "0x02020000", //byte0:read_hold (0x02); byte1:write_hold (0x02); byte2:axi_read_first (0x01); byte3:bit mode (0x00, x8)
++				"buf3": "0xFFFFFF04",
++				"buf4": "0xFFFFFF05",
++				"buf5": "0xFFFFFF06",
++				"buf6": "0xFFFFFF07",
++				"buf7": "0xFFFFFF08",
++				"buf8": "0xFFFFFF09",
++				"buf9": "0xFFFFFF00",
++			},
++		},
++	},
++
++	"system": {
++		"upgmode": { // Set PIN to enter BROM's upgrading mode
++			// If set upgmode_pin_cfg_reg to "0", disable bootpin detect in PBP
++			"upgmode_pin_cfg_reg": "0x18700080", // PINMUX REG, PA0
++			"upgmode_pin_cfg_val": "0x10321",    // PINMUX VAL
++			"upgmode_pin_input_reg": "0x18700000", // INPUT VAL REG
++			"upgmode_pin_input_msk": "0x1", // Bit MSK
++			"upgmode_pin_input_val": "0x0", // Bit VAL
++			"upgmode_pin_pullup_dly": "500", // us
++		},
++		"uart": { // PBP's uart setting, remove uart setting to disable log in PBP
++			"main": {
++				"uart_id": "0", // UART0 for log output
++				"uart_tx_pin_cfg_reg": "0x18700080", // PA0
++				"uart_tx_pin_cfg_val": "0x335",
++				"uart_rx_pin_cfg_reg": "0x18700084", // PA1
++				"uart_rx_pin_cfg_val": "0x335",
++
++				// "uart_id": "0", // UART0 for log output
++				// "uart_tx_pin_cfg_reg": "0x18700E88", // PN2
++				// "uart_tx_pin_cfg_val": "0x324",
++				// "uart_rx_pin_cfg_reg": "0x18700E8C", // PN3
++				// "uart_rx_pin_cfg_val": "0x324",
++
++				// "uart_id": "1", // UART1 for log output
++				// "uart_tx_pin_cfg_reg": "0x18700090", // PA4
++				// "uart_tx_pin_cfg_val": "0x325",
++				// "uart_rx_pin_cfg_reg": "0x18700094", // PA5
++				// "uart_rx_pin_cfg_val": "0x325",
++
++				// "uart_id": "3", // UART3 for log output
++				// "uart_tx_pin_cfg_reg": "0x187004B8", // PE14
++				// "uart_tx_pin_cfg_val": "0x325",
++				// "uart_rx_pin_cfg_reg": "0x187004BC", // PE15
++				// "uart_rx_pin_cfg_val": "0x325",
++
++				// "uart_id": "4", // UART4 for log output
++				// "uart_tx_pin_cfg_reg": "0x18700198", // PB6
++				// "uart_tx_pin_cfg_val": "0x325",
++				// "uart_rx_pin_cfg_reg": "0x1870019C", // PB7
++				// "uart_rx_pin_cfg_val": "0x325",
++
++				// "uart_id": "5", // UART5 for log output
++				// "uart_tx_pin_cfg_reg": "0x18700490", // PE4
++				// "uart_tx_pin_cfg_val": "0x325",
++				// "uart_rx_pin_cfg_reg": "0x18700494", // PE5
++				// "uart_rx_pin_cfg_val": "0x325",
++			},
++		},
++		"jtag": {
++			"jtag_only": "0", // 1: Boot code stop in PBP after DDR init and jtag init
++			"main": {
++				"jtag_id": "0",
++				"jtag_ms_pin_cfg_reg": "0x187000A8", // PA10
++				"jtag_ms_pin_cfg_val": "0x338",
++				"jtag_ck_pin_cfg_reg": "0x187000AC", // PA11
++				"jtag_ck_pin_cfg_val": "0x338",
++
++				// "jtag_ms_pin_cfg_reg": "0x18700280", // PC0
++				// "jtag_ms_pin_cfg_val": "0x338",
++				// "jtag_ck_pin_cfg_reg": "0x18700294", // PC5
++				// "jtag_ck_pin_cfg_val": "0x338",
++			},
++		},
++	},
++}
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/pinmux.c
+@@ -0,0 +1,424 @@
++/*
++ * Copyright (c) 2022-2026, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors: weilin.peng@artinchip.com
++ */
++
++#include <aic_core.h>
++#include <aic_hal.h>
++#include "board.h"
++#include <aic_utils.h>
++
++#ifdef AIC_NO_CONSOLE_SUSPEND
++#define KEEP_CONSOLE_IN_SUSPEND     FLAG_WAKEUP_SOURCE
++#else
++#define KEEP_CONSOLE_IN_SUSPEND     0
++#endif
++
++struct aic_pinmux aic_pinmux_config[] = {
++#ifdef AIC_USING_UART0
++    /* uart0 */
++    {5, PIN_PULL_DIS, 3, "PA.0", KEEP_CONSOLE_IN_SUSPEND},
++    {5, PIN_PULL_UP, 3, "PA.1", KEEP_CONSOLE_IN_SUSPEND},
++#ifdef AIC_DEV_UART0_MODE_RS485_SIMULATION
++    {1, PIN_PULL_DIS, 3, AIC_UART0_RTS_NAME},
++#endif
++#ifdef AIC_DEV_UART0_MODE_RS232_UNAUTO_FLOW_CTRL
++    #ifdef AIC_UART0_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART0_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART0_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART0_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#elif defined AIC_DEV_UART0_MODE_RS232_SW_HW_FLOW_CTRL
++    #ifdef AIC_UART0_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART0_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART0_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART0_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#endif
++
++#endif
++#ifdef AIC_USING_UART1
++    /* uart1 */
++    {5, PIN_PULL_DIS, 3, "PD.2"},
++    {5, PIN_PULL_UP, 3, "PD.3"},
++#ifdef AIC_DEV_UART1_MODE_RS485_SIMULATION
++    {1, PIN_PULL_DIS, 3, AIC_UART1_RTS_NAME},
++#endif
++#ifdef AIC_DEV_UART1_MODE_RS232_UNAUTO_FLOW_CTRL
++    #ifdef AIC_UART1_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART1_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART1_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART1_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#endif
++#ifdef AIC_DEV_UART1_MODE_RS232_SW_HW_FLOW_CTRL
++    #ifdef AIC_UART1_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART1_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART1_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART1_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#endif
++
++#endif
++#ifdef AIC_USING_UART2
++    /* uart2 */
++    {5, PIN_PULL_DIS, 3, "PD.4"},   // BT_UART2_TX
++    {5, PIN_PULL_UP, 3, "PD.5"},   // BT_UART2_RX
++#ifdef AIC_DEV_UART2_MODE_RS485_SIMULATION
++    {1, PIN_PULL_DIS, 3, AIC_UART2_RTS_NAME},
++#elif defined AIC_DEV_UART2_MODE_RS232_UNAUTO_FLOW_CTRL
++    #ifdef AIC_UART2_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART2_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART2_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART2_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#elif defined AIC_DEV_UART2_MODE_RS232_SW_HW_FLOW_CTRL
++    #ifdef AIC_UART2_RTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART2_RTS_NAME},   // BT_UART2_RTS
++    #endif
++    #ifdef AIC_UART2_CTS_ENABLE
++        {1, PIN_PULL_DIS, 3, AIC_UART2_CTS_NAME},   // BT_UART2_CTS
++    #endif
++#else
++   {8, PIN_PULL_DIS, 3, "PA.2"},   // BT_UART2_CTS
++   {8, PIN_PULL_DIS, 3, "PA.3"},   // BT_UART2_RTS
++   {1, PIN_PULL_DIS, 3, "PD.6"},   // BT_PWR_ON
++
++#endif
++#endif
++#ifdef AIC_USING_CAN0
++    /* can0 */
++    {4, PIN_PULL_DIS, 3, "PA.4"},
++    {4, PIN_PULL_DIS, 3, "PA.5"},
++#endif
++#ifdef AIC_USING_AUDIO
++#ifdef AIC_AUDIO_DMIC
++    {4, PIN_PULL_DIS, 3, "PD.16"},
++    {4, PIN_PULL_DIS, 3, "PD.17"},
++#endif
++#ifdef AIC_AUDIO_PLAYBACK
++    {5, PIN_PULL_DIS, 3, "PE.12"},
++    {1, PIN_PULL_DIS, 3, AIC_AUDIO_PA_ENABLE_GPIO},
++#endif
++#endif
++#ifdef AIC_USING_I2S0
++    {4, PIN_PULL_DIS, 3, "PD.11"},
++    {4, PIN_PULL_DIS, 3, "PD.12"},
++    {4, PIN_PULL_DIS, 3, "PD.13"},
++    {4, PIN_PULL_DIS, 3, "PD.14"},
++    {4, PIN_PULL_DIS, 3, "PD.15"},
++#endif
++#ifdef AIC_USING_RTP
++    {2, PIN_PULL_DIS, 3, "PA.8"},
++    {2, PIN_PULL_DIS, 3, "PA.9"},
++    {2, PIN_PULL_DIS, 3, "PA.10"},
++    {2, PIN_PULL_DIS, 3, "PA.11"},
++#endif
++#ifdef AIC_USING_I2C2
++    {4, PIN_PULL_DIS, 3, "PA.8"},  // SCK
++    {4, PIN_PULL_DIS, 3, "PA.9"},  // SDA
++#endif
++#ifdef AIC_USING_QSPI0
++#ifndef AIC_SYSCFG_SIP_FLASH_ENABLE
++    /* qspi0 */
++    {2, PIN_PULL_UP, 3, "PB.0"},
++    {2, PIN_PULL_UP, 3, "PB.1"},
++    {2, PIN_PULL_UP, 3, "PB.2"},
++    {2, PIN_PULL_UP, 3, "PB.3"},
++    {2, PIN_PULL_UP, 3, "PB.4"},
++    {2, PIN_PULL_UP, 3, "PB.5"},
++#else
++    {8, PIN_PULL_UP, 3, "PB.12"},
++    {8, PIN_PULL_UP, 3, "PB.13"},
++    {8, PIN_PULL_UP, 3, "PB.14"},
++    {8, PIN_PULL_UP, 3, "PB.15"},
++    {8, PIN_PULL_UP, 3, "PB.16"},
++    {8, PIN_PULL_UP, 3, "PB.17"},
++#endif
++#endif
++#if defined(AIC_USING_QSPI2) && defined(AIC_SYSCFG_SIP_FLASH_ENABLE) && !defined(AIC_USING_SDMC0)
++    /* qspi2 */
++    {3, PIN_PULL_DIS, 3, "PB.6"},
++    {3, PIN_PULL_DIS, 3, "PB.7"},
++    {3, PIN_PULL_DIS, 3, "PB.8"},
++    {3, PIN_PULL_DIS, 3, "PB.9"},
++    {3, PIN_PULL_DIS, 3, "PB.10"},
++    {3, PIN_PULL_DIS, 3, "PB.11"},
++#endif
++#ifdef AIC_USING_SDMC0
++    {2, PIN_PULL_UP, 7, "PB.6"},
++    {2, PIN_PULL_UP, 7, "PB.7"},
++    {2, PIN_PULL_UP, 7, "PB.8"},
++    {2, PIN_PULL_UP, 7, "PB.9"},
++    {2, PIN_PULL_UP, 7, "PB.10"},
++    {2, PIN_PULL_UP, 7, "PB.11"},
++#endif
++#ifdef AIC_USING_SDMC1
++    {2, PIN_PULL_UP, 3, "PC.0"},
++    {2, PIN_PULL_UP, 3, "PC.1"},
++    {2, PIN_PULL_UP, 3, "PC.2"},
++    {2, PIN_PULL_UP, 3, "PC.3"},
++    {2, PIN_PULL_UP, 3, "PC.4"},
++    {2, PIN_PULL_UP, 3, "PC.5"},
++    {2, PIN_PULL_UP, 3, "PC.6"},
++#endif
++#ifdef AIC_USING_CAP0
++    {3, PIN_PULL_UP, 3, "PC.6"},
++#endif
++#ifdef AIC_USING_CAP1
++    {3, PIN_PULL_UP, 3, "PC.7"},
++#endif
++#ifdef AIC_USING_CAP2
++    {3, PIN_PULL_UP, 3, "PC.8"},
++#endif
++#ifdef AIC_USING_CAP3
++    {3, PIN_PULL_UP, 3, "PC.9"},
++#endif
++#ifdef AIC_USING_CAP4
++    {3, PIN_PULL_UP, 3, "PC.10"},
++#endif
++#ifdef AIC_USING_CAP5
++    {3, PIN_PULL_UP, 3, "PC.11"},
++#endif
++#ifdef AIC_WIRELESS_LAN
++    {1, PIN_PULL_DIS, 3, AIC_WIRELESS_PWR_GPIO, FLAG_POWER_PIN},  // WIFI_PWR_ON
++#endif
++#ifdef AIC_USING_I2C0
++    {4, PIN_PULL_DIS, 3, "PD.0"}, // SCK
++    {4, PIN_PULL_DIS, 3, "PD.1"}, // SDA
++#endif
++#ifdef AIC_PANEL_ENABLE_GPIO
++    {1, PIN_PULL_DIS, 3, AIC_PANEL_ENABLE_GPIO},
++#endif
++#ifdef AIC_LVDS_LINK_0
++    {3, PIN_PULL_DIS, 3, "PD.18"},
++    {3, PIN_PULL_DIS, 3, "PD.19"},
++    {3, PIN_PULL_DIS, 3, "PD.20"},
++    {3, PIN_PULL_DIS, 3, "PD.21"},
++    {3, PIN_PULL_DIS, 3, "PD.22"},
++    {3, PIN_PULL_DIS, 3, "PD.23"},
++    {3, PIN_PULL_DIS, 3, "PD.24"},
++    {3, PIN_PULL_DIS, 3, "PD.25"},
++    {3, PIN_PULL_DIS, 3, "PD.26"},
++    {3, PIN_PULL_DIS, 3, "PD.27"},
++#endif
++#ifdef AIC_DISP_MIPI_DSI
++    {4, PIN_PULL_DIS, 3, "PD.18"},
++    {4, PIN_PULL_DIS, 3, "PD.19"},
++    {4, PIN_PULL_DIS, 3, "PD.20"},
++    {4, PIN_PULL_DIS, 3, "PD.21"},
++    {4, PIN_PULL_DIS, 3, "PD.22"},
++    {4, PIN_PULL_DIS, 3, "PD.23"},
++    {4, PIN_PULL_DIS, 3, "PD.24"},
++    {4, PIN_PULL_DIS, 3, "PD.25"},
++    {4, PIN_PULL_DIS, 3, "PD.26"},
++    {4, PIN_PULL_DIS, 3, "PD.27"},
++#endif
++#ifdef AIC_USING_GMAC0
++    /* gmac0 */
++    {2, PIN_PULL_DIS, 3, "PE.0"},
++    {2, PIN_PULL_DIS, 3, "PE.1"},
++    {2, PIN_PULL_DIS, 3, "PE.2"},
++    {2, PIN_PULL_DIS, 3, "PE.3"},
++    {2, PIN_PULL_DIS, 3, "PE.4"},
++    {2, PIN_PULL_DIS, 3, "PE.5"},
++    {2, PIN_PULL_DIS, 3, "PE.7"},
++    {2, PIN_PULL_DIS, 3, "PE.8"},
++    {2, PIN_PULL_DIS, 3, "PE.9"},
++    /* phy0 reset gpio */
++    {1, PIN_PULL_DIS, 3, "PE.6"},
++#endif
++#ifdef AIC_USING_CLK_OUT0
++    {6, PIN_PULL_DIS, 3, "PD.13"},
++#endif
++#ifdef AIC_USING_CLK_OUT1
++    {2, PIN_PULL_DIS, 3, "PE.11"},
++#endif
++#ifdef AIC_USING_CLK_OUT2
++    {2, PIN_PULL_DIS, 3, "PE.10"},
++#endif
++#ifdef AIC_USING_CLK_OUT3
++    {7, PIN_PULL_DIS, 3, "PC.6"},
++#endif
++#ifdef AIC_USING_DVP
++    {3, PIN_PULL_DIS, 3, "PE.0"},
++    {3, PIN_PULL_DIS, 3, "PE.1"},
++    {3, PIN_PULL_DIS, 3, "PE.2"},
++    {3, PIN_PULL_DIS, 3, "PE.3"},
++    {3, PIN_PULL_DIS, 3, "PE.4"},
++    {3, PIN_PULL_DIS, 3, "PE.5"},
++    {3, PIN_PULL_DIS, 3, "PE.6"},
++    {3, PIN_PULL_DIS, 3, "PE.7"},
++    {3, PIN_PULL_DIS, 3, "PE.8"},
++    {3, PIN_PULL_DIS, 3, "PE.9"},
++    {3, PIN_PULL_DIS, 3, "PE.10"},
++#endif
++#ifdef AIC_USING_PWM0
++    {4, PIN_PULL_DIS, 3, "PD.6"},
++    {4, PIN_PULL_DIS, 3, "PD.7"},
++#endif
++#ifdef AIC_USING_PWM1
++    {3, PIN_PULL_DIS, 3, "PE.11"},
++    //{3, PIN_PULL_DIS, 3, "PE.12"},
++#endif
++#ifdef AIC_USING_PWM2
++    {3, PIN_PULL_DIS, 3, "PE.13"},
++    //{3, PIN_PULL_DIS, 3, "PE.15"},
++#endif
++#ifdef AIC_USING_QEP2
++    {6, PIN_PULL_DIS, 3, "PE.2"},
++#endif
++#ifdef AIC_USING_QEP3
++    {6, PIN_PULL_DIS, 3, "PE.4"},
++#endif
++#ifdef AIC_USING_EPWM0
++    {7, PIN_PULL_DIS, 3, "PD.26"},
++    {7, PIN_PULL_DIS, 3, "PD.27"},
++#endif
++#ifdef AIC_USING_EPWM1
++    {7, PIN_PULL_DIS, 3, "PD.24"},
++    {7, PIN_PULL_DIS, 3, "PD.25"},
++#endif
++#ifdef AIC_USING_EPWM2
++    {7, PIN_PULL_DIS, 3, "PD.22"},
++    {7, PIN_PULL_DIS, 3, "PD.23"},
++#endif
++#ifdef AIC_USING_EPWM3
++    {7, PIN_PULL_DIS, 3, "PD.20"},
++    {7, PIN_PULL_DIS, 3, "PD.21"},
++#endif
++#ifdef AIC_USING_EPWM4
++    {7, PIN_PULL_DIS, 3, "PD.18"},
++    {7, PIN_PULL_DIS, 3, "PD.19"},
++#endif
++#ifdef AIC_USING_EPWM5
++    {7, PIN_PULL_DIS, 3, "PD.16"},
++    {7, PIN_PULL_DIS, 3, "PD.17"},
++#endif
++#ifdef AIC_USING_EPWM6
++    {7, PIN_PULL_DIS, 3, "PD.14"},
++    {7, PIN_PULL_DIS, 3, "PD.15"},
++#endif
++#ifdef AIC_USING_EPWM7
++    {7, PIN_PULL_DIS, 3, "PD.12"},
++    {7, PIN_PULL_DIS, 3, "PD.13"},
++#endif
++#ifdef AIC_USING_EPWM8
++    {7, PIN_PULL_DIS, 3, "PD.10"},
++    {7, PIN_PULL_DIS, 3, "PD.11"},
++#endif
++#ifdef AIC_USING_EPWM9
++    {7, PIN_PULL_DIS, 3, "PD.8"},
++    {7, PIN_PULL_DIS, 3, "PD.9"},
++#endif
++#ifdef AIC_USING_EPWM10
++    {7, PIN_PULL_DIS, 3, "PD.2"},
++    {7, PIN_PULL_DIS, 3, "PD.3"},
++#endif
++#ifdef AIC_USING_EPWM11
++    {7, PIN_PULL_DIS, 3, "PD.0"},
++    {7, PIN_PULL_DIS, 3, "PD.1"},
++#endif
++#if (defined(AIC_USING_USB0_DEVICE) || defined(AIC_USING_USB0_HOST))
++    /* usb0 */
++    {2, PIN_PULL_DIS, 3, "PO.0"},   // USB-DM
++    {2, PIN_PULL_DIS, 3, "PO.1"},   // USB-DP
++    {1, PIN_PULL_DIS, 3, "PD.8"},   // USB-ID
++#endif
++#ifdef AIC_USING_PSADC0
++    {7, PIN_PULL_DIS, 3, "PA.0"},
++#endif
++#ifdef AIC_USING_PSADC1
++    {7, PIN_PULL_DIS, 3, "PA.1"},
++#endif
++#ifdef AIC_USING_PSADC2
++    {7, PIN_PULL_DIS, 3, "PA.2"},
++#endif
++#ifdef AIC_USING_PSADC3
++    {7, PIN_PULL_DIS, 3, "PA.3"},
++#endif
++#ifdef AIC_USING_PSADC4
++    {7, PIN_PULL_DIS, 3, "PA.4"},
++#endif
++#ifdef AIC_USING_PSADC5
++    {7, PIN_PULL_DIS, 3, "PA.5"},
++#endif
++#ifdef AIC_USING_PSADC6
++    {7, PIN_PULL_DIS, 3, "PA.6"},
++#endif
++#ifdef AIC_USING_PSADC7
++    {7, PIN_PULL_DIS, 3, "PA.7"},
++#endif
++#ifdef AIC_USING_PSADC8
++    {7, PIN_PULL_DIS, 3, "PA.8"},
++#endif
++#ifdef AIC_USING_PSADC9
++    {7, PIN_PULL_DIS, 3, "PA.9"},
++#endif
++#ifdef AIC_USING_PSADC10
++    {7, PIN_PULL_DIS, 3, "PA.10"},
++#endif
++#ifdef AIC_USING_PSADC11
++    {7, PIN_PULL_DIS, 3, "PA.11"},
++#endif
++#ifdef AIC_USING_PSADC12
++    {7, PIN_PULL_DIS, 3, "PA.12"},
++#endif
++#ifdef AIC_USING_PSADC13
++    {7, PIN_PULL_DIS, 3, "PA.13"},
++#endif
++#ifdef AIC_USING_PSADC14
++    {7, PIN_PULL_DIS, 3, "PA.14"},
++#endif
++#ifdef AIC_USING_PSADC15
++    {7, PIN_PULL_DIS, 3, "PA.15"},
++#endif
++#ifdef AIC_USING_GPAI0
++    {2, PIN_PULL_DIS, 3, "PA.0"},
++#endif
++#ifdef AIC_USING_GPAI1
++    {2, PIN_PULL_DIS, 3, "PA.1"},
++#endif
++#ifdef AIC_USING_GPAI2
++    {2, PIN_PULL_DIS, 3, "PA.2"},
++#endif
++#ifdef AIC_USING_GPAI3
++    {2, PIN_PULL_DIS, 3, "PA.3"},
++#endif
++#ifdef AIC_USING_GPAI4
++    {2, PIN_PULL_DIS, 3, "PA.4"},
++#endif
++#ifdef AIC_USING_GPAI5
++    {2, PIN_PULL_DIS, 3, "PA.5"},
++#endif
++#ifdef AIC_USING_GPAI6
++    {2, PIN_PULL_DIS, 3, "PA.6"},
++#endif
++#ifdef AIC_USING_GPAI7
++    {2, PIN_PULL_DIS, 3, "PA.7"},
++#endif
++#ifdef AIC_USING_CTP
++    {1, PIN_PULL_DIS, 3, AIC_TOUCH_PANEL_RST_PIN},
++#ifdef AIC_TOUCH_PANEL_WAKE_UP
++    {1, PIN_PULL_DIS, 3, AIC_TOUCH_PANEL_INT_PIN, FLAG_WAKEUP_SOURCE},
++#else
++    {1, PIN_PULL_DIS, 3, AIC_TOUCH_PANEL_INT_PIN},
++#endif
++#endif
++#ifdef AIC_USING_PM
++    {1, PIN_PULL_DIS, 3, AIC_BOARD_LEVEL_POWER_PIN, FLAG_POWER_PIN},
++#ifdef AIC_PM_DEMO
++    {1, PIN_PULL_UP, 3, AIC_PM_POWER_KEY_GPIO, FLAG_WAKEUP_SOURCE},
++#endif
++#endif
++};
++
++uint32_t aic_pinmux_config_size = ARRAY_SIZE(aic_pinmux_config);
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/SConscript
+@@ -0,0 +1,14 @@
++Import('RTT_ROOT')
++Import('rtconfig')
++from building import *
++
++cwd     = GetCurrentDir()
++
++# add the board drivers.
++src     = Glob("*.c") + Glob("*.cpp") + Glob("*.S")
++
++LOCAL_CPPPATH = [cwd]
++CPPPATH = [cwd + '/include']
++group   = DefineGroup('Board', src, depend = [''], LOCAL_CPPPATH = LOCAL_CPPPATH, CPPPATH = CPPPATH)
++
++Return('group')
+--- /dev/null
++++ b/target/d13x/d133cbv-hmi-nor/sys_clk.c
+@@ -0,0 +1,81 @@
++/*
++ * Copyright (c) 2022, ArtInChip Technology Co., Ltd
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Authors: weilin.peng@artinchip.com
++ */
++
++#include <aic_core.h>
++#include <aic_hal.h>
++#include "board.h"
++
++struct aic_sysclk
++{
++    unsigned long       freq;
++    unsigned int        clk_id;
++    unsigned int        parent_clk_id;
++};
++
++struct aic_sysclk aic_sysclk_config[] = {
++    {AIC_CLK_PLL_INT0_FREQ, CLK_PLL_INT0, 0},           /* 480000000 */
++    {AIC_CLK_PLL_INT1_FREQ, CLK_PLL_INT1, 0},           /* 1200000000 */
++    {AIC_CLK_PLL_FRA0_FREQ, CLK_PLL_FRA0, 0},           /* 792000000 */
++    {AIC_CLK_PLL_FRA2_FREQ, CLK_PLL_FRA2, 0},           /* 1188000000 */
++    {AIC_CLK_CPU_FREQ, CLK_CPU, CLK_CPU_SRC1},          /* 480000000 */
++    {AIC_CLK_AXI0_FREQ, CLK_AXI0, CLK_AXI_AHB_SRC1},    /* 200000000 */
++    {AIC_CLK_AHB0_FREQ, CLK_AHB0, CLK_AXI_AHB_SRC1},    /* 200000000 */
++    {AIC_CLK_APB0_FREQ, CLK_APB0, CLK_APB0_SRC1},       /* 100000000 */
++//    {24000000, CLK_APB1, 0},
++#ifdef AIC_USING_CLK_OUT0
++    {AIC_CLK_OUT0_FREQ, CLK_OUT0, 0},
++#endif /* AIC_USING_CLK_OUT0 */
++#ifdef AIC_USING_CLK_OUT1
++    {AIC_CLK_OUT1_FREQ, CLK_OUT1, 0},
++#endif /* AIC_USING_CLK_OUT1 */
++#ifdef AIC_USING_CLK_OUT2
++    {AIC_CLK_OUT2_FREQ, CLK_OUT2, 0},
++#endif /* AIC_USING_CLK_OUT2 */
++#ifdef AIC_USING_CLK_OUT3
++    {AIC_CLK_OUT3_FREQ, CLK_OUT3, 0},
++#endif /* AIC_USING_CLK_OUT3 */
++};
++
++/*
++ * Some Chips may enable USB0 EHCI in Boot ROM,
++ * it is better to disable USB0 EHCI during boot to avoid some side effect.
++ */
++static void usb_ehci_disable(void)
++{
++    hal_clk_disable_assertrst(CLK_USBH0);
++    hal_clk_disable(CLK_USBH0);
++}
++
++void aic_board_sysclk_init(void)
++{
++    uint32_t i = 0;
++
++    usb_ehci_disable();
++
++    for (i=0; i<sizeof(aic_sysclk_config)/sizeof(struct aic_sysclk); i++) {
++        if (aic_sysclk_config[i].freq == 0)
++            continue;
++
++        /* multi parent clk */
++        if (aic_sysclk_config[i].parent_clk_id) {
++            hal_clk_set_freq(aic_sysclk_config[i].parent_clk_id,
++                             aic_sysclk_config[i].freq);
++            hal_clk_enable(aic_sysclk_config[i].parent_clk_id);
++            hal_clk_set_parent(aic_sysclk_config[i].clk_id,
++                               aic_sysclk_config[i].parent_clk_id);
++        } else {
++            hal_clk_set_freq(aic_sysclk_config[i].clk_id, aic_sysclk_config[i].freq);
++            hal_clk_enable(aic_sysclk_config[i].clk_id);
++        }
++    }
++
++    /* Enable sys clk */
++    hal_clk_enable_deassertrst_iter(CLK_GPIO);
++    hal_clk_enable_deassertrst_iter(CLK_GTC);
++}
++
+--- /dev/null
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -0,0 +1,146 @@
++CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig"
++CONFIG_PRJ_CHIP="d13x"
++CONFIG_PRJ_BOARD="d133cbv-hmi-nor"
++CONFIG_PRJ_KERNEL="rt-thread"
++CONFIG_PRJ_APP="d133_hmi"
++CONFIG_AIC_USING_FS_IMAGE_0=y
++CONFIG_AIC_USING_FS_IMAGE_TYPE_FATFS_FOR_0=y
++CONFIG_AIC_FS_IMAGE_DIR_0="rodata/"
++CONFIG_AIC_FS_IMAGE_NAME_0="rodata.fatfs"
++CONFIG_AIC_USING_FS_IMAGE_1=y
++CONFIG_AIC_FS_IMAGE_DIR_1="data/"
++CONFIG_AIC_FS_IMAGE_NAME_1="data.lfs"
++CONFIG_LVGL_V_9=y
++# CONFIG_AIC_LVGL_DEMO is not set
++
++CONFIG_LV_COLOR_DEPTH=16
++CONFIG_LV_CACHE_IMG_NUM=8
++CONFIG_AIC_USING_UART0=y
++CONFIG_AIC_USING_I2C2=y
++# CONFIG_AIC_USING_CAN0 is not set
++CONFIG_AIC_USING_QSPI0=y
++CONFIG_AIC_QSPI0_DEVICE_SPINOR=y
++CONFIG_AIC_QSPI0_DEVICE_SPINOR_FREQ=100000000
++CONFIG_AIC_DEV_QSPI0_MAX_SRC_FREQ_HZ=100000000
++CONFIG_AIC_QSPI0_BUS_WIDTH_4=y
++CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
++# CONFIG_AIC_USING_TSEN is not set
++# CONFIG_AIC_USING_TSEN_CPU is not set
++# CONFIG_AIC_USING_TSEN_GPAI is not set
++# CONFIG_AIC_USING_GPAI is not set
++# CONFIG_AIC_USING_GPAI7 is not set
++CONFIG_AIC_DISP_LVDS=y
++CONFIG_AICFB_RGB565=y
++CONFIG_AIC_PAN_DISPLAY=y
++CONFIG_AIC_DISP_BOOTUP_LOGO=y
++# CONFIG_AIC_DISP_COLOR_BLOCK is not set
++CONFIG_AIC_DISP_BLACK_SCREEN=y
++# CONFIG_AIC_STARTUP_UI_SHOW is not set
++CONFIG_AIC_PANEL_ENABLE_GPIO="PE.13"
++# CONFIG_AIC_USING_AUDIO is not set
++CONFIG_AIC_USING_DMA=y
++CONFIG_AIC_USING_WRI=y
++CONFIG_AIC_USING_RTC=y
++CONFIG_AIC_USING_WDT=y
++CONFIG_AIC_PSRAM_SW_SIZE=0x0
++CONFIG_AIC_INTERRUPTSTACK_SIZE=4096
++CONFIG_AIC_CLK_PLL_FRA0_FREQ=792000000
++CONFIG_AIC_CLK_PLL_FRA2_FREQ=1188000000
++CONFIG_AIC_CLK_PLL_INT0_FREQ=480000000
++CONFIG_AIC_CLK_PLL_INT1_FREQ=1200000000
++CONFIG_AIC_CLK_CPU_FREQ=480000000
++CONFIG_AIC_CLK_AXI0_FREQ=200000000
++CONFIG_AIC_CLK_AHB0_FREQ=200000000
++CONFIG_AIC_CLK_APB0_FREQ=100000000
++CONFIG_AIC_USING_SID=y
++CONFIG_AIC_USING_MTOP=y
++CONFIG_AIC_USING_PSADC=y
++CONFIG_AIC_USING_PSADC6=y
++CONFIG_IDLE_THREAD_STACK_SIZE=1024
++# CONFIG_RT_KSERVICE_USING_STDLIB is not set
++# CONFIG_RT_DEBUG is not set
++CONFIG_RT_MEMHEAP_BSET_MODE=y
++CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
++# CONFIG_RT_USING_MEMHEAP_AUTO_BINDING is not set
++CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_MAIN_THREAD_STACK_SIZE=4096
++CONFIG_FINSH_USING_WORD_OPERATION=y
++CONFIG_FINSH_USING_FUNC_EXT=y
++CONFIG_DFS_FILESYSTEMS_MAX=8
++CONFIG_RT_USING_DFS_MNTTABLE=y
++CONFIG_RT_USING_DFS_ELMFAT=y
++CONFIG_RT_DFS_ELM_LFN_UNICODE_2=y
++CONFIG_RT_DFS_ELM_USE_EXFAT=y
++CONFIG_RT_DFS_ELM_DRIVES=4
++CONFIG_RT_DFS_ELM_MAX_SECTOR_SIZE=4096
++CONFIG_RT_USING_DFS_ROMFS=y
++CONFIG_RT_USING_FAL=y
++CONFIG_FAL_USING_SFUD_PORT=y
++# CONFIG_FAL_BLK_DEVICE_RDONLY is not set
++CONFIG_RT_USING_PWM=y
++CONFIG_RT_USING_PM=y
++CONFIG_PM_USING_CUSTOM_CONFIG=y
++CONFIG_PM_ENABLE_SUSPEND_SLEEP_MODE=y
++CONFIG_PM_ENABLE_THRESHOLD_SLEEP_MODE=y
++CONFIG_RT_MMCSD_STACK_SIZE=8192
++CONFIG_RT_SFUD_USING_QSPI=y
++CONFIG_RT_USING_TOUCH=y
++CONFIG_RT_TOUCH_PIN_IRQ=y
++CONFIG_RT_USING_ULOG=y
++CONFIG_ULOG_OUTPUT_LVL_W=y
++CONFIG_ULOG_TIME_USING_TIMESTAMP=y
++CONFIG_ULOG_USING_FILTER=y
++CONFIG_LPKG_USING_CPU_USAGE=y
++CONFIG_LPKG_USING_LITTLEFS=y
++CONFIG_AIC_MPP_PLAYER_INTERFACE=y
++CONFIG_AIC_MPP_PLAYER_VIDEO_EXT_RENDER=y
++CONFIG_AIC_GPIO_IRQ_DRV_EN=y
++CONFIG_AIC_USING_TOUCH=y
++CONFIG_AIC_TOUCH_PANEL_I2C_CHAN="i2c2"
++CONFIG_AIC_TOUCH_PANEL_RST_PIN="PA.10"
++CONFIG_AIC_TOUCH_PANEL_INT_PIN="PA.11"
++CONFIG_AIC_CMU_DRV_TEST=y
++CONFIG_AIC_GPIO_DRV_TEST=y
++CONFIG_AIC_DMA_DRV_TEST=y
++CONFIG_AIC_CAN_DRV_TEST=y
++CONFIG_AIC_AUDIO_DRV_TEST=y
++CONFIG_AIC_GPAI_TEST=y
++CONFIG_AIC_TSEN_TEST=y
++CONFIG_AIC_PSADC_TEST=y
++
++
++CONFIG_AIC_USING_SDMC1=y
++CONFIG_AIC_SDMC1_USING_HOTPLUG=y
++CONFIG_AIC_SDMC1_HOTPLUG_PIN="PC.6"
++
++
++
++CONFIG_AIC_ENV_INTERFACE=y
++CONFIG_AIC_AB_SYSTEM_INTERFACE=y
++CONFIG_AIC_HMI_HEALTH_CONFIRM=y
++CONFIG_LPKG_USING_OTA_DOWNLOADER=y
++CONFIG_OTA_DATA_DIRECT=y
++CONFIG_LPKG_USING_MBEDTLS=y
++CONFIG_HMI_APP=y
++
++CONFIG_HMI_SD_OTA=y
++CONFIG_HMI_NETWORK=y
++CONFIG_AIC_USING_GMAC0=y
++CONFIG_AIC_DEV_GMAC0_RMII=y
++CONFIG_AIC_DEV_GMAC0_PHY_EXTCLK=y
++CONFIG_AIC_DEV_GMAC0_PHYRST_GPIO="PE.6"
++CONFIG_AIC_DEV_GMAC0_PHYADDR=1
++CONFIG_AIC_USING_CLK_OUT2=y
++CONFIG_AIC_CLK_OUT2_FREQ=25000000
++CONFIG_RT_USING_LWIP=y
++CONFIG_RT_USING_NETDEV=y
++CONFIG_RT_LWIP_DHCP=y
++CONFIG_HMI_UI=y
++CONFIG_HMI_FW_VERSION="1.0.9"
++CONFIG_LPKG_USING_LVGL=y
++CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
++CONFIG_LV_FONT_MONTSERRAT_16=y
++CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
++CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
++CONFIG_LPKG_USING_FREETYPE=y
++
+--- /dev/null
++++ b/target/configs/d13x_d133cbv-hmi-nor_rt-thread_helloworld_defconfig
+@@ -0,0 +1,100 @@
++CONFIG_PRJ_DEFCONFIG_FILENAME="d13x_d133cbv-hmi-nor_rt-thread_helloworld_defconfig"
++CONFIG_PRJ_CHIP="d13x"
++CONFIG_PRJ_BOARD="d133cbv-hmi-nor"
++CONFIG_PRJ_KERNEL="rt-thread"
++CONFIG_PRJ_APP="helloworld"
++CONFIG_AIC_USING_FS_IMAGE_0=y
++CONFIG_AIC_USING_FS_IMAGE_TYPE_FATFS_FOR_0=y
++CONFIG_AIC_FS_IMAGE_DIR_0="rodata/"
++CONFIG_AIC_FS_IMAGE_NAME_0="rodata.fatfs"
++CONFIG_AIC_USING_FS_IMAGE_1=y
++CONFIG_AIC_FS_IMAGE_DIR_1="data/"
++CONFIG_AIC_FS_IMAGE_NAME_1="data.lfs"
++CONFIG_LVGL_V_9=y
++CONFIG_AIC_LVGL_DEMO=y
++CONFIG_AIC_LVGL_DEMO_HUB_DEMO=y
++CONFIG_LV_COLOR_DEPTH=16
++CONFIG_LV_CACHE_IMG_NUM=8
++CONFIG_AIC_USING_UART0=y
++CONFIG_AIC_USING_I2C2=y
++CONFIG_AIC_USING_CAN0=y
++CONFIG_AIC_USING_QSPI0=y
++CONFIG_AIC_QSPI0_DEVICE_SPINOR=y
++CONFIG_AIC_USING_TSEN=y
++CONFIG_AIC_USING_TSEN_CPU=y
++CONFIG_AIC_USING_TSEN_GPAI=y
++CONFIG_AIC_USING_GPAI=y
++CONFIG_AIC_USING_GPAI7=y
++CONFIG_AIC_DISP_LVDS=y
++CONFIG_AICFB_RGB565=y
++CONFIG_AIC_PAN_DISPLAY=y
++CONFIG_AIC_STARTUP_UI_SHOW=y
++CONFIG_AIC_PANEL_ENABLE_GPIO="PE.13"
++CONFIG_AIC_USING_AUDIO=y
++CONFIG_AIC_AUDIO_PA_ENABLE_GPIO="PD.10"
++CONFIG_AIC_AUDIO_EN_PIN_LOW=y
++CONFIG_AIC_AUDIO_SPK_1=y
++CONFIG_AIC_USING_DMA=y
++CONFIG_AIC_USING_WRI=y
++CONFIG_AIC_USING_RTC=y
++CONFIG_AIC_USING_WDT=y
++CONFIG_AIC_PSRAM_SW_SIZE=0x0
++CONFIG_AIC_INTERRUPTSTACK_SIZE=4096
++CONFIG_AIC_CLK_PLL_FRA0_FREQ=792000000
++CONFIG_AIC_CLK_PLL_FRA2_FREQ=1188000000
++CONFIG_AIC_USING_SID=y
++CONFIG_AIC_USING_MTOP=y
++CONFIG_AIC_USING_PSADC=y
++CONFIG_AIC_USING_PSADC6=y
++CONFIG_IDLE_THREAD_STACK_SIZE=1024
++# CONFIG_RT_KSERVICE_USING_STDLIB is not set
++# CONFIG_RT_DEBUG is not set
++CONFIG_RT_MEMHEAP_BSET_MODE=y
++CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
++# CONFIG_RT_USING_MEMHEAP_AUTO_BINDING is not set
++CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_MAIN_THREAD_STACK_SIZE=4096
++CONFIG_FINSH_USING_WORD_OPERATION=y
++CONFIG_FINSH_USING_FUNC_EXT=y
++CONFIG_DFS_FILESYSTEMS_MAX=8
++CONFIG_RT_USING_DFS_MNTTABLE=y
++CONFIG_RT_USING_DFS_ELMFAT=y
++CONFIG_RT_DFS_ELM_LFN_UNICODE_2=y
++CONFIG_RT_DFS_ELM_USE_EXFAT=y
++CONFIG_RT_DFS_ELM_DRIVES=4
++CONFIG_RT_DFS_ELM_MAX_SECTOR_SIZE=4096
++CONFIG_RT_USING_DFS_ROMFS=y
++CONFIG_RT_USING_FAL=y
++CONFIG_FAL_USING_SFUD_PORT=y
++# CONFIG_FAL_BLK_DEVICE_RDONLY is not set
++CONFIG_RT_USING_PWM=y
++CONFIG_RT_USING_PM=y
++CONFIG_PM_USING_CUSTOM_CONFIG=y
++CONFIG_PM_ENABLE_SUSPEND_SLEEP_MODE=y
++CONFIG_PM_ENABLE_THRESHOLD_SLEEP_MODE=y
++CONFIG_RT_MMCSD_STACK_SIZE=8192
++CONFIG_RT_SFUD_USING_QSPI=y
++CONFIG_RT_USING_TOUCH=y
++CONFIG_RT_TOUCH_PIN_IRQ=y
++CONFIG_RT_USING_ULOG=y
++CONFIG_ULOG_OUTPUT_LVL_I=y
++CONFIG_ULOG_TIME_USING_TIMESTAMP=y
++CONFIG_ULOG_USING_FILTER=y
++CONFIG_LPKG_USING_CPU_USAGE=y
++CONFIG_LPKG_USING_LITTLEFS=y
++CONFIG_AIC_MPP_PLAYER_INTERFACE=y
++CONFIG_AIC_MPP_PLAYER_VIDEO_EXT_RENDER=y
++CONFIG_AIC_GPIO_IRQ_DRV_EN=y
++CONFIG_AIC_USING_TOUCH=y
++CONFIG_AIC_TOUCH_PANEL_I2C_CHAN="i2c2"
++CONFIG_AIC_TOUCH_PANEL_RST_PIN="PA.10"
++CONFIG_AIC_TOUCH_PANEL_INT_PIN="PA.11"
++CONFIG_AIC_CMU_DRV_TEST=y
++CONFIG_AIC_GPIO_DRV_TEST=y
++CONFIG_AIC_DMA_DRV_TEST=y
++CONFIG_AIC_CAN_DRV_TEST=y
++CONFIG_AIC_AUDIO_DRV_TEST=y
++CONFIG_AIC_GPAI_TEST=y
++CONFIG_AIC_TSEN_TEST=y
++CONFIG_AIC_PSADC_TEST=y
++

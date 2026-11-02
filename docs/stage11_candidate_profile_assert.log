@@ -1,0 +1,17 @@
+﻿scons: Reading SConscript files ...
+Newlib version:3.2.0
+scons: done reading SConscript files.
+scons: Building targets ...
+python3.exe : 
+At D:\Users\ws2608007\Desktop\D113\资料整理\D133CBS_HMI_AB_OTA\scripts\build.ps1:59 char:13
++             & $python -c 'import SCons.Script; SCons.Script.main()' " ...
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota
+scons: `.' is up to date.
+scons: done building targets.
