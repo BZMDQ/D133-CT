@@ -205,6 +205,10 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
 static int decode_mpp_image(const lv_image_header_t *header)
 {
     lv_image_decoder_args_t args = {0};
+    rt_uint32_t decode_started;
+    rt_uint32_t decode_ms;
+    rt_uint32_t normalize_started;
+    rt_uint32_t normalize_ms = 0;
     int result;
 
     if (!dimensions_supported(header))
@@ -212,10 +216,14 @@ static int decode_mpp_image(const lv_image_header_t *header)
 
     args.no_cache = true;
     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
+    decode_started = rt_tick_get_millisecond();
     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
-        rt_kprintf("[image_preview] SDK MPP 解码失败：%s\n", preview_source_path);
+        rt_kprintf("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
+                   (unsigned)(rt_tick_get_millisecond() - decode_started),
+                   preview_source_path);
         return IMAGE_PREVIEW_ERR_DECODE;
     }
+    decode_ms = rt_tick_get_millisecond() - decode_started;
     decoder_opened = 1;
     if (!decoder_dsc.decoded || !decoder_dsc.decoded->unaligned_data ||
         (decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB565 &&
@@ -230,7 +238,12 @@ static int decode_mpp_image(const lv_image_header_t *header)
     }
 
     /* 各种源格式在工作线程归一为 RGB565，避免 LVGL/GE2D 对格式解释不一致。 */
+    normalize_started = rt_tick_get_millisecond();
     result = normalize_decoded_frame_to_rgb565(decoder_dsc.decoded);
+    normalize_ms = rt_tick_get_millisecond() - normalize_started;
+    rt_kprintf("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
+               decode_ms, normalize_ms, decoder_dsc.header.w, decoder_dsc.header.h,
+               (unsigned)decoder_dsc.header.cf);
     if (result != IMAGE_PREVIEW_ERR_NONE) {
         lv_image_decoder_close(&decoder_dsc);
         decoder_opened = 0;
@@ -245,6 +258,11 @@ static int load_image(const char *path)
     lv_image_header_t header = {0};
     image_kind_t kind = image_kind(path);
     size_t path_len;
+    rt_uint32_t started = rt_tick_get_millisecond();
+    rt_uint32_t info_ms;
+    rt_uint32_t info_started;
+    rt_uint32_t decode_started;
+    int result;
 
     if (kind == IMAGE_KIND_UNSUPPORTED)
         return IMAGE_PREVIEW_ERR_FORMAT;
@@ -271,10 +289,12 @@ static int load_image(const char *path)
         }
     }
 
+    info_started = rt_tick_get_millisecond();
     if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
         rt_kprintf("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
         return IMAGE_PREVIEW_ERR_DECODE;
     }
+    info_ms = rt_tick_get_millisecond() - info_started;
     if (!dimensions_supported(&header)) {
         rt_kprintf("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
                    path, header.w, header.h);
@@ -284,7 +304,12 @@ static int load_image(const char *path)
         return IMAGE_PREVIEW_ERR_CANCELLED;
 
     /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
-    return decode_mpp_image(&header);
+    decode_started = rt_tick_get_millisecond();
+    result = decode_mpp_image(&header);
+    rt_kprintf("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
+               (unsigned)(rt_tick_get_millisecond() - started), info_ms,
+               (unsigned)(rt_tick_get_millisecond() - decode_started), result);
+    return result;
 }
 
 static const char *error_text(int error)

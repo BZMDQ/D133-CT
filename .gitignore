@@ -12,12 +12,18 @@ __pycache__/
 keys/*.pem
 !keys/README.md
 
-# 仓库只跟踪当前工厂镜像和当前 OTA 发布包，其它历史下载包不纳入版本控制
+# 工厂镜像和已发布 OTA 包使用显式白名单；其它本地历史下载包继续忽略
 downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.16.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.16.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.18.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.18.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sig
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.json
 !downloads/d13x_d133cbv-hmi-nor_ota_v1.0.17.cpio.sha256
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.cpio
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.cpio.sig
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.json
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.18.cpio.sha256
 !downloads/SHA256SUMS_current.txt

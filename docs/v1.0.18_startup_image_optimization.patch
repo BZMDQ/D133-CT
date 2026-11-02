@@ -1,0 +1,575 @@
+# diff: source\application\rt-thread\d133_hmi\ui\ui_manager.c
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.18_build_snapshot\ui_manager_before_v1.0.18.c', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\application\rt-thread\d133_hmi\ui\ui_manager.c', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\ui_manager_before_v1.0.18.c" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\ui\\ui_manager.c"
+index a04794a..79de8ae 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\ui_manager_before_v1.0.18.c"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\ui\\ui_manager.c"
+@@ -46,6 +46,7 @@ static lv_obj_t *image_overlay;
+ static lv_obj_t *image_area;
+ static lv_obj_t *image_status_label;
+ static lv_obj_t *image_object;
++static lv_timer_t *image_ui_timer;
+ static lv_obj_t *ip_input;
+ static lv_obj_t *mask_input;
+ static lv_obj_t *gw_input;
+@@ -199,8 +200,28 @@ static void keyboard_event(lv_event_t *event)
+         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+ }
+ 
++/* 键盘只在用户首次聚焦输入框时创建，避免首页启动时生成大量按键对象。 */
++static int keyboard_ensure(void)
++{
++    if (keyboard)
++        return 0;
++
++    keyboard = lv_keyboard_create(lv_screen_active());
++    if (!keyboard)
++        return -1;
++    lv_obj_set_size(keyboard, 1024, 235);
++    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
++    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_ALL, NULL);
++    return 0;
++}
++
+ static void focus(lv_event_t *event)
+ {
++    if (keyboard_ensure()) {
++        message("无法创建输入键盘。");
++        return;
++    }
+     lv_keyboard_set_textarea(keyboard, lv_event_get_target(event));
+     lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+     lv_obj_move_foreground(keyboard);
+@@ -308,6 +329,10 @@ static void close_image_preview(lv_event_t *event)
+     lv_obj_t *overlay = image_overlay;
+ 
+     LV_UNUSED(event);
++    if (image_ui_timer) {
++        lv_timer_delete(image_ui_timer);
++        image_ui_timer = NULL;
++    }
+     image_overlay = NULL;
+     image_area = NULL;
+     image_status_label = NULL;
+@@ -317,6 +342,66 @@ static void close_image_preview(lv_event_t *event)
+     image_preview_cancel();
+ }
+ 
++/* 由 LVGL 线程快速检查解码结果，避免等待主界面 200 ms 状态轮询。 */
++static void image_preview_ui_timer(lv_timer_t *timer_obj)
++{
++    image_preview_state_t state;
++    const lv_image_dsc_t *image_dsc;
++    char status[128];
++
++    if (!image_overlay || !image_status_label) {
++        image_ui_timer = NULL;
++        lv_timer_delete(timer_obj);
++        return;
++    }
++
++    state = image_preview_status(status, sizeof(status));
++    if (state == IMAGE_PREVIEW_LOADING) {
++        lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++        lv_label_set_text(image_status_label, status);
++        return;
++    }
++
++    if (state == IMAGE_PREVIEW_READY && image_area) {
++        uint32_t scale_x;
++        uint32_t scale_y;
++        uint32_t scale;
++
++        image_dsc = image_preview_get_image();
++        if (image_dsc && !image_object) {
++            image_object = lv_image_create(image_area);
++            if (image_object) {
++                lv_image_set_src(image_object, image_dsc);
++                lv_image_set_antialias(image_object, false);
++                /* 向上取整并取较大比例，裁边铺满屏幕。 */
++                scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
++                           image_dsc->header.w - 1U) / image_dsc->header.w;
++                scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
++                           image_dsc->header.h - 1U) / image_dsc->header.h;
++                scale = scale_x > scale_y ? scale_x : scale_y;
++                if (scale == 0U)
++                    scale = 1U;
++                lv_image_set_scale(image_object, scale);
++                lv_obj_center(image_object);
++            }
++        }
++
++        if (image_object) {
++            lv_obj_add_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++        } else {
++            lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++            lv_label_set_text(image_status_label, "图片控件创建失败。");
++        }
++    } else {
++        lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
++        lv_label_set_text(image_status_label, status);
++    }
++
++    /* 完成或失败后移除短周期轮询，释放 LVGL timer 对象。 */
++    image_ui_timer = NULL;
++    lv_timer_delete(timer_obj);
++}
++
+ static void show_image_preview(const char *path)
+ {
+     lv_obj_t *root;
+@@ -387,6 +472,12 @@ static void show_image_preview(const char *path)
+                          close_image_preview, NULL);
+     lv_obj_set_height(back_button, 56);
+     lv_obj_move_foreground(image_overlay);
++
++    image_ui_timer = lv_timer_create(image_preview_ui_timer, 20, NULL);
++    if (!image_ui_timer) {
++        close_image_preview(NULL);
++        message("无法创建图片刷新任务。");
++    }
+ }
+ 
+ static void table_event(lv_event_t *event)
+@@ -717,9 +808,6 @@ static void timer(lv_timer_t *timer_obj)
+     char network[160];
+     boot_status_t boot;
+     hmi_ota_status_t ota;
+-    image_preview_state_t image_state;
+-    const lv_image_dsc_t *image_dsc;
+-    char image_status[128];
+ 
+     LV_UNUSED(timer_obj);
+     boot_manager_ui_heartbeat();
+@@ -727,46 +815,6 @@ static void timer(lv_timer_t *timer_obj)
+     ota_manager_get(&ota);
+     network_manager_status(network, sizeof(network));
+ 
+-    if (image_overlay && image_status_label) {
+-        image_state = image_preview_status(image_status, sizeof(image_status));
+-        if (image_state == IMAGE_PREVIEW_READY && image_area) {
+-            image_dsc = image_preview_get_image();
+-            if (image_dsc && !image_object) {
+-                uint32_t scale_x;
+-                uint32_t scale_y;
+-                uint32_t scale;
+-
+-                image_object = lv_image_create(image_area);
+-                if (image_object) {
+-                    lv_image_set_src(image_object, image_dsc);
+-                    lv_image_set_antialias(image_object, false);
+-                    /* 向上取整并选择较大的缩放比例，裁掉多余边缘以铺满屏幕。 */
+-                    scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
+-                               image_dsc->header.w - 1U) / image_dsc->header.w;
+-                    scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
+-                               image_dsc->header.h - 1U) / image_dsc->header.h;
+-                    scale = scale_x > scale_y ? scale_x : scale_y;
+-                    if (scale == 0U)
+-                        scale = 1U;
+-                    lv_image_set_scale(image_object, scale);
+-                    lv_obj_center(image_object);
+-                } else {
+-                    snprintf(image_status, sizeof(image_status), "图片控件创建失败。");
+-                }
+-            }
+-            if (image_dsc && image_object) {
+-                snprintf(image_status, sizeof(image_status), "已加载图片：%u × %u",
+-                         image_dsc->header.w, image_dsc->header.h);
+-            }
+-        }
+-        if (image_state == IMAGE_PREVIEW_READY && image_object) {
+-            /* 图片显示后收起状态条，不遮挡全屏画面。 */
+-            lv_obj_add_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+-        } else {
+-            lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+-            lv_label_set_text(image_status_label, image_status);
+-        }
+-    }
+     if (page != 0) {
+         snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
+                  boot.current, boot.next, boot.resource,
+@@ -953,11 +1001,6 @@ void hmi_ui_init(void)
+     lv_obj_set_style_pad_all(content, 0, LV_PART_MAIN);
+     lv_obj_set_style_radius(content, 0, LV_PART_MAIN);
+     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+-    keyboard = lv_keyboard_create(root);
+-    lv_obj_set_size(keyboard, 1024, 235);
+-    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+-    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+-    lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_ALL, NULL);
+     screen(0);
+     lv_timer_create(timer, 200, NULL);
+     if (lv_display_get_default()) {
+
+# diff: source\application\rt-thread\d133_hmi\ui\image_preview.c
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.18_build_snapshot\image_preview_before_v1.0.18.c', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\application\rt-thread\d133_hmi\ui\image_preview.c', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\image_preview_before_v1.0.18.c" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\ui\\image_preview.c"
+index ea56ba6..04f6c7e 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\image_preview_before_v1.0.18.c"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\ui\\image_preview.c"
+@@ -205,6 +205,10 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
+ static int decode_mpp_image(const lv_image_header_t *header)
+ {
+     lv_image_decoder_args_t args = {0};
++    rt_uint32_t decode_started;
++    rt_uint32_t decode_ms;
++    rt_uint32_t normalize_started;
++    rt_uint32_t normalize_ms = 0;
+     int result;
+ 
+     if (!dimensions_supported(header))
+@@ -212,10 +216,14 @@ static int decode_mpp_image(const lv_image_header_t *header)
+ 
+     args.no_cache = true;
+     memset(&decoder_dsc, 0, sizeof(decoder_dsc));
++    decode_started = rt_tick_get_millisecond();
+     if (lv_image_decoder_open(&decoder_dsc, preview_source_path, &args) != LV_RESULT_OK) {
+-        rt_kprintf("[image_preview] SDK MPP 解码失败：%s\n", preview_source_path);
++        rt_kprintf("[image_preview] SDK MPP 打开/解码失败，耗时 %u ms：%s\n",
++                   (unsigned)(rt_tick_get_millisecond() - decode_started),
++                   preview_source_path);
+         return IMAGE_PREVIEW_ERR_DECODE;
+     }
++    decode_ms = rt_tick_get_millisecond() - decode_started;
+     decoder_opened = 1;
+     if (!decoder_dsc.decoded || !decoder_dsc.decoded->unaligned_data ||
+         (decoder_dsc.header.cf != LV_COLOR_FORMAT_RGB565 &&
+@@ -230,7 +238,12 @@ static int decode_mpp_image(const lv_image_header_t *header)
+     }
+ 
+     /* 各种源格式在工作线程归一为 RGB565，避免 LVGL/GE2D 对格式解释不一致。 */
++    normalize_started = rt_tick_get_millisecond();
+     result = normalize_decoded_frame_to_rgb565(decoder_dsc.decoded);
++    normalize_ms = rt_tick_get_millisecond() - normalize_started;
++    rt_kprintf("[image_preview] 阶段耗时：MPP=%u ms，RGB565=%u ms，尺寸=%u x %u，CF=%u\n",
++               decode_ms, normalize_ms, decoder_dsc.header.w, decoder_dsc.header.h,
++               (unsigned)decoder_dsc.header.cf);
+     if (result != IMAGE_PREVIEW_ERR_NONE) {
+         lv_image_decoder_close(&decoder_dsc);
+         decoder_opened = 0;
+@@ -245,6 +258,11 @@ static int load_image(const char *path)
+     lv_image_header_t header = {0};
+     image_kind_t kind = image_kind(path);
+     size_t path_len;
++    rt_uint32_t started = rt_tick_get_millisecond();
++    rt_uint32_t info_ms;
++    rt_uint32_t info_started;
++    rt_uint32_t decode_started;
++    int result;
+ 
+     if (kind == IMAGE_KIND_UNSUPPORTED)
+         return IMAGE_PREVIEW_ERR_FORMAT;
+@@ -271,10 +289,12 @@ static int load_image(const char *path)
+         }
+     }
+ 
++    info_started = rt_tick_get_millisecond();
+     if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
+         rt_kprintf("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
+         return IMAGE_PREVIEW_ERR_DECODE;
+     }
++    info_ms = rt_tick_get_millisecond() - info_started;
+     if (!dimensions_supported(&header)) {
+         rt_kprintf("[image_preview] 图片尺寸超限：%s (%u x %u)\n",
+                    path, header.w, header.h);
+@@ -284,7 +304,12 @@ static int load_image(const char *path)
+         return IMAGE_PREVIEW_ERR_CANCELLED;
+ 
+     /* MPP 的 BMP 路径也返回整张图像缓冲区，不提供逐行 get_area 回调。 */
+-    return decode_mpp_image(&header);
++    decode_started = rt_tick_get_millisecond();
++    result = decode_mpp_image(&header);
++    rt_kprintf("[image_preview] 总耗时：%u ms，文件头=%u ms，解码/归一化=%u ms，结果=%d\n",
++               (unsigned)(rt_tick_get_millisecond() - started), info_ms,
++               (unsigned)(rt_tick_get_millisecond() - decode_started), result);
++    return result;
+ }
+ 
+ static const char *error_text(int error)
+
+# diff: source\packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_bmp.c
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.18_build_snapshot\sdk_lv_aic_bmp.c.original', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_bmp.c', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\sdk_lv_aic_bmp.c.original" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\packages\\artinchip\\lvgl-ui\\lvgl_v9\\lv_drivers\\lv_mpp_dec\\lv_aic_bmp.c"
+index cb262e5..1fae383 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\sdk_lv_aic_bmp.c.original"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\packages\\artinchip\\lvgl-ui\\lvgl_v9\\lv_drivers\\lv_mpp_dec\\lv_aic_bmp.c"
+@@ -7,6 +7,7 @@
+  */
+ 
+ #include <stdlib.h>
++#include <string.h>
+ 
+ #include "aic_core.h"
+ #include "lv_aic_stream.h"
+@@ -94,6 +95,125 @@ lv_result_t lv_bmp_decoder_info(const char *src, lv_image_header_t *header, uint
+     return LV_RESULT_OK;
+ }
+ 
++#define LV_AIC_BMP_READ_CHUNK_SIZE (32U * 1024U)
++
++/* 批量读取 BMP 行数据，减少 SD 卡文件系统逐行调用开销。 */
++static lv_result_t lv_bmp_read_pixels(lv_stream_t *stream, uint8_t *dst,
++                                      int32_t height, int32_t stride,
++                                      int32_t aligned_stride, uint32_t image_size,
++                                      bool bottom_up)
++{
++    uint32_t row_count = (uint32_t)height;
++    uint32_t source_stride = (uint32_t)stride;
++    uint32_t target_stride = (uint32_t)aligned_stride;
++    uint32_t source_size = source_stride * row_count;
++    uint32_t read_num = 0;
++    uint8_t *scratch = NULL;
++    lv_fs_res_t fs_res;
++
++    if (!stream || !dst || height <= 0 || stride <= 0 || aligned_stride < stride)
++        return LV_RESULT_INVALID;
++
++    /* 常见 1024 像素宽 BMP 行已经对齐：一次顺序读取后原位翻转行序。 */
++    if (source_stride == target_stride) {
++        if (bottom_up) {
++            scratch = (uint8_t *)lv_malloc(source_stride);
++            if (!scratch)
++                goto read_rows_fallback;
++        }
++
++        fs_res = lv_aic_stream_read(stream, dst, source_size, &read_num);
++        if (fs_res != LV_FS_RES_OK || read_num != source_size) {
++            if (scratch)
++                lv_free(scratch);
++            return LV_RESULT_INVALID;
++        }
++
++        if (bottom_up) {
++            uint32_t top;
++            for (top = 0; top < row_count / 2U; top++) {
++                uint8_t *top_row = dst + (size_t)top * target_stride;
++                uint8_t *bottom_row = dst + (size_t)(row_count - 1U - top) * target_stride;
++                memcpy(scratch, top_row, source_stride);
++                memcpy(top_row, bottom_row, source_stride);
++                memcpy(bottom_row, scratch, source_stride);
++            }
++            lv_free(scratch);
++        }
++        if (image_size > source_size)
++            memset(dst + source_size, 0, image_size - source_size);
++        return LV_RESULT_OK;
++    }
++
++    /* 行尾需要补齐时，用不超过 32 KiB 的临时块批量读入并放置到目标行。 */
++    {
++        uint32_t rows_per_chunk = LV_AIC_BMP_READ_CHUNK_SIZE / source_stride;
++        uint32_t source_row = 0;
++
++        if (!rows_per_chunk)
++            rows_per_chunk = 1U;
++        scratch = (uint8_t *)lv_malloc((size_t)rows_per_chunk * source_stride);
++        if (!scratch)
++            goto read_rows_fallback;
++
++        while (source_row < row_count) {
++            uint32_t rows = row_count - source_row;
++            uint32_t bytes;
++            uint32_t row;
++
++            if (rows > rows_per_chunk)
++                rows = rows_per_chunk;
++            bytes = rows * source_stride;
++            read_num = 0;
++            fs_res = lv_aic_stream_read(stream, scratch, bytes, &read_num);
++            if (fs_res != LV_FS_RES_OK || read_num != bytes) {
++                lv_free(scratch);
++                return LV_RESULT_INVALID;
++            }
++
++            for (row = 0; row < rows; row++) {
++                uint32_t source_index = source_row + row;
++                uint32_t target_index = bottom_up ?
++                    row_count - 1U - source_index : source_index;
++                uint8_t *target = dst + (size_t)target_index * target_stride;
++                memcpy(target, scratch + (size_t)row * source_stride, source_stride);
++                memset(target + source_stride, 0, target_stride - source_stride);
++            }
++            source_row += rows;
++        }
++
++        lv_free(scratch);
++    }
++
++    if (image_size > target_stride * row_count)
++        memset(dst + (size_t)target_stride * row_count, 0,
++               image_size - target_stride * row_count);
++    return LV_RESULT_OK;
++
++read_rows_fallback:
++    /* 内存紧张时保留原有逐行读取路径，保证图片仍可打开。 */
++    if (scratch)
++        lv_free(scratch);
++    {
++        uint32_t source_row;
++        for (source_row = 0; source_row < row_count; source_row++) {
++            uint32_t target_index = bottom_up ?
++                row_count - 1U - source_row : source_row;
++            uint8_t *target = dst + (size_t)target_index * target_stride;
++
++            read_num = 0;
++            fs_res = lv_aic_stream_read(stream, target, source_stride, &read_num);
++            if (fs_res != LV_FS_RES_OK || read_num != source_stride)
++                return LV_RESULT_INVALID;
++            memset(target + source_stride, 0, target_stride - source_stride);
++        }
++    }
++    if (image_size > target_stride * row_count)
++        memset(dst + (size_t)target_stride * row_count, 0,
++               image_size - target_stride * row_count);
++    return LV_RESULT_OK;
++}
++
+ lv_result_t lv_bmp_dec_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc)
+ {
+     lv_result_t res = LV_RESULT_OK;
+@@ -109,8 +229,6 @@ lv_result_t lv_bmp_dec_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t
+     int32_t stride_aligned;
+     int32_t image_size;
+     unsigned int align_addr;
+-    uint8_t *buf = NULL;
+-    int i;
+ 
+     if (lv_aic_stream_open(&stream, dsc->src) != LV_FS_RES_OK)
+         return LV_RESULT_INVALID;
+@@ -151,22 +269,11 @@ lv_result_t lv_bmp_dec_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t
+     mpp_data->decoded.data_size = image_size;
+     mpp_data->decoded.unaligned_data = mpp_data->data[0];
+ 
+-    if (height < 0) {
+-        buf = mpp_data->decoded.data;
+-        if (stride == stride_aligned) {
+-            lv_aic_stream_read(&stream, buf, image_size, &read_num);
+-        } else {
+-            for (i = 0; i < abs_height; i++) {
+-                lv_aic_stream_read(&stream, buf, stride, &read_num);
+-                buf += stride_aligned;
+-            }
+-        }
+-    } else {
+-        for (i = height - 1; i >= 0; i--) {
+-            buf = mpp_data->decoded.data + i * stride_aligned;
+-            lv_aic_stream_read(&stream, buf, stride, &read_num);
+-        }
+-    }
++    res = lv_bmp_read_pixels(&stream, mpp_data->decoded.data, abs_height,
++                             stride, stride_aligned, (uint32_t)image_size,
++                             height > 0);
++    if (res != LV_RESULT_OK)
++        goto out;
+     aicos_dcache_clean_invalid_range((ulong *)(ulong)align_addr, ALIGN_UP(image_size, CACHE_LINE_SIZE));
+ 
+     dsc->decoded = &mpp_data->decoded;
+
+# diff: source\target\configs\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\factory_defconfig_before_v1.0.18" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig"
+index a8518eb..2efe33c 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\factory_defconfig_before_v1.0.18"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig"
+@@ -99,14 +99,14 @@ CONFIG_AIC_USING_TOUCH=y
+ CONFIG_AIC_TOUCH_PANEL_I2C_CHAN="i2c2"
+ CONFIG_AIC_TOUCH_PANEL_RST_PIN="PA.10"
+ CONFIG_AIC_TOUCH_PANEL_INT_PIN="PA.11"
+-CONFIG_AIC_CMU_DRV_TEST=y
+-CONFIG_AIC_GPIO_DRV_TEST=y
+-CONFIG_AIC_DMA_DRV_TEST=y
+-CONFIG_AIC_CAN_DRV_TEST=y
+-CONFIG_AIC_AUDIO_DRV_TEST=y
+-CONFIG_AIC_GPAI_TEST=y
+-CONFIG_AIC_TSEN_TEST=y
+-CONFIG_AIC_PSADC_TEST=y
++# CONFIG_AIC_CMU_DRV_TEST is not set
++# CONFIG_AIC_GPIO_DRV_TEST is not set
++# CONFIG_AIC_DMA_DRV_TEST is not set
++# CONFIG_AIC_CAN_DRV_TEST is not set
++# CONFIG_AIC_AUDIO_DRV_TEST is not set
++# CONFIG_AIC_GPAI_TEST is not set
++# CONFIG_AIC_TSEN_TEST is not set
++# CONFIG_AIC_PSADC_TEST is not set
+ 
+ 
+ CONFIG_AIC_USING_SDMC1=y
+@@ -138,7 +138,7 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.16"
++CONFIG_HMI_FW_VERSION="1.0.18"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+
+# diff: source\target\configs\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.18_build_snapshot\ota_defconfig_before_v1.0.18', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\target\configs\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\ota_defconfig_before_v1.0.18" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig"
+index aefbe30..3904e94 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\ota_defconfig_before_v1.0.18"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\configs\\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig"
+@@ -99,14 +99,14 @@ CONFIG_AIC_USING_TOUCH=y
+ CONFIG_AIC_TOUCH_PANEL_I2C_CHAN="i2c2"
+ CONFIG_AIC_TOUCH_PANEL_RST_PIN="PA.10"
+ CONFIG_AIC_TOUCH_PANEL_INT_PIN="PA.11"
+-CONFIG_AIC_CMU_DRV_TEST=y
+-CONFIG_AIC_GPIO_DRV_TEST=y
+-CONFIG_AIC_DMA_DRV_TEST=y
+-CONFIG_AIC_CAN_DRV_TEST=y
+-CONFIG_AIC_AUDIO_DRV_TEST=y
+-CONFIG_AIC_GPAI_TEST=y
+-CONFIG_AIC_TSEN_TEST=y
+-CONFIG_AIC_PSADC_TEST=y
++# CONFIG_AIC_CMU_DRV_TEST is not set
++# CONFIG_AIC_GPIO_DRV_TEST is not set
++# CONFIG_AIC_DMA_DRV_TEST is not set
++# CONFIG_AIC_CAN_DRV_TEST is not set
++# CONFIG_AIC_AUDIO_DRV_TEST is not set
++# CONFIG_AIC_GPAI_TEST is not set
++# CONFIG_AIC_TSEN_TEST is not set
++# CONFIG_AIC_PSADC_TEST is not set
+ 
+ 
+ CONFIG_AIC_USING_SDMC1=y
+@@ -136,7 +136,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.17"
++CONFIG_HMI_FW_VERSION="1.0.18"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+
+# diff: source\target\d13x\d133cbv-hmi-nor\pack\image_cfg.json
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\00_原始配置\ota_v1.0.18_build_snapshot\source_image_cfg_before.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'D:\Users\ws2608007\Desktop\D113\资料整理\D133-控制终端\source\target\d13x\d133cbv-hmi-nor\pack\image_cfg.json', LF will be replaced by CRLF the next time Git touches it
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\source_image_cfg_before.json" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\d13x\\d133cbv-hmi-nor\\pack\\image_cfg.json"
+index 3fd6f44..36d0a92 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\source_image_cfg_before.json"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\target\\d13x\\d133cbv-hmi-nor\\pack\\image_cfg.json"
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.16",
++            "version": "1.0.18",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
+
+# diff: source\application\rt-thread\d133_hmi\assets\version.txt
+diff --git "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\version_txt_before" "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\assets\\version.txt"
+index 122a7b9..fcde0c0 100644
+--- "a/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\00_\345\216\237\345\247\213\351\205\215\347\275\256\\ota_v1.0.18_build_snapshot\\version_txt_before"
++++ "b/D:\\Users\\ws2608007\\Desktop\\D113\\\350\265\204\346\226\231\346\225\264\347\220\206\\D133-\346\216\247\345\210\266\347\273\210\347\253\257\\source\\application\\rt-thread\\d133_hmi\\assets\\version.txt"
+@@ -1 +1 @@
+-D133-控制终端 1.0.16
++D133-控制终端 1.0.18
+

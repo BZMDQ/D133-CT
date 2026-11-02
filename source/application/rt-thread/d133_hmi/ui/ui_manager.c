@@ -46,6 +46,7 @@ static lv_obj_t *image_overlay;
 static lv_obj_t *image_area;
 static lv_obj_t *image_status_label;
 static lv_obj_t *image_object;
+static lv_timer_t *image_ui_timer;
 static lv_obj_t *ip_input;
 static lv_obj_t *mask_input;
 static lv_obj_t *gw_input;
@@ -199,8 +200,28 @@ static void keyboard_event(lv_event_t *event)
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
+/* 键盘只在用户首次聚焦输入框时创建，避免首页启动时生成大量按键对象。 */
+static int keyboard_ensure(void)
+{
+    if (keyboard)
+        return 0;
+
+    keyboard = lv_keyboard_create(lv_screen_active());
+    if (!keyboard)
+        return -1;
+    lv_obj_set_size(keyboard, 1024, 235);
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_ALL, NULL);
+    return 0;
+}
+
 static void focus(lv_event_t *event)
 {
+    if (keyboard_ensure()) {
+        message("无法创建输入键盘。");
+        return;
+    }
     lv_keyboard_set_textarea(keyboard, lv_event_get_target(event));
     lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(keyboard);
@@ -308,6 +329,10 @@ static void close_image_preview(lv_event_t *event)
     lv_obj_t *overlay = image_overlay;
 
     LV_UNUSED(event);
+    if (image_ui_timer) {
+        lv_timer_delete(image_ui_timer);
+        image_ui_timer = NULL;
+    }
     image_overlay = NULL;
     image_area = NULL;
     image_status_label = NULL;
@@ -315,6 +340,66 @@ static void close_image_preview(lv_event_t *event)
     if (overlay)
         lv_obj_delete(overlay);
     image_preview_cancel();
+}
+
+/* 由 LVGL 线程快速检查解码结果，避免等待主界面 200 ms 状态轮询。 */
+static void image_preview_ui_timer(lv_timer_t *timer_obj)
+{
+    image_preview_state_t state;
+    const lv_image_dsc_t *image_dsc;
+    char status[128];
+
+    if (!image_overlay || !image_status_label) {
+        image_ui_timer = NULL;
+        lv_timer_delete(timer_obj);
+        return;
+    }
+
+    state = image_preview_status(status, sizeof(status));
+    if (state == IMAGE_PREVIEW_LOADING) {
+        lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(image_status_label, status);
+        return;
+    }
+
+    if (state == IMAGE_PREVIEW_READY && image_area) {
+        uint32_t scale_x;
+        uint32_t scale_y;
+        uint32_t scale;
+
+        image_dsc = image_preview_get_image();
+        if (image_dsc && !image_object) {
+            image_object = lv_image_create(image_area);
+            if (image_object) {
+                lv_image_set_src(image_object, image_dsc);
+                lv_image_set_antialias(image_object, false);
+                /* 向上取整并取较大比例，裁边铺满屏幕。 */
+                scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
+                           image_dsc->header.w - 1U) / image_dsc->header.w;
+                scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
+                           image_dsc->header.h - 1U) / image_dsc->header.h;
+                scale = scale_x > scale_y ? scale_x : scale_y;
+                if (scale == 0U)
+                    scale = 1U;
+                lv_image_set_scale(image_object, scale);
+                lv_obj_center(image_object);
+            }
+        }
+
+        if (image_object) {
+            lv_obj_add_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(image_status_label, "图片控件创建失败。");
+        }
+    } else {
+        lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(image_status_label, status);
+    }
+
+    /* 完成或失败后移除短周期轮询，释放 LVGL timer 对象。 */
+    image_ui_timer = NULL;
+    lv_timer_delete(timer_obj);
 }
 
 static void show_image_preview(const char *path)
@@ -387,6 +472,12 @@ static void show_image_preview(const char *path)
                          close_image_preview, NULL);
     lv_obj_set_height(back_button, 56);
     lv_obj_move_foreground(image_overlay);
+
+    image_ui_timer = lv_timer_create(image_preview_ui_timer, 20, NULL);
+    if (!image_ui_timer) {
+        close_image_preview(NULL);
+        message("无法创建图片刷新任务。");
+    }
 }
 
 static void table_event(lv_event_t *event)
@@ -717,9 +808,6 @@ static void timer(lv_timer_t *timer_obj)
     char network[160];
     boot_status_t boot;
     hmi_ota_status_t ota;
-    image_preview_state_t image_state;
-    const lv_image_dsc_t *image_dsc;
-    char image_status[128];
 
     LV_UNUSED(timer_obj);
     boot_manager_ui_heartbeat();
@@ -727,46 +815,6 @@ static void timer(lv_timer_t *timer_obj)
     ota_manager_get(&ota);
     network_manager_status(network, sizeof(network));
 
-    if (image_overlay && image_status_label) {
-        image_state = image_preview_status(image_status, sizeof(image_status));
-        if (image_state == IMAGE_PREVIEW_READY && image_area) {
-            image_dsc = image_preview_get_image();
-            if (image_dsc && !image_object) {
-                uint32_t scale_x;
-                uint32_t scale_y;
-                uint32_t scale;
-
-                image_object = lv_image_create(image_area);
-                if (image_object) {
-                    lv_image_set_src(image_object, image_dsc);
-                    lv_image_set_antialias(image_object, false);
-                    /* 向上取整并选择较大的缩放比例，裁掉多余边缘以铺满屏幕。 */
-                    scale_x = ((uint32_t)lv_obj_get_width(image_area) * 256U +
-                               image_dsc->header.w - 1U) / image_dsc->header.w;
-                    scale_y = ((uint32_t)lv_obj_get_height(image_area) * 256U +
-                               image_dsc->header.h - 1U) / image_dsc->header.h;
-                    scale = scale_x > scale_y ? scale_x : scale_y;
-                    if (scale == 0U)
-                        scale = 1U;
-                    lv_image_set_scale(image_object, scale);
-                    lv_obj_center(image_object);
-                } else {
-                    snprintf(image_status, sizeof(image_status), "图片控件创建失败。");
-                }
-            }
-            if (image_dsc && image_object) {
-                snprintf(image_status, sizeof(image_status), "已加载图片：%u × %u",
-                         image_dsc->header.w, image_dsc->header.h);
-            }
-        }
-        if (image_state == IMAGE_PREVIEW_READY && image_object) {
-            /* 图片显示后收起状态条，不遮挡全屏画面。 */
-            lv_obj_add_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(image_status_label, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(image_status_label, image_status);
-        }
-    }
     if (page != 0) {
         snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
                  boot.current, boot.next, boot.resource,
@@ -953,11 +1001,6 @@ void hmi_ui_init(void)
     lv_obj_set_style_pad_all(content, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(content, 0, LV_PART_MAIN);
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-    keyboard = lv_keyboard_create(root);
-    lv_obj_set_size(keyboard, 1024, 235);
-    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(keyboard, keyboard_event, LV_EVENT_ALL, NULL);
     screen(0);
     lv_timer_create(timer, 200, NULL);
     if (lv_display_get_default()) {
