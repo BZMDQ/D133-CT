@@ -8,7 +8,7 @@
 
 启动优化取消了配套 Bootloader 的预启动黑屏显示；OS 保留 LVDS 预热。Info 日志降为 Warning，并关闭当前 HMI 未使用的 CAN、音频、TSEN、GPAI 外设。HMI 复用一个中文字体实例，并增加首帧时间标记。1 秒目标尚未实机测量；标记不能代表从上电开始的完整时间。详见 [启动优化与实测](docs/启动优化与实测.md)。
 
-本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码仍位于工作区 `D133CES/luban-lite-master`；构建脚本逐文件同步 overlay 到该 SDK 的实际构建树。原配置在 `00_原始配置/`，构建日志和说明位于 `docs/`，工厂镜像及工具箱发行包进入 `downloads/`。
+本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`，研发工具箱 D133 源码在 `toolbox/Source/`。
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
@@ -23,7 +23,9 @@
 - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
 - [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
 - [故障排查](docs/故障排查.md)
-- [原始分区配置](00_原始配置/image_cfg.json)
+- [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
+- [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
+- [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
 当前工厂镜像为 `downloads/d13x_d133cbv-hmi-nor_v1.0.16.img`，大小 4,569,600 字节，SHA-256 见同名 `.sha256` 文件。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。已签名 OTA v1.0.9 低于该镜像版本，不应安装到 v1.0.16 系统。本仓库只跟踪当前工厂镜像，不提交旧 OTA 包。
 
