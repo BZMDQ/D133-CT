@@ -20,7 +20,7 @@ static rt_device_t profile_uart;
 static int profile_lock_ready;
 static int manager_ready;
 static display_profile_info_t active_profile = {
-    "CS000", 1024, 600, "LVDS-1024x600", "GT911", 1
+    "CS000", 1024, 600, "LVDS-1024x600", "GT911", "gt911", 1
 };
 
 static int profile_info_from_code(const char *code, display_profile_info_t *profile)
@@ -34,6 +34,8 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
         profile->height = 600;
         rt_snprintf(profile->panel, sizeof(profile->panel), "LVDS-1024x600");
         rt_snprintf(profile->touch, sizeof(profile->touch), "GT911");
+        /* 协议显示名保留 GT911；健康检查使用驱动注册的小写设备名。 */
+        rt_snprintf(profile->touch_device, sizeof(profile->touch_device), "gt911");
         profile->touch_enabled = 1;
         return 0;
     }

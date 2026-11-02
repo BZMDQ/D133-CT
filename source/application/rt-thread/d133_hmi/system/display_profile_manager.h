@@ -23,6 +23,7 @@ typedef struct {
     uint16_t height;
     char panel[DISPLAY_PROFILE_PANEL_LENGTH];
     char touch[DISPLAY_PROFILE_TOUCH_LENGTH];
+    char touch_device[DISPLAY_PROFILE_TOUCH_LENGTH];
     uint8_t touch_enabled;
 } display_profile_info_t;
 

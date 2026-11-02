@@ -33,7 +33,7 @@ static void monitor(void *arg)
         boot_status_t snapshot;boot_manager_get(&snapshot);
         display_profile_info_t profile;display_profile_get_active(&profile);
         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
-        int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
+        int touch_ok=!profile.touch_enabled || (profile.touch_device[0] && rt_device_find(profile.touch_device));
         int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
         rt_thread_mdelay(1000);

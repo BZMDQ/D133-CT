@@ -1,0 +1,93 @@
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 3b87708..69ce50e 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.25
++D133-控制终端 1.0.26
+diff --git a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+index 87df7df..207dc14 100644
+--- a/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
++++ b/source/application/rt-thread/d133_hmi/boot_manager/boot_manager.c
+@@ -33,7 +33,7 @@ static void monitor(void *arg)
+         boot_status_t snapshot;boot_manager_get(&snapshot);
+         display_profile_info_t profile;display_profile_get_active(&profile);
+         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
+-        int touch_ok=!profile.touch_enabled || rt_device_find(profile.touch);
++        int touch_ok=!profile.touch_enabled || (profile.touch_device[0] && rt_device_find(profile.touch_device));
+         int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
+         if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
+         rt_thread_mdelay(1000);
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+index b02a00f..c62b3d2 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -20,7 +20,7 @@ static rt_device_t profile_uart;
+ static int profile_lock_ready;
+ static int manager_ready;
+ static display_profile_info_t active_profile = {
+-    "CS000", 1024, 600, "LVDS-1024x600", "GT911", 1
++    "CS000", 1024, 600, "LVDS-1024x600", "GT911", "gt911", 1
+ };
+ 
+ static int profile_info_from_code(const char *code, display_profile_info_t *profile)
+@@ -34,6 +34,8 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
+         profile->height = 600;
+         rt_snprintf(profile->panel, sizeof(profile->panel), "LVDS-1024x600");
+         rt_snprintf(profile->touch, sizeof(profile->touch), "GT911");
++        /* 协议显示名保留 GT911；健康检查使用驱动注册的小写设备名。 */
++        rt_snprintf(profile->touch_device, sizeof(profile->touch_device), "gt911");
+         profile->touch_enabled = 1;
+         return 0;
+     }
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.h b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+index a8c068c..291c23b 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.h
+@@ -23,6 +23,7 @@ typedef struct {
+     uint16_t height;
+     char panel[DISPLAY_PROFILE_PANEL_LENGTH];
+     char touch[DISPLAY_PROFILE_TOUCH_LENGTH];
++    char touch_device[DISPLAY_PROFILE_TOUCH_LENGTH];
+     uint8_t touch_enabled;
+ } display_profile_info_t;
+ 
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index fe4e71b..3864dba 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -141,7 +141,7 @@ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.25"
++CONFIG_HMI_FW_VERSION="1.0.26"
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+ CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20=y
+ CONFIG_LVGL_STORAGE_PATH="/rodata/hmi"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 914fed9..79fd413 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -139,7 +139,7 @@ CONFIG_RT_USING_LWIP=y
+ CONFIG_RT_USING_NETDEV=y
+ CONFIG_RT_LWIP_DHCP=y
+ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.25"
++CONFIG_HMI_FW_VERSION="1.0.26"
+ CONFIG_LPKG_USING_LVGL=y
+ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+ CONFIG_LV_FONT_MONTSERRAT_16=y
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index ac65803..143b73f 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -16,7 +16,7 @@
+         "info": { // Header information about image
+             "platform": "d13x",
+             "product": "d133cbv-hmi-nor",
+-            "version": "1.0.25",
++            "version": "1.0.26",
+             "media": {
+                 "type": "spi-nor",
+                 "device_id": 0,
