@@ -11,6 +11,7 @@
 #include "network_manager.h"
 #include "system_manager.h"
 #include "image_preview.h"
+#include "screen_test.h"
 #include "display_profile_manager.h"
 #include "hmi_logo.h"
 #include <stdio.h>
@@ -64,7 +65,8 @@ static fm_list_t files;
 static storage_request_t pending;
 
 static const char *titles[] = {
-    "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志", "设备总览"
+    "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
+    "设备总览", "屏幕检测"
 };
 
 static const lv_font_t *body_font(void)
@@ -619,19 +621,36 @@ static void apply_network(lv_event_t *event)
         message("网络配置繁忙，或 IPv4 参数格式无效。");
 }
 
+/* 测试画面退出后回到屏幕检测说明页。 */
+static void screen_test_return_to_menu(void *context)
+{
+    LV_UNUSED(context);
+    screen(7);
+}
+
+/* 测试图形在独立全屏覆盖层绘制，不改变产品界面的显示驱动。 */
+static void start_screen_test(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (screen_test_start(lv_screen_active(), body_font(),
+                          screen_test_return_to_menu, NULL) != 0)
+        message("屏幕检测启动失败，请确认显示器已初始化。");
+}
+
 static void screen(unsigned number)
 {
-    static const char *app_symbols[6] = {
+    static const char *app_symbols[7] = {
         LV_SYMBOL_HOME, LV_SYMBOL_SD_CARD, LV_SYMBOL_DOWNLOAD,
-        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST
+        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST, LV_SYMBOL_EYE_OPEN
     };
-    static const char *app_titles[6] = {
-        "设备总览", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志"
+    static const char *app_titles[7] = {
+        "设备总览", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
+        "屏幕检测"
     };
-    static const unsigned app_targets[6] = {6, 1, 2, 3, 4, 5};
-    static const uint32_t app_colors[6] = {
+    static const unsigned app_targets[7] = {6, 1, 2, 3, 4, 5, 7};
+    static const uint32_t app_colors[7] = {
         UI_COLOR_ACCENT, UI_COLOR_BLUE, UI_COLOR_VIOLET,
-        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET
+        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET, UI_COLOR_ACCENT
     };
     static const char *file_buttons[] = {
         "刷新", "上一级", "打开 / 读取", "新建文件夹", "复制", "重命名", "删除"
@@ -644,14 +663,14 @@ static void screen(unsigned number)
     unsigned i;
 
     if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK) {
-        snprintf(display_info, sizeof(display_info), "%s  %ux%u LVDS  触摸：%s",
+        snprintf(display_info, sizeof(display_info), "%s  %ux%u  触摸：%s",
                  display_profile.code, display_profile.width, display_profile.height,
                  display_profile.touch_enabled ? display_profile.touch : "未启用");
     } else {
         snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
     }
 
-    if (number >= 7)
+    if (number >= 8)
         return;
     page = number;
     lv_label_set_text(page_title, number == 0 ? "D133-控制终端" : titles[number]);
@@ -677,8 +696,8 @@ static void screen(unsigned number)
 
     if (number == 0) {
         /* 首页只显示已实现的应用入口，设备状态在独立总览页查看。 */
-        /* 5×3 网格保留 STM32 应用启动器的列布局，仅绘制六个现有功能。 */
-        for (i = 0; i < 6; i++) {
+        /* 5×3 网格新增屏幕检测入口，其余位置继续留白。 */
+        for (i = 0; i < 7; i++) {
             unsigned column = i % 5U;
             unsigned row = i / 5U;
             app_tile(content, app_symbols[i], app_titles[i],
@@ -770,7 +789,7 @@ static void screen(unsigned number)
         lv_obj_set_style_bg_color(log_card, lv_color_hex(UI_COLOR_ACCENT),
                                   LV_PART_SCROLLBAR);
         details = label(log_card, "暂无系统日志。", 8, 8, 920);
-    } else {
+    } else if (number == 6) {
         panel(content, 16, 8, 460, 468, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
         panel(content, 516, 8, 460, 468, UI_COLOR_SURFACE, UI_COLOR_BLUE);
         label(content, "系统状态", 40, 28, 410);
@@ -789,6 +808,22 @@ static void screen(unsigned number)
               "启动存储：16 MiB SPI NOR\n"
               "DATA：单分区",
               540, 254, 410);
+    } else if (number == 7) {
+        panel(content, 16, 8, 960, 470, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        label(content, "屏幕检测", 32, 24, 920);
+        label(content,
+              "当前屏幕：",
+              32, 76, 160);
+        label(content, display_info, 190, 76, 760);
+        label(content,
+              "检测内容：白屏触摸划线、八色条与灰阶、黑底白框、SD 测试图像、"
+              "全屏灰阶、红、绿、蓝、黑。\n"
+              "测试图像目录：/sdcard/测试图像使用/。只显示与当前屏幕分辨率完全相同的 BMP、JPG/JPEG 或 PNG。\n"
+              "检测画面中按 UP/DOWN 键或上下滑动切换项目；长按左上角返回。白屏页触摸可绘制蓝色检测线。\n"
+              "图片目录没有匹配本机分辨率的可解码图像时，画面显示“SD没有本机测试图片”。",
+              32, 126, 900);
+        button(content, "开始屏幕检测", 32, 364, 260,
+               start_screen_test, NULL);
     }
 }
 

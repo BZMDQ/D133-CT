@@ -1,0 +1,928 @@
+diff --git a/README.md b/README.md
+index 98d264d..46187f3 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.27 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局，并显示六个已实现功能；设备总览在独立页面中打开，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.28 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -9 +9 @@
+-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.27 尚未上板测量，1 秒目标未达成。
++启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.28 尚未上板测量，1 秒目标未达成。
+@@ -14,2 +14,2 @@
+-.\scripts\build.ps1 -Target Bootloader -LogName stage24_bootloader_fast_start_build.log
+-.\scripts\build.ps1 -Target OS -LogName stage_uart_config_v1.0.27_build.log
++.\scripts\build.ps1 -Target Bootloader -LogName stage_display_test_v1.0.28_bootloader_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_screen_test_v1.0.28_os_build.log
+@@ -23,0 +24,2 @@
++首页新增“屏幕检测”页面，提供全屏白屏划线、色条/灰阶、边框、测试图片和纯色测试。图片只从 `/sdcard/测试图像使用/` 选择与当前活动分辨率完全匹配的可解码 BMP/JPG/JPEG/PNG；缺卡或缺少匹配图时显示“SD没有本机测试图片”。扫描与解码在线程中运行，详细操作见[屏幕检测功能说明](docs/屏幕检测功能说明.md)。
++
+@@ -29,0 +32,4 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
++- [屏幕检测功能说明](docs/屏幕检测功能说明.md)
++- [v1.0.28 Bootloader 构建日志](docs/stage_display_test_v1.0.28_bootloader_build.log)
++- [v1.0.28 屏幕检测 OS 构建日志](docs/stage_screen_test_v1.0.28_os_build.log)
++- [v1.0.28 屏幕检测源码差异](docs/screen_test_page_v1.0.28_source.patch)
+@@ -39 +45 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.27 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.27.img)，大小 4,270,592 字节，SHA-256 b245f77962319f19835cad7a9d65a7cb30014ebce0bb703e68f3a2b0599c0bca。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。未生成日常 OTA 包。/data 持久化与 15 秒复位停止仍待板上验证。
++当前工厂镜像为 [v1.0.28 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.28.img)，大小 4,280,832 字节，SHA-256 `dbce3160694b98d41bf6dc50e5c61aafcbb0ccb9318ddc57ffe96eb0c6581777`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。屏幕检测按键、触摸和 SD 图片仍需上板确认。
+@@ -61 +67 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-首页采用 5×3 应用网格，仅显示六个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
++首页采用 5×3 应用网格，显示七个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。点击“屏幕检测”进入说明页，再启动无导航覆盖层的全屏测试。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+@@ -67,0 +74,2 @@ v1.0.27 修复 UART0 配置覆盖：先用 RT_SERIAL_GET_CONFIG 读取 SDK 注
++
++v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。GPAI2 UP/DOWN 使用现有 RT-Thread ADC 接口，LVGL 仅在 LVGL 线程更新；SDK 构建和工厂镜像封装已完成，未连接开发板验证。
+diff --git "a/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md" "b/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md"
+new file mode 100644
+index 0000000..3518cfd
+--- /dev/null
++++ "b/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md"
+@@ -0,0 +1,35 @@
++# D133-控制终端屏幕检测
++
++首页新增“屏幕检测”入口。检测画面覆盖当前显示器的实际分辨率，不依赖固定的 1024×600 或 1280×800 常量。
++
++## 测试页面
++
++页面顺序循环如下：
++
++1. 全屏白色；触摸并移动时绘制 2 像素蓝线。
++2. 上半屏八色条，下半屏 32 级灰阶。
++3. 黑底最外缘 1 像素白框。
++4. SD 测试图像。
++5. 全屏 32 级灰阶。
++6. 全屏纯红、纯绿、纯蓝、纯黑。
++
++白屏笔迹在切页时清除。纯色、灰阶、边框页不绘制标题或导航控件。
++
++## 按键与触摸
++
++- GPAI2 按键按下沿切页：UP 返回上一页，DOWN 前往下一页；两键采用 30 ms 消抖并循环切换。
++- 触摸上下滑动也可切页，方便没有实体按键的屏幕配置。
++- 在全屏测试画面左上角长按可返回“屏幕检测”说明页。此区域不绘制返回图标，避免影响色彩和边界检查。
++- 只有白屏页响应触摸划线。
++
++## SD 测试图像
++
++在 SD 卡创建目录 `/sdcard/测试图像使用/`，放入 BMP、JPG/JPEG 或 PNG。系统在独立 RT-Thread 图片工作线程中扫描目录，只选择宽高都与活动显示器实际分辨率完全一致、且 SDK 能解码的图片。图像按 1:1 像素显示，不缩放、不裁剪。
++
++没有 SD 卡、目录不存在，或目录中没有当前分辨率的可解码图片时，页面显示：`SD没有本机测试图片`。图片扫描和解码不会阻塞 LVGL 线程。
++
++## 配置与验证
++
++工程启用了 SDK GPAI2 通道供 UP/DOWN 电阻按键使用，采样通过 RT-Thread ADC 设备接口完成；未修改 GPAI、显示、触摸等 BSP 驱动源码。图片目录与解码依赖现有 SD/FATFS、LVGL BMP 与 ArtInChip MPP JPEG/PNG 接口。
++
++编译和 IMG 封装只验证主机侧构建。上板后还需检查按键电压窗口、触摸线条、面板色值、实际屏幕分辨率、SD 挂载和图片解码结果。
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 701c52e..cba3432 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.27
++D133-控制终端 1.0.28
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index c9975b8..8be9ee8 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -7,0 +8 @@
++#include <dirent.h>
+@@ -20,0 +22,3 @@ typedef struct {
++    uint16_t match_width;
++    uint16_t match_height;
++    uint8_t match_resolution;
+@@ -48 +52,2 @@ enum {
+-    IMAGE_PREVIEW_ERR_CANCELLED = -5
++    IMAGE_PREVIEW_ERR_CANCELLED = -5,
++    IMAGE_PREVIEW_ERR_NOT_FOUND = -6
+@@ -643,0 +649,71 @@ static int load_image(const char *path)
++/* 生成 LVGL 文件系统路径并统一扩展名大小写，目录检查与正式解码共用。 */
++static int make_lv_image_path(const char *path, char *lv_path, size_t path_size)
++{
++    size_t path_len;
++    char *extension;
++
++    if (!path || !lv_path)
++        return -1;
++    path_len = strlen(path);
++    if (path_len + 2 >= path_size)
++        return -1;
++    lv_path[0] = IMAGE_PREVIEW_LVFS_PREFIX[0];
++    lv_path[1] = IMAGE_PREVIEW_LVFS_PREFIX[1];
++    memcpy(lv_path + 2, path, path_len + 1);
++    extension = strrchr(lv_path, '.');
++    if (extension) {
++        while (*extension) {
++            *extension = (char)tolower((unsigned char)*extension);
++            extension++;
++        }
++    }
++    return 0;
++}
++
++/* 目录扫描和解码都在图片工作线程执行，LVGL 线程不会访问 SD 文件系统。 */
++static int load_matching_image(const image_preview_job_t *job)
++{
++    DIR *directory;
++    struct dirent *entry;
++    struct stat st;
++    char candidate[FM_PATH_MAX];
++    char lv_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
++    lv_image_header_t header;
++    int found_matching_size = 0;
++    int last_decode_error = IMAGE_PREVIEW_ERR_DECODE;
++
++    directory = opendir(job->path);
++    if (!directory)
++        return IMAGE_PREVIEW_ERR_NOT_FOUND;
++
++    while ((entry = readdir(directory)) != NULL) {
++        if (preview_cancelled()) {
++            closedir(directory);
++            return IMAGE_PREVIEW_ERR_CANCELLED;
++        }
++        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..") ||
++            !image_preview_supported(entry->d_name))
++            continue;
++        if (snprintf(candidate, sizeof(candidate), "%s/%s",
++                     job->path, entry->d_name) >= (int)sizeof(candidate))
++            continue;
++        if (stat(candidate, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0)
++            continue;
++        if (make_lv_image_path(candidate, lv_path, sizeof(lv_path)) ||
++            lv_image_decoder_get_info(lv_path, &header) != LV_RESULT_OK ||
++            header.w != job->match_width || header.h != job->match_height)
++            continue;
++
++        found_matching_size = 1;
++        last_decode_error = load_image(candidate);
++        if (last_decode_error == IMAGE_PREVIEW_ERR_NONE) {
++            closedir(directory);
++            return IMAGE_PREVIEW_ERR_NONE;
++        }
++        release_decode_resources();
++    }
++
++    closedir(directory);
++    return found_matching_size ? last_decode_error : IMAGE_PREVIEW_ERR_NOT_FOUND;
++}
++
+@@ -646,0 +723 @@ static const char *error_text(int error)
++    case IMAGE_PREVIEW_ERR_NOT_FOUND: return "SD没有本机测试图片";
+@@ -667 +744 @@ static void image_worker(void *parameter)
+-        result = load_image(job.path);
++        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path);
+@@ -684 +761,6 @@ static void image_worker(void *parameter)
+-        current_state = result == IMAGE_PREVIEW_ERR_NONE ? IMAGE_PREVIEW_READY : IMAGE_PREVIEW_FAILED;
++        if (result == IMAGE_PREVIEW_ERR_NONE)
++            current_state = IMAGE_PREVIEW_READY;
++        else if (result == IMAGE_PREVIEW_ERR_NOT_FOUND)
++            current_state = IMAGE_PREVIEW_NOT_FOUND;
++        else
++            current_state = IMAGE_PREVIEW_FAILED;
+@@ -734,0 +817,31 @@ int image_preview_request(const char *path)
++int image_preview_request_matching(const char *directory,
++                                  uint16_t width, uint16_t height)
++{
++    image_preview_job_t job = {0};
++
++    if (!manager_ready || !directory || !width || !height ||
++        strlen(directory) >= sizeof(job.path))
++        return -1;
++    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++    if (!job_queue || current_state != IMAGE_PREVIEW_IDLE) {
++        rt_mutex_release(&state_lock);
++        return -2;
++    }
++    current_state = IMAGE_PREVIEW_LOADING;
++    cancel_requested = 0;
++    last_error = IMAGE_PREVIEW_ERR_NONE;
++    snprintf(job.path, sizeof(job.path), "%s", directory);
++    job.match_width = width;
++    job.match_height = height;
++    job.match_resolution = 1;
++    rt_mutex_release(&state_lock);
++
++    if (rt_mq_send(job_queue, &job, sizeof(job)) != RT_EOK) {
++        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
++        current_state = IMAGE_PREVIEW_IDLE;
++        rt_mutex_release(&state_lock);
++        return -3;
++    }
++    return 0;
++}
++
+@@ -756,0 +870,2 @@ image_preview_state_t image_preview_status(char *text, size_t text_size)
++    else if (state == IMAGE_PREVIEW_NOT_FOUND)
++        status = "SD没有本机测试图片";
+@@ -787 +902,3 @@ void image_preview_cancel(void)
+-    } else if (current_state == IMAGE_PREVIEW_READY || current_state == IMAGE_PREVIEW_FAILED) {
++    } else if (current_state == IMAGE_PREVIEW_READY ||
++               current_state == IMAGE_PREVIEW_FAILED ||
++               current_state == IMAGE_PREVIEW_NOT_FOUND) {
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.h b/source/application/rt-thread/d133_hmi/ui/image_preview.h
+index efdea69..f607563 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.h
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.h
+@@ -4,0 +5 @@
++#include <stdint.h>
+@@ -11,0 +13 @@ typedef enum {
++    IMAGE_PREVIEW_NOT_FOUND,
+@@ -18,0 +21,3 @@ int image_preview_request(const char *path);
++/* 在后台扫描指定目录，只解码宽高与当前屏幕完全相同的图片。 */
++int image_preview_request_matching(const char *directory,
++                                  uint16_t width, uint16_t height);
+diff --git a/source/application/rt-thread/d133_hmi/ui/screen_test.c b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+new file mode 100644
+index 0000000..0b1251f
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+@@ -0,0 +1,558 @@
++#include "screen_test.h"
++#include "image_preview.h"
++#include <rtdevice.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++#include <hal_adcim.h>
++
++#define SCREEN_TEST_PAGE_COUNT       9U
++#define SCREEN_TEST_GRAY_LEVELS      32U
++#define SCREEN_TEST_LINE_POINTS      512U
++#define SCREEN_TEST_SWIPE_PIXELS     60
++#define SCREEN_TEST_EXIT_CORNER      72
++#define SCREEN_TEST_IMAGE_DIR        "/sdcard/测试图像使用"
++#define SCREEN_TEST_KEYADC_CHANNEL   2U
++#define SCREEN_TEST_KEY_SAMPLE_MS    20U
++#define SCREEN_TEST_KEY_DEBOUNCE_MS  30U
++#define SCREEN_TEST_ADC_SCALE        10000
++#define SCREEN_TEST_ADC_REFERENCE    3.0f
++#define SCREEN_TEST_UP_MIN_VOLTAGE   2000
++#define SCREEN_TEST_UP_MAX_VOLTAGE   4200
++#define SCREEN_TEST_DOWN_MIN_VOLTAGE 4700
++#define SCREEN_TEST_DOWN_MAX_VOLTAGE 8000
++
++#define SCREEN_TEST_KEY_NONE         0U
++#define SCREEN_TEST_KEY_UP           1U
++#define SCREEN_TEST_KEY_DOWN         2U
++
++enum {
++    SCREEN_TEST_WHITE = 0,
++    SCREEN_TEST_COLOR_GRAY,
++    SCREEN_TEST_BORDER,
++    SCREEN_TEST_IMAGE,
++    SCREEN_TEST_FULL_GRAY,
++    SCREEN_TEST_RED,
++    SCREEN_TEST_GREEN,
++    SCREEN_TEST_BLUE,
++    SCREEN_TEST_BLACK
++};
++
++static const uint32_t screen_test_bar_colors[8] = {
++    0x000000U, 0x0000FFU, 0x00FFFFU, 0x00FF00U,
++    0xFFFF00U, 0xFF0000U, 0xFF00FFU, 0xFFFFFFU
++};
++
++static lv_obj_t *test_overlay;
++static lv_obj_t *test_line;
++static lv_obj_t *test_dot;
++static lv_obj_t *test_image_status;
++static lv_timer_t *image_poll_timer;
++static lv_timer_t *key_dispatch_timer;
++static lv_point_precise_t line_points[SCREEN_TEST_LINE_POINTS];
++static uint32_t line_point_count;
++static int32_t screen_width;
++static int32_t screen_height;
++static int32_t press_x;
++static int32_t press_y;
++static int32_t last_x;
++static int32_t last_y;
++static uint8_t current_test_page;
++static uint8_t touch_down;
++static uint8_t ignore_stroke;
++static uint8_t image_request_pending;
++static uint8_t exit_started;
++static volatile uint8_t key_worker_starting;
++static volatile uint8_t key_worker_ready;
++static volatile uint8_t key_worker_enabled;
++static volatile uint8_t pending_key;
++static const lv_font_t *test_font;
++static screen_test_exit_cb_t exit_callback;
++static void *exit_context;
++
++/* 将触摸坐标裁剪到当前活动显示器的有效像素范围。 */
++static void screen_test_get_point(lv_indev_t *indev, int32_t *x, int32_t *y)
++{
++    lv_point_t point = {0};
++
++    if (indev)
++        lv_indev_get_point(indev, &point);
++    if (point.x < 0)
++        point.x = 0;
++    if (point.y < 0)
++        point.y = 0;
++    if (point.x >= screen_width)
++        point.x = screen_width - 1;
++    if (point.y >= screen_height)
++        point.y = screen_height - 1;
++    *x = point.x;
++    *y = point.y;
++}
++
++/* 新建无边框矩形，测试色值由 LVGL 按当前面板像素格式输出。 */
++static void screen_test_add_rect(int32_t x, int32_t y,
++                                 int32_t width, int32_t height,
++                                 uint32_t rgb)
++{
++    lv_obj_t *rect;
++
++    if (width <= 0 || height <= 0)
++        return;
++    rect = lv_obj_create(test_overlay);
++    if (!rect)
++        return;
++    lv_obj_set_pos(rect, (lv_coord_t)x, (lv_coord_t)y);
++    lv_obj_set_size(rect, (lv_coord_t)width, (lv_coord_t)height);
++    lv_obj_set_style_bg_color(rect, lv_color_hex(rgb), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(rect, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_width(rect, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(rect, 0, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(rect, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(rect, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++}
++
++/* 背景色填满整个物理分辨率，页面切换时删除前页所有图形对象。 */
++static void screen_test_begin_page(uint32_t rgb)
++{
++    lv_obj_clean(test_overlay);
++    lv_obj_set_style_bg_color(test_overlay, lv_color_hex(rgb), LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(test_overlay, LV_OPA_COVER, LV_PART_MAIN);
++    test_line = NULL;
++    test_dot = NULL;
++    test_image_status = NULL;
++    line_point_count = 0;
++    touch_down = 0;
++    ignore_stroke = 0;
++}
++
++/* 绘制白屏触摸测试专用的两像素蓝线。 */
++static void screen_test_add_touch_point(int32_t x, int32_t y)
++{
++    if (!test_line) {
++        test_line = lv_line_create(test_overlay);
++        test_dot = lv_obj_create(test_overlay);
++        if (!test_line || !test_dot)
++            return;
++        lv_obj_set_pos(test_line, 0, 0);
++        lv_obj_set_size(test_line, (lv_coord_t)screen_width,
++                        (lv_coord_t)screen_height);
++        lv_obj_set_style_line_width(test_line, 2, LV_PART_MAIN);
++        lv_obj_set_style_line_color(test_line, lv_color_hex(0x0000FFU), LV_PART_MAIN);
++        lv_obj_set_style_line_rounded(test_line, true, LV_PART_MAIN);
++        lv_obj_clear_flag(test_line, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++
++        lv_obj_set_pos(test_dot, (lv_coord_t)(x - 1), (lv_coord_t)(y - 1));
++        lv_obj_set_size(test_dot, 2, 2);
++        lv_obj_set_style_bg_color(test_dot, lv_color_hex(0x0000FFU), LV_PART_MAIN);
++        lv_obj_set_style_bg_opa(test_dot, LV_OPA_COVER, LV_PART_MAIN);
++        lv_obj_set_style_border_width(test_dot, 0, LV_PART_MAIN);
++        lv_obj_set_style_radius(test_dot, 0, LV_PART_MAIN);
++        lv_obj_set_style_pad_all(test_dot, 0, LV_PART_MAIN);
++        lv_obj_clear_flag(test_dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++    }
++
++    if (line_point_count == SCREEN_TEST_LINE_POINTS) {
++        memmove(line_points, line_points + 1,
++                (SCREEN_TEST_LINE_POINTS - 1U) * sizeof(line_points[0]));
++        line_point_count--;
++    }
++    line_points[line_point_count].x = x;
++    line_points[line_point_count].y = y;
++    line_point_count++;
++    lv_line_set_points(test_line, line_points, line_point_count);
++}
++
++/* 白到黑的灰阶按照 round(255 * (31 - i) / 31) 计算。 */
++static uint8_t screen_test_gray_value(uint32_t index)
++{
++    return (uint8_t)((255U * (SCREEN_TEST_GRAY_LEVELS - 1U - index) + 15U) /
++                     (SCREEN_TEST_GRAY_LEVELS - 1U));
++}
++
++/* 上半屏输出八色条，下半屏输出 32 级灰阶。 */
++static void screen_test_draw_color_gray(void)
++{
++    int32_t split_y = screen_height / 2;
++    uint32_t i;
++
++    screen_test_begin_page(0x000000U);
++    for (i = 0; i < 8U; i++) {
++        int32_t x0 = (int32_t)(((int64_t)i * screen_width) / 8);
++        int32_t x1 = (int32_t)(((int64_t)(i + 1U) * screen_width) / 8);
++        screen_test_add_rect(x0, 0, x1 - x0, split_y, screen_test_bar_colors[i]);
++    }
++    for (i = 0; i < SCREEN_TEST_GRAY_LEVELS; i++) {
++        int32_t x0 = (int32_t)(((int64_t)i * screen_width) /
++                               SCREEN_TEST_GRAY_LEVELS);
++        int32_t x1 = (int32_t)(((int64_t)(i + 1U) * screen_width) /
++                               SCREEN_TEST_GRAY_LEVELS);
++        uint8_t value = screen_test_gray_value(i);
++        uint32_t gray = ((uint32_t)value << 16) |
++                        ((uint32_t)value << 8) | value;
++        screen_test_add_rect(x0, split_y, x1 - x0,
++                             screen_height - split_y, gray);
++    }
++}
++
++/* 32 级全屏灰阶带从左侧白色逐步过渡到右侧黑色。 */
++static void screen_test_draw_full_gray(void)
++{
++    uint32_t i;
++
++    screen_test_begin_page(0x000000U);
++    for (i = 0; i < SCREEN_TEST_GRAY_LEVELS; i++) {
++        int32_t x0 = (int32_t)(((int64_t)i * screen_width) /
++                               SCREEN_TEST_GRAY_LEVELS);
++        int32_t x1 = (int32_t)(((int64_t)(i + 1U) * screen_width) /
++                               SCREEN_TEST_GRAY_LEVELS);
++        uint8_t value = screen_test_gray_value(i);
++        uint32_t gray = ((uint32_t)value << 16) |
++                        ((uint32_t)value << 8) | value;
++        screen_test_add_rect(x0, 0, x1 - x0, screen_height, gray);
++    }
++}
++
++/* 图片测试只显示与活动屏幕分辨率完全匹配的 SD 卡图片。 */
++static void screen_test_poll_image(lv_timer_t *timer)
++{
++    char status[96];
++    image_preview_state_t state;
++
++    state = image_preview_status(status, sizeof(status));
++    if (image_request_pending && state == IMAGE_PREVIEW_IDLE) {
++        if (image_preview_request_matching(SCREEN_TEST_IMAGE_DIR,
++                                          (uint16_t)screen_width,
++                                          (uint16_t)screen_height) == 0) {
++            image_request_pending = 0;
++            return;
++        }
++        lv_label_set_text(test_image_status, "SD 图片读取服务不可用");
++        image_poll_timer = NULL;
++        lv_timer_delete(timer);
++        return;
++    }
++
++    if (state == IMAGE_PREVIEW_LOADING)
++        return;
++
++    image_poll_timer = NULL;
++    lv_timer_delete(timer);
++    if (state == IMAGE_PREVIEW_READY) {
++        const lv_image_dsc_t *source = image_preview_get_image();
++        lv_obj_t *image;
++
++        if (source && source->header.w == screen_width &&
++            source->header.h == screen_height) {
++            image = lv_image_create(test_overlay);
++            if (image) {
++                lv_image_set_src(image, source);
++                lv_obj_center(image);
++                lv_obj_clear_flag(image,
++                                  LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++                return;
++            }
++        }
++        lv_label_set_text(test_image_status, "图片显示失败");
++        return;
++    }
++    lv_label_set_text(test_image_status, status);
++}
++
++/* 进入图片页后提交异步目录扫描，SD 操作不占用 LVGL 线程。 */
++static void screen_test_start_image_search(void)
++{
++    if (image_preview_init() != 0) {
++        lv_label_set_text(test_image_status, "SD 图片读取服务不可用");
++        return;
++    }
++
++    image_preview_cancel();
++    if (image_preview_request_matching(SCREEN_TEST_IMAGE_DIR,
++                                       (uint16_t)screen_width,
++                                       (uint16_t)screen_height) != 0)
++        image_request_pending = 1;
++    image_poll_timer = lv_timer_create(screen_test_poll_image, 80, NULL);
++    if (!image_poll_timer)
++        lv_label_set_text(test_image_status, "SD 图片读取服务不可用");
++}
++
++/* 根据测试顺序重画页面，并在离开图片页时释放解码缓存。 */
++static void screen_test_show_page(uint8_t page)
++{
++    if (current_test_page == SCREEN_TEST_IMAGE) {
++        if (image_poll_timer) {
++            lv_timer_delete(image_poll_timer);
++            image_poll_timer = NULL;
++        }
++        image_request_pending = 0;
++        image_preview_cancel();
++    }
++    current_test_page = page;
++
++    if (page == SCREEN_TEST_WHITE) {
++        screen_test_begin_page(0xFFFFFFU);
++    } else if (page == SCREEN_TEST_COLOR_GRAY) {
++        screen_test_draw_color_gray();
++    } else if (page == SCREEN_TEST_BORDER) {
++        screen_test_begin_page(0x000000U);
++        screen_test_add_rect(0, 0, screen_width, 1, 0xFFFFFFU);
++        screen_test_add_rect(0, screen_height - 1, screen_width, 1, 0xFFFFFFU);
++        screen_test_add_rect(0, 0, 1, screen_height, 0xFFFFFFU);
++        screen_test_add_rect(screen_width - 1, 0, 1, screen_height, 0xFFFFFFU);
++    } else if (page == SCREEN_TEST_IMAGE) {
++        screen_test_begin_page(0x000000U);
++        test_image_status = lv_label_create(test_overlay);
++        if (!test_image_status)
++            return;
++        lv_label_set_text(test_image_status, "正在查找 SD 本机测试图片……");
++        lv_obj_set_style_text_color(test_image_status, lv_color_hex(0xFFFFFFU),
++                                    LV_PART_MAIN);
++        if (test_font)
++            lv_obj_set_style_text_font(test_image_status, test_font, LV_PART_MAIN);
++        lv_obj_center(test_image_status);
++        lv_obj_clear_flag(test_image_status,
++                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++        screen_test_start_image_search();
++    } else if (page == SCREEN_TEST_FULL_GRAY) {
++        screen_test_draw_full_gray();
++    } else if (page == SCREEN_TEST_RED) {
++        screen_test_begin_page(0xFF0000U);
++    } else if (page == SCREEN_TEST_GREEN) {
++        screen_test_begin_page(0x00FF00U);
++    } else if (page == SCREEN_TEST_BLUE) {
++        screen_test_begin_page(0x0000FFU);
++    } else {
++        screen_test_begin_page(0x000000U);
++    }
++}
++
++/* 通过 SDK 的 RT-Thread ADC 设备接口读取板载 GPAI2 电阻按键。 */
++static uint8_t screen_test_read_key(rt_adc_device_t adc, uint32_t calibration)
++{
++    rt_uint32_t raw = rt_adc_read(adc, SCREEN_TEST_KEYADC_CHANNEL);
++    uint16_t sample;
++    int voltage;
++
++    if (raw > UINT16_MAX)
++        return SCREEN_TEST_KEY_NONE;
++    sample = (uint16_t)raw;
++    voltage = hal_adcim_adc2voltage(&sample, calibration,
++                                    SCREEN_TEST_ADC_SCALE,
++                                    SCREEN_TEST_ADC_REFERENCE);
++    if (voltage >= SCREEN_TEST_UP_MIN_VOLTAGE &&
++        voltage <= SCREEN_TEST_UP_MAX_VOLTAGE)
++        return SCREEN_TEST_KEY_UP;
++    if (voltage >= SCREEN_TEST_DOWN_MIN_VOLTAGE &&
++        voltage <= SCREEN_TEST_DOWN_MAX_VOLTAGE)
++        return SCREEN_TEST_KEY_DOWN;
++    return SCREEN_TEST_KEY_NONE;
++}
++
++/* 按键线程只采样、消抖并投递事件，不调用任何 LVGL 控件接口。 */
++static void screen_test_key_worker(void *parameter)
++{
++    rt_adc_device_t adc;
++    uint32_t calibration;
++    uint8_t candidate = SCREEN_TEST_KEY_NONE;
++    uint8_t stable = SCREEN_TEST_KEY_NONE;
++    uint32_t candidate_since = rt_tick_get_millisecond();
++
++    LV_UNUSED(parameter);
++    adc = (rt_adc_device_t)rt_device_find("gpai");
++    if (!adc || hal_adcim_probe() < 0) {
++        key_worker_starting = 0;
++        return;
++    }
++    calibration = hal_adcim_auto_calibration();
++    if (rt_adc_enable(adc, SCREEN_TEST_KEYADC_CHANNEL) != RT_EOK) {
++        key_worker_starting = 0;
++        return;
++    }
++    key_worker_ready = 1;
++    key_worker_starting = 0;
++
++    while (1) {
++        uint8_t sampled;
++        uint32_t now;
++
++        if (!key_worker_enabled) {
++            rt_thread_mdelay(100);
++            continue;
++        }
++        sampled = screen_test_read_key(adc, calibration);
++        now = rt_tick_get_millisecond();
++        if (sampled != candidate) {
++            candidate = sampled;
++            candidate_since = now;
++        } else if (candidate != stable &&
++                   (uint32_t)(now - candidate_since) >= SCREEN_TEST_KEY_DEBOUNCE_MS) {
++            stable = candidate;
++            if (stable != SCREEN_TEST_KEY_NONE)
++                pending_key = stable;
++        }
++        rt_thread_mdelay(SCREEN_TEST_KEY_SAMPLE_MS);
++    }
++}
++
++/* 延时器运行在 LVGL 线程中，将按键线程提交的页码事件安全应用到界面。 */
++static void screen_test_dispatch_key(lv_timer_t *timer)
++{
++    uint8_t key = pending_key;
++
++    LV_UNUSED(timer);
++    if (!key)
++        return;
++    pending_key = SCREEN_TEST_KEY_NONE;
++    if (key == SCREEN_TEST_KEY_UP) {
++        screen_test_show_page((uint8_t)((current_test_page + SCREEN_TEST_PAGE_COUNT - 1U) %
++                                        SCREEN_TEST_PAGE_COUNT));
++    } else if (key == SCREEN_TEST_KEY_DOWN) {
++        screen_test_show_page((uint8_t)((current_test_page + 1U) %
++                                        SCREEN_TEST_PAGE_COUNT));
++    }
++}
++
++/* 首次进入检测页时启动单一采样线程；离开检测页后线程休眠。 */
++static void screen_test_start_key_worker(void)
++{
++    rt_thread_t thread;
++
++    if (key_worker_ready || key_worker_starting)
++        return;
++    key_worker_starting = 1;
++    thread = rt_thread_create("scrkey", screen_test_key_worker, NULL,
++                              2048, 24, 10);
++    if (!thread) {
++        key_worker_starting = 0;
++        return;
++    }
++    if (rt_thread_startup(thread) != RT_EOK) {
++        key_worker_starting = 0;
++    }
++}
++
++/* 长按页面左上角无图形区域退出，纯色/灰阶测试画面不叠加控件。 */
++static void screen_test_exit(void)
++{
++    screen_test_exit_cb_t callback;
++    void *context;
++
++    if (exit_started)
++        return;
++    exit_started = 1;
++    key_worker_enabled = 0;
++    pending_key = SCREEN_TEST_KEY_NONE;
++    if (key_dispatch_timer) {
++        lv_timer_delete(key_dispatch_timer);
++        key_dispatch_timer = NULL;
++    }
++    if (image_poll_timer) {
++        lv_timer_delete(image_poll_timer);
++        image_poll_timer = NULL;
++    }
++    image_request_pending = 0;
++    image_preview_cancel();
++    if (test_overlay) {
++        lv_obj_delete(test_overlay);
++        test_overlay = NULL;
++    }
++    callback = exit_callback;
++    context = exit_context;
++    exit_callback = NULL;
++    exit_context = NULL;
++    if (callback)
++        callback(context);
++}
++
++/* 垂直滑动切换测试页；白屏页同时记录并绘制蓝色触摸轨迹。 */
++static void screen_test_input(lv_event_t *event)
++{
++    lv_event_code_t code = lv_event_get_code(event);
++    int32_t x;
++    int32_t y;
++
++    if (exit_started)
++        return;
++    screen_test_get_point(lv_event_get_indev(event), &x, &y);
++
++    if (code == LV_EVENT_PRESSED) {
++        press_x = last_x = x;
++        press_y = last_y = y;
++        touch_down = 1;
++        ignore_stroke = (x < SCREEN_TEST_EXIT_CORNER &&
++                         y < SCREEN_TEST_EXIT_CORNER);
++        if (current_test_page == SCREEN_TEST_WHITE && !ignore_stroke)
++            screen_test_add_touch_point(x, y);
++    } else if (code == LV_EVENT_PRESSING) {
++        if (touch_down && current_test_page == SCREEN_TEST_WHITE && !ignore_stroke &&
++            (x != last_x || y != last_y))
++            screen_test_add_touch_point(x, y);
++        last_x = x;
++        last_y = y;
++    } else if (code == LV_EVENT_LONG_PRESSED) {
++        if (press_x < SCREEN_TEST_EXIT_CORNER &&
++            press_y < SCREEN_TEST_EXIT_CORNER)
++            screen_test_exit();
++    } else if (code == LV_EVENT_RELEASED) {
++        int32_t delta_y = y - press_y;
++
++        if (!touch_down)
++            return;
++        touch_down = 0;
++        if (abs(delta_y) >= SCREEN_TEST_SWIPE_PIXELS) {
++            uint8_t next = delta_y < 0 ?
++                (uint8_t)((current_test_page + SCREEN_TEST_PAGE_COUNT - 1U) %
++                          SCREEN_TEST_PAGE_COUNT) :
++                (uint8_t)((current_test_page + 1U) % SCREEN_TEST_PAGE_COUNT);
++            screen_test_show_page(next);
++        }
++    }
++}
++
++int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
++                      screen_test_exit_cb_t on_exit, void *context)
++{
++    lv_display_t *display = lv_display_get_default();
++
++    if (!parent || !display || test_overlay)
++        return -1;
++    screen_width = lv_display_get_horizontal_resolution(display);
++    screen_height = lv_display_get_vertical_resolution(display);
++    if (screen_width <= 0 || screen_height <= 0 ||
++        screen_width > UINT16_MAX || screen_height > UINT16_MAX)
++        return -2;
++
++    test_font = font;
++    exit_callback = on_exit;
++    exit_context = context;
++    exit_started = 0;
++    image_poll_timer = NULL;
++    key_dispatch_timer = NULL;
++    image_request_pending = 0;
++    pending_key = SCREEN_TEST_KEY_NONE;
++    key_worker_enabled = 1;
++    current_test_page = SCREEN_TEST_BLACK;
++    test_overlay = lv_obj_create(parent);
++    if (!test_overlay) {
++        exit_callback = NULL;
++        exit_context = NULL;
++        return -3;
++    }
++    lv_obj_set_pos(test_overlay, 0, 0);
++    lv_obj_set_size(test_overlay, (lv_coord_t)screen_width,
++                    (lv_coord_t)screen_height);
++    lv_obj_set_style_border_width(test_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_radius(test_overlay, 0, LV_PART_MAIN);
++    lv_obj_set_style_pad_all(test_overlay, 0, LV_PART_MAIN);
++    lv_obj_clear_flag(test_overlay, LV_OBJ_FLAG_SCROLLABLE);
++    lv_obj_add_flag(test_overlay, LV_OBJ_FLAG_CLICKABLE);
++    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSED, NULL);
++    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSING, NULL);
++    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_RELEASED, NULL);
++    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_LONG_PRESSED, NULL);
++    lv_obj_move_foreground(test_overlay);
++    screen_test_start_key_worker();
++    key_dispatch_timer = lv_timer_create(screen_test_dispatch_key, 10, NULL);
++    screen_test_show_page(SCREEN_TEST_WHITE);
++    return 0;
++}
+diff --git a/source/application/rt-thread/d133_hmi/ui/screen_test.h b/source/application/rt-thread/d133_hmi/ui/screen_test.h
+new file mode 100644
+index 0000000..9065a32
+--- /dev/null
++++ b/source/application/rt-thread/d133_hmi/ui/screen_test.h
+@@ -0,0 +1,12 @@
++#ifndef HMI_SCREEN_TEST_H
++#define HMI_SCREEN_TEST_H
++
++#include "lvgl.h"
++
++typedef void (*screen_test_exit_cb_t)(void *context);
++
++/* 在活动显示器上打开全屏测试序列；所有控件只在 LVGL 线程创建。 */
++int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
++                      screen_test_exit_cb_t on_exit, void *context);
++
++#endif
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index ae349e4..a79bf39 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -13,0 +14 @@
++#include "screen_test.h"
+@@ -67 +68,2 @@ static const char *titles[] = {
+-    "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志", "设备总览"
++    "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
++    "设备总览", "屏幕检测"
+@@ -621,0 +624,16 @@ static void apply_network(lv_event_t *event)
++/* 测试画面退出后回到屏幕检测说明页。 */
++static void screen_test_return_to_menu(void *context)
++{
++    LV_UNUSED(context);
++    screen(7);
++}
++
++/* 测试图形在独立全屏覆盖层绘制，不改变产品界面的显示驱动。 */
++static void start_screen_test(lv_event_t *event)
++{
++    LV_UNUSED(event);
++    if (screen_test_start(lv_screen_active(), body_font(),
++                          screen_test_return_to_menu, NULL) != 0)
++        message("屏幕检测启动失败，请确认显示器已初始化。");
++}
++
+@@ -624 +642 @@ static void screen(unsigned number)
+-    static const char *app_symbols[6] = {
++    static const char *app_symbols[7] = {
+@@ -626 +644 @@ static void screen(unsigned number)
+-        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST
++        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST, LV_SYMBOL_EYE_OPEN
+@@ -628,2 +646,3 @@ static void screen(unsigned number)
+-    static const char *app_titles[6] = {
+-        "设备总览", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志"
++    static const char *app_titles[7] = {
++        "设备总览", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
++        "屏幕检测"
+@@ -631,2 +650,2 @@ static void screen(unsigned number)
+-    static const unsigned app_targets[6] = {6, 1, 2, 3, 4, 5};
+-    static const uint32_t app_colors[6] = {
++    static const unsigned app_targets[7] = {6, 1, 2, 3, 4, 5, 7};
++    static const uint32_t app_colors[7] = {
+@@ -634 +653 @@ static void screen(unsigned number)
+-        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET
++        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET, UI_COLOR_ACCENT
+@@ -647 +666 @@ static void screen(unsigned number)
+-        snprintf(display_info, sizeof(display_info), "%s  %ux%u LVDS  触摸：%s",
++        snprintf(display_info, sizeof(display_info), "%s  %ux%u  触摸：%s",
+@@ -654 +673 @@ static void screen(unsigned number)
+-    if (number >= 7)
++    if (number >= 8)
+@@ -680,2 +699,2 @@ static void screen(unsigned number)
+-        /* 5×3 网格保留 STM32 应用启动器的列布局，仅绘制六个现有功能。 */
+-        for (i = 0; i < 6; i++) {
++        /* 5×3 网格新增屏幕检测入口，其余位置继续留白。 */
++        for (i = 0; i < 7; i++) {
+@@ -773 +792 @@ static void screen(unsigned number)
+-    } else {
++    } else if (number == 6) {
+@@ -791,0 +811,16 @@ static void screen(unsigned number)
++    } else if (number == 7) {
++        panel(content, 16, 8, 960, 470, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
++        label(content, "屏幕检测", 32, 24, 920);
++        label(content,
++              "当前屏幕：",
++              32, 76, 160);
++        label(content, display_info, 190, 76, 760);
++        label(content,
++              "检测内容：白屏触摸划线、八色条与灰阶、黑底白框、SD 测试图像、"
++              "全屏灰阶、红、绿、蓝、黑。\n"
++              "测试图像目录：/sdcard/测试图像使用/。只显示与当前屏幕分辨率完全相同的 BMP、JPG/JPEG 或 PNG。\n"
++              "检测画面中按 UP/DOWN 键或上下滑动切换项目；长按左上角返回。白屏页触摸可绘制蓝色检测线。\n"
++              "图片目录没有匹配本机分辨率的可解码图像时，画面显示“SD没有本机测试图片”。",
++              32, 126, 900);
++        button(content, "开始屏幕检测", 32, 364, 260,
++               start_screen_test, NULL);
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index e7dd1e2..87b4c9e 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -29 +29,2 @@ CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
+-# CONFIG_AIC_USING_GPAI is not set
++CONFIG_AIC_USING_GPAI=y
++CONFIG_AIC_USING_GPAI2=y
+@@ -144 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.27"
++CONFIG_HMI_FW_VERSION="1.0.28"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 0e3d2cd..cf5decb 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -29 +29,2 @@ CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
+-# CONFIG_AIC_USING_GPAI is not set
++CONFIG_AIC_USING_GPAI=y
++CONFIG_AIC_USING_GPAI2=y
+@@ -142 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.27"
++CONFIG_HMI_FW_VERSION="1.0.28"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+index ef75ed2..983fab2 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+@@ -30 +30,2 @@ CONFIG_AIC_DEV_QSPI0_DELAY_MODE=2
+-# CONFIG_AIC_USING_GPAI is not set
++CONFIG_AIC_USING_GPAI=y
++CONFIG_AIC_USING_GPAI2=y
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index b19aab1..0ae59df 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.27",
++            "version": "1.0.28",

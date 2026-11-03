@@ -5,6 +5,7 @@
 #include <lv_mpp_dec.h>
 #include <rtthread.h>
 #include <aic_core.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <stdint.h>
@@ -18,6 +19,9 @@
 
 typedef struct {
     char path[FM_PATH_MAX];
+    uint16_t match_width;
+    uint16_t match_height;
+    uint8_t match_resolution;
 } image_preview_job_t;
 
 typedef enum {
@@ -45,7 +49,8 @@ enum {
     IMAGE_PREVIEW_ERR_SIZE = -2,
     IMAGE_PREVIEW_ERR_FORMAT = -3,
     IMAGE_PREVIEW_ERR_DECODE = -4,
-    IMAGE_PREVIEW_ERR_CANCELLED = -5
+    IMAGE_PREVIEW_ERR_CANCELLED = -5,
+    IMAGE_PREVIEW_ERR_NOT_FOUND = -6
 };
 
 static int extension_equal(const char *left, const char *right)
@@ -641,9 +646,81 @@ static int load_image(const char *path)
     return result;
 }
 
+/* 生成 LVGL 文件系统路径并统一扩展名大小写，目录检查与正式解码共用。 */
+static int make_lv_image_path(const char *path, char *lv_path, size_t path_size)
+{
+    size_t path_len;
+    char *extension;
+
+    if (!path || !lv_path)
+        return -1;
+    path_len = strlen(path);
+    if (path_len + 2 >= path_size)
+        return -1;
+    lv_path[0] = IMAGE_PREVIEW_LVFS_PREFIX[0];
+    lv_path[1] = IMAGE_PREVIEW_LVFS_PREFIX[1];
+    memcpy(lv_path + 2, path, path_len + 1);
+    extension = strrchr(lv_path, '.');
+    if (extension) {
+        while (*extension) {
+            *extension = (char)tolower((unsigned char)*extension);
+            extension++;
+        }
+    }
+    return 0;
+}
+
+/* 目录扫描和解码都在图片工作线程执行，LVGL 线程不会访问 SD 文件系统。 */
+static int load_matching_image(const image_preview_job_t *job)
+{
+    DIR *directory;
+    struct dirent *entry;
+    struct stat st;
+    char candidate[FM_PATH_MAX];
+    char lv_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
+    lv_image_header_t header;
+    int found_matching_size = 0;
+    int last_decode_error = IMAGE_PREVIEW_ERR_DECODE;
+
+    directory = opendir(job->path);
+    if (!directory)
+        return IMAGE_PREVIEW_ERR_NOT_FOUND;
+
+    while ((entry = readdir(directory)) != NULL) {
+        if (preview_cancelled()) {
+            closedir(directory);
+            return IMAGE_PREVIEW_ERR_CANCELLED;
+        }
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..") ||
+            !image_preview_supported(entry->d_name))
+            continue;
+        if (snprintf(candidate, sizeof(candidate), "%s/%s",
+                     job->path, entry->d_name) >= (int)sizeof(candidate))
+            continue;
+        if (stat(candidate, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0)
+            continue;
+        if (make_lv_image_path(candidate, lv_path, sizeof(lv_path)) ||
+            lv_image_decoder_get_info(lv_path, &header) != LV_RESULT_OK ||
+            header.w != job->match_width || header.h != job->match_height)
+            continue;
+
+        found_matching_size = 1;
+        last_decode_error = load_image(candidate);
+        if (last_decode_error == IMAGE_PREVIEW_ERR_NONE) {
+            closedir(directory);
+            return IMAGE_PREVIEW_ERR_NONE;
+        }
+        release_decode_resources();
+    }
+
+    closedir(directory);
+    return found_matching_size ? last_decode_error : IMAGE_PREVIEW_ERR_NOT_FOUND;
+}
+
 static const char *error_text(int error)
 {
     switch (error) {
+    case IMAGE_PREVIEW_ERR_NOT_FOUND: return "SD没有本机测试图片";
     case IMAGE_PREVIEW_ERR_PATH: return "图片路径无效。";
     case IMAGE_PREVIEW_ERR_SIZE: return "图片缓冲或尺寸超过当前 SDK 的安全范围；JPEG/PNG 输入上限为 4 MiB，PNG 像素上限为 800 万。";
     case IMAGE_PREVIEW_ERR_FORMAT: return "图片格式不支持，请选择基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
@@ -664,7 +741,7 @@ static void image_worker(void *parameter)
 
         if (rt_mq_recv(job_queue, &job, sizeof(job), RT_WAITING_FOREVER) != RT_EOK)
             continue;
-        result = load_image(job.path);
+        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path);
         rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
         cancelled = cancel_requested || result == IMAGE_PREVIEW_ERR_CANCELLED;
         rt_mutex_release(&state_lock);
@@ -681,7 +758,12 @@ static void image_worker(void *parameter)
 
         rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
         last_error = result;
-        current_state = result == IMAGE_PREVIEW_ERR_NONE ? IMAGE_PREVIEW_READY : IMAGE_PREVIEW_FAILED;
+        if (result == IMAGE_PREVIEW_ERR_NONE)
+            current_state = IMAGE_PREVIEW_READY;
+        else if (result == IMAGE_PREVIEW_ERR_NOT_FOUND)
+            current_state = IMAGE_PREVIEW_NOT_FOUND;
+        else
+            current_state = IMAGE_PREVIEW_FAILED;
         rt_mutex_release(&state_lock);
     }
 }
@@ -732,6 +814,37 @@ int image_preview_request(const char *path)
     return 0;
 }
 
+int image_preview_request_matching(const char *directory,
+                                  uint16_t width, uint16_t height)
+{
+    image_preview_job_t job = {0};
+
+    if (!manager_ready || !directory || !width || !height ||
+        strlen(directory) >= sizeof(job.path))
+        return -1;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    if (!job_queue || current_state != IMAGE_PREVIEW_IDLE) {
+        rt_mutex_release(&state_lock);
+        return -2;
+    }
+    current_state = IMAGE_PREVIEW_LOADING;
+    cancel_requested = 0;
+    last_error = IMAGE_PREVIEW_ERR_NONE;
+    snprintf(job.path, sizeof(job.path), "%s", directory);
+    job.match_width = width;
+    job.match_height = height;
+    job.match_resolution = 1;
+    rt_mutex_release(&state_lock);
+
+    if (rt_mq_send(job_queue, &job, sizeof(job)) != RT_EOK) {
+        rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+        current_state = IMAGE_PREVIEW_IDLE;
+        rt_mutex_release(&state_lock);
+        return -3;
+    }
+    return 0;
+}
+
 image_preview_state_t image_preview_status(char *text, size_t text_size)
 {
     image_preview_state_t state;
@@ -754,6 +867,8 @@ image_preview_state_t image_preview_status(char *text, size_t text_size)
         status = "正在读取并解码图片……";
     else if (state == IMAGE_PREVIEW_READY)
         status = "图片已加载。";
+    else if (state == IMAGE_PREVIEW_NOT_FOUND)
+        status = "SD没有本机测试图片";
     else if (state == IMAGE_PREVIEW_FAILED)
         status = error_text(error);
     else
@@ -784,7 +899,9 @@ void image_preview_cancel(void)
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     if (current_state == IMAGE_PREVIEW_LOADING) {
         cancel_requested = 1;
-    } else if (current_state == IMAGE_PREVIEW_READY || current_state == IMAGE_PREVIEW_FAILED) {
+    } else if (current_state == IMAGE_PREVIEW_READY ||
+               current_state == IMAGE_PREVIEW_FAILED ||
+               current_state == IMAGE_PREVIEW_NOT_FOUND) {
         current_state = IMAGE_PREVIEW_RELEASING;
         release_now = 1;
     }
