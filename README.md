@@ -4,7 +4,7 @@
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.34 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.35 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
 
 启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.31 尚未上板测量，1 秒目标未达成。
 
@@ -12,7 +12,7 @@
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage_fastboot_v1.0.31_bootloader.log
-.\scripts\build.ps1 -Target OS -LogName stage_bmp_decode_v1.0.34_os.log
+.\scripts\build.ps1 -Target OS -LogName stage_bmp_batch_v1.0.35_os.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
@@ -47,7 +47,7 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.34 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.34.img)，大小 4,280,832 字节，SHA-256 `fc6d3b2096ff9a9d7d8fbe87e5a3b0fcf874a72cb66b8bc5f895782ae61a51ce`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+当前工厂镜像为 [v1.0.35 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.35.img)，大小 4,280,832 字节，SHA-256 `b66be6a14f0d8724e7c3bd8a87a9fed80a69af023246c5cddf5c06e60bea4dd0`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
 
 ## 仓库内容
 
@@ -109,3 +109,10 @@ v1.0.34 为 24 位及标准 32 位 BMP 增加逐行直接转换路径，绕过�
 - [BMP 解码优化说明](docs/bmp_decode_v1.0.34.md)
 - [OS 构建日志](docs/stage_bmp_decode_v1.0.34_os.log)
 - [源码差异](docs/bmp_decode_v1.0.34_source.patch)
+
+
+v1.0.35 将完整行 BMP 连续读取批次提升至最多 16 行，缓冲上限 128 KiB，分配不足时逐级回退；24/32 位路径保留快速像素转换。速度改善仍需使用实际 SD 卡在板上测量。
+
+- [BMP 批量读取优化说明](docs/bmp_batch_v1.0.35.md)
+- [OS 构建日志](docs/stage_bmp_batch_v1.0.35_os.log)
+- [源码差异](docs/bmp_batch_v1.0.35_source.patch)

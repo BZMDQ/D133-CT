@@ -16,6 +16,8 @@
 #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
 #define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
+#define IMAGE_BMP_BATCH_ROWS 16U
+#define IMAGE_BMP_BATCH_MAX_BYTES (128U * 1024U)
 
 typedef struct {
     char path[FM_PATH_MAX];
@@ -313,12 +315,22 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         goto done;
     }
 
-    /* 连续完整行一次读取最多四行，减少 SD 文件系统调用。 */
-    row_batch = (source_bytes == source_stride && source_bytes <= SIZE_MAX / 4U) ? 4U : 1U;
+    /* 连续完整行最多批读 16 行，缓冲控制在 128 KiB 内。 */
+    row_batch = 1U;
+    if (source_bytes == source_stride && source_bytes <= IMAGE_BMP_BATCH_MAX_BYTES) {
+        row_batch = IMAGE_BMP_BATCH_MAX_BYTES / (uint32_t)source_bytes;
+        if (row_batch > IMAGE_BMP_BATCH_ROWS)
+            row_batch = IMAGE_BMP_BATCH_ROWS;
+    }
     source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
     if (!source_buffer && row_batch > 1U) {
-        /* 内存紧张时回退逐行读取，保持大图预览可用。 */
-        row_batch = 1U;
+        /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
+        while (!source_buffer && row_batch > 1U) {
+            row_batch /= 2U;
+            source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
+        }
+    }
+    if (!source_buffer) {
         source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes);
     }
     raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
