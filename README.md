@@ -4,15 +4,15 @@
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.30 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.31 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
 
-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.29 尚未上板测量，1 秒目标未达成。
+启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.31 尚未上板测量，1 秒目标未达成。
 
 本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
 
 ```powershell
-.\scripts\build.ps1 -Target Bootloader -LogName stage_display_test_v1.0.28_bootloader_build.log
-.\scripts\build.ps1 -Target OS -LogName stage_speed_v1.0.30_final_os_build.log
+.\scripts\build.ps1 -Target Bootloader -LogName stage_fastboot_v1.0.31_bootloader.log
+.\scripts\build.ps1 -Target OS -LogName stage_fastboot_v1.0.31_os.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
@@ -31,7 +31,7 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [屏幕代号串口协议](docs/屏幕代号串口协议.md)
 - [屏幕检测功能说明](docs/屏幕检测功能说明.md)
 - [图片与划线性能优化及板上对比方法](docs/图片与划线性能优化.md)
-- [v1.0.28 Bootloader 构建日志](docs/stage_display_test_v1.0.28_bootloader_build.log)
+- [v1.0.31 Bootloader 构建日志](docs/stage_fastboot_v1.0.31_bootloader.log)
 - [v1.0.28 屏幕检测 OS 构建日志](docs/stage_screen_test_v1.0.28_os_build.log)
 - [v1.0.28 屏幕检测源码差异](docs/screen_test_page_v1.0.28_source.patch)
 - [v1.0.29 按键切页与返回键 OS 构建日志](docs/stage_screen_test_buttons_v1.0.29_os_build.log)
@@ -47,7 +47,7 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.30 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.30.img)，大小 4,280,832 字节，SHA-256 `fe0867781ce9b0f219520ff8cb11145fa05a7365c1838d3c9480088447e3e05a`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+当前工厂镜像为 [v1.0.31 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.31.img)，大小 4,280,832 字节，SHA-256 `7e152f71664c552a00e28c44d1f051855f9173a5373c7806e2073b4b1532799a`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
 
 ## 仓库内容
 
@@ -80,3 +80,11 @@ v1.0.27 修复 UART0 配置覆盖：先用 RT_SERIAL_GET_CONFIG 读取 SDK 注�
 v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。v1.0.29 将测试页切换限制为 GPAI2 UP/DOWN 按键，并增加左上角触摸返回键；白屏页触摸仅绘制蓝线。SDK OS 构建和工厂镜像封装已完成，未连接开发板验证。
 
 v1.0.30 将触摸笔迹分为局部线段，减少单次重绘区域；BMP 可视区域按文件偏移正向读取，并在内存中处理倒置行，文件管理与屏幕测试共用。最多保留 64 段笔迹，超出时移除最旧线段。屏幕测试复用已读取的图片头，JPEG/PNG 解码继续使用 SDK MPP；实际打开耗时和显示效果需在板上对比测量。
+
+
+v1.0.31 在专用 Bootloader 中跳过普通 NOR 开机的 U 盘自动扫描，去除该路径的 1000 ms 连接检查等待。实测提速仍待上板确认。此改动需要人工部署配套工厂 IMG；日常 OS/RODATA OTA 不更新 Bootloader。
+
+- [快速启动说明及验收方法](docs/快速启动_v1.0.31.md)
+- [Bootloader 构建日志](docs/stage_fastboot_v1.0.31_bootloader.log)
+- [OS 构建日志](docs/stage_fastboot_v1.0.31_os.log)
+- [源码差异](docs/fastboot_v1.0.31_source.patch)
