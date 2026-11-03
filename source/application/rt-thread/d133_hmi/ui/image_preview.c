@@ -16,7 +16,7 @@
 #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
 #define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
-#define IMAGE_BMP_BATCH_ROWS 16U
+#define IMAGE_BMP_BATCH_ROWS 32U
 #define IMAGE_BMP_BATCH_MAX_BYTES (128U * 1024U)
 
 typedef struct {
@@ -236,6 +236,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t source_bytes;
     uint64_t next_offset = UINT64_MAX;
     uint32_t row_batch;
+    size_t batch_stride;
     uint32_t y;
     int top_down;
     int result = IMAGE_PREVIEW_ERR_DECODE;
@@ -315,22 +316,28 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         goto done;
     }
 
-    /* 连续完整行最多批读 16 行，缓冲控制在 128 KiB 内。 */
+    /* 包含行填充和适度裁剪时也连续批读，减少 FAT/SD 调用次数。
+     * 超宽图片仍逐行读取，避免读取大量不可见像素。 */
     row_batch = 1U;
-    if (source_bytes == source_stride && source_bytes <= IMAGE_BMP_BATCH_MAX_BYTES) {
-        row_batch = IMAGE_BMP_BATCH_MAX_BYTES / (uint32_t)source_bytes;
+    batch_stride = (size_t)source_bytes;
+    if (source_stride <= IMAGE_BMP_BATCH_MAX_BYTES &&
+        source_stride <= source_bytes * 2U) {
+        batch_stride = source_stride;
+        row_batch = IMAGE_BMP_BATCH_MAX_BYTES / source_stride;
         if (row_batch > IMAGE_BMP_BATCH_ROWS)
             row_batch = IMAGE_BMP_BATCH_ROWS;
     }
-    source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
+    source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
     if (!source_buffer && row_batch > 1U) {
         /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
         while (!source_buffer && row_batch > 1U) {
             row_batch /= 2U;
-            source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
+            source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
         }
     }
     if (!source_buffer) {
+        row_batch = 1U;
+        batch_stride = (size_t)source_bytes;
         source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes);
     }
     raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
@@ -354,7 +361,12 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             size_t read_bytes;
             if (rows > row_batch)
                 rows = row_batch;
-            read_bytes = (size_t)source_bytes * rows;
+            /* 最后一行仅读取可视像素，避免跨越图片像素区尾部。 */
+            read_bytes = batch_stride * (rows - 1U) + (size_t)source_bytes;
+            /* 后续还有一批时连同行尾间隙读取，使下一批直接顺序读，
+             * 避免每批 fseek 导致标准库缓存失效。最后一批保留精确边界。 */
+            if (rows > 1U && y + rows < output_height)
+                read_bytes = batch_stride * rows;
             if (source_offset + read_bytes > image_end || source_offset > LONG_MAX ||
                 (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
                 fread(source_buffer, 1, read_bytes, file) != read_bytes) {
@@ -363,7 +375,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             }
             next_offset = source_offset + read_bytes;
         }
-        source_row = source_buffer + (size_t)(y % row_batch) * (size_t)source_bytes;
+        source_row = source_buffer + (size_t)(y % row_batch) * batch_stride;
 
         /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
         if (bits_per_pixel == 24 ||
