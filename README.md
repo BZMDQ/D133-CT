@@ -1,3 +1,8 @@
+
+## v1.0.40 更新
+
+修复关闭 FinSH 时屏幕切换和 OTA 调用空复位函数的问题，使用 SDK 看门狗触发重启；CS001 的实际背光、显示和接口供电尚未经过硬件验证。[下载工厂 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.40.img)；[接口和测试说明](docs/CS001_串口复位与接口_v1.0.40.md)。
+
 # D133-控制终端
 
 工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（800×1280 ILI9881C MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。

@@ -1,5 +1,6 @@
 #include "display_profile_manager.h"
 #include "system_manager.h"
+#include "reboot_manager.h"
 
 #include <rtthread.h>
 #include <rtdevice.h>
@@ -97,7 +98,10 @@ static void profile_command_reply(const char *command)
         profile_uart_send(response);
         /* 给 UART 发完应答的时间，再重启让早期 panel probe 采用新 timing。 */
         rt_thread_mdelay(100);
-        rt_hw_cpu_reset();
+        if (reboot_manager_request() != 0) {
+            profile_uart_send("ERR,REBOOT_FAILED\r\n");
+            return;
+        }
         while (1)
             rt_thread_mdelay(1000);
     } else if (result == DISPLAY_PROFILE_ERR_NOT_CONFIGURED) {
@@ -204,7 +208,7 @@ display_profile_result_t display_profile_apply(const char *code)
     if (!code)
         return DISPLAY_PROFILE_ERR_ARGUMENT;
     if (strcmp(code, active_profile.code) == 0)
-        return DISPLAY_PROFILE_OK;
+        return strcmp(code, "CS001") == 0 ? DISPLAY_PROFILE_REBOOT_REQUIRED : DISPLAY_PROFILE_OK;
     if (strcmp(code, "CS000") != 0 && strcmp(code, "CS001") != 0)
         return DISPLAY_PROFILE_ERR_ARGUMENT;
     if (profile_info_from_code(code, &target) != 0)

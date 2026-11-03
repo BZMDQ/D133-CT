@@ -7,5 +7,7 @@ void boot_manager_ui_heartbeat(void);
 void boot_manager_get(boot_status_t *out);
 int boot_manager_confirm(void);
 int boot_manager_refresh(void);
+/* 重启过程中暂停健康线程喂狗。 */
+void boot_manager_set_rebooting(int rebooting);
 #endif
 

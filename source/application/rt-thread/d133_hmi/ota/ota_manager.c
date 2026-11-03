@@ -4,6 +4,7 @@
 #include "boot_manager.h"
 #include "system_manager.h"
 #include "hmi_serial_log.h"
+#include "reboot_manager.h"
 #include <rtthread.h>
 #include <stdbool.h>
 #include <mbedtls/sha256.h>
@@ -18,7 +19,7 @@ void ota_manager_set_signature_verifier(ota_signature_verifier_t v){verifier=v;}
 void ota_manager_get(hmi_ota_status_t *out){rt_mutex_take(&mutex,RT_WAITING_FOREVER);*out=status;rt_mutex_release(&mutex);}
 static void update(hmi_ota_state_t s,unsigned p,int err){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=err;rt_mutex_release(&mutex);}
 void ota_manager_decide(int accept){decision=accept?1:-1;}
-void ota_manager_reboot(void){extern void rt_hw_cpu_reset(void);rt_hw_cpu_reset();}
+void ota_manager_reboot(void){if(reboot_manager_request())system_manager_log("重启请求失败");}
 static void worker(void *unused)
 {
     job_t j;char version[32],buf[2048];unsigned char hash[32];FILE *f;long total,written;size_t n;int error,initialized,hash_initialized;mbedtls_sha256_context stream_hash;

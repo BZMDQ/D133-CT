@@ -13,9 +13,16 @@
 static boot_status_t state;
 static int pending_at_boot;
 static volatile rt_tick_t heartbeat;
+static volatile int rebooting;
 static struct rt_mutex lock;
 void boot_manager_get(boot_status_t *out){rt_mutex_take(&lock,RT_WAITING_FOREVER);*out=state;rt_mutex_release(&lock);}
 void boot_manager_ui_heartbeat(void){heartbeat=rt_tick_get();}
+void boot_manager_set_rebooting(int value)
+{
+    rt_enter_critical();
+    rebooting = value;
+    rt_exit_critical();
+}
 int boot_manager_confirm(void)
 {
     int r=aic_ota_status_update();
@@ -35,7 +42,7 @@ static void monitor(void *arg)
         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
         int touch_ok=!profile.touch_enabled || (profile.touch_device[0] && rt_device_find(profile.touch_device));
         int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
-        if(ok){if(wdt)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed)boot_manager_confirm();}else healthy=0;
+        if(ok && !rebooting){rt_enter_critical();if(wdt && !rebooting)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);rt_exit_critical();if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed&&!rebooting)boot_manager_confirm();}else healthy=0;
         rt_thread_mdelay(1000);
     }
 }
