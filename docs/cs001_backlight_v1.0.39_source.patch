@@ -1,0 +1,72 @@
+diff --git a/.gitignore b/.gitignore
+index a030836..cea3693 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -66,0 +67,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.39.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.39.img.sha256
+diff --git a/README.md b/README.md
+index d8abfce..713d795 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.38 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.39 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_cs001_ili9881c_v1.0.38_os.log
++.\scripts\build.ps1 -Target OS -LogName stage_cs001_backlight_v1.0.39_os.log
+@@ -50 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.38 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.38.img)，大小 4,295,168 字节，SHA-256 `734b41ff51fcf38599e7bc6287822594e9413ef4eef37613c51e699071079d30`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.39 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.39.img)，大小 4,295,168 字节，SHA-256 `653d58bde523d1936169db28dda8c6a5fb5cfbdf63bbd072f52ea4eb5fa5c36b`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -130 +130 @@ v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫
+-- [v1.0.38 CS001 ILI9881C 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
++- [v1.0.38 CS001 ILI9881C 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
+@@ -137 +137 @@ v1.0.38 将 CS001 切换为 SDK ILI9881C-04 面板配置，按 WJ101E5 图纸设
+-- [v1.0.38 OS 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
++- [v1.0.38 OS 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
+@@ -144,0 +145,10 @@ CS001 原 MIPI 面板型号已更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA。v
++
++
++v1.0.39 在 ILI9881C-04 初始化命令前打开 PE.13 背光使能，减少 DSI 初始化异常时黑屏难以区分的情况。VLED 背光供电仍需确认模组与载板实际连接。
++
++CS001 ILI9881C 面板 v1.0.39 在 DSI 初始化前打开 PE.13 背光使能，初始化后再次确认使能。若仍无背光，应核实模组 VLED+/VLED− 供电和载板 LED 电流驱动；软件不能替代缺失的背光电源。
++
++- [CS001 背光说明和检查步骤](docs/CS001_backlight_v1.0.39.md)
++- [v1.0.39 OS 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
++
++- [v1.0.39 ILI9881C 背光使能源码差异](docs/cs001_backlight_v1.0.39_source.patch)
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index df26823..4ebab85 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-734b41ff51fcf38599e7bc6287822594e9413ef4eef37613c51e699071079d30  d13x_d133cbv-hmi-nor_v1.0.38.img
++653d58bde523d1936169db28dda8c6a5fb5cfbdf63bbd072f52ea4eb5fa5c36b  d13x_d133cbv-hmi-nor_v1.0.39.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 2c8d0b3..ba58177 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.38
++D133-控制终端 1.0.39
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 0dae573..cd31181 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -147 +147 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.38"
++CONFIG_HMI_FW_VERSION="1.0.39"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index aff1f1b..51cc8c1 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -145 +145 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.38"
++CONFIG_HMI_FW_VERSION="1.0.39"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index 7a4495e..71c6ae9 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.38",
++            "version": "1.0.39",
