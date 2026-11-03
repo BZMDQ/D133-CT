@@ -42,6 +42,11 @@ static const uint32_t screen_test_bar_colors[8] = {
     0xFFFF00U, 0xFF0000U, 0xFF00FFU, 0xFFFFFFU
 };
 
+/* 按 GT911 触点 ID 固定分配高对比颜色，最多支持五指。 */
+static const uint32_t screen_test_touch_colors[AIC_LV_TOUCH_MAX_POINTS] = {
+    0x0000FFU, 0xFF0000U, 0x00A000U, 0xFF8000U, 0xA000D0U
+};
+
 static lv_obj_t *test_overlay;
 typedef struct {
     lv_obj_t *object;
@@ -142,7 +147,9 @@ static void screen_test_add_touch_point(uint8_t finger_id, int32_t x, int32_t y)
             return;
         }
         lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
-        lv_obj_set_style_line_color(active_segment->object, lv_color_hex(0x0000FFU), LV_PART_MAIN);
+        lv_obj_set_style_line_color(active_segment->object,
+                                    lv_color_hex(screen_test_touch_colors[finger_id]),
+                                    LV_PART_MAIN);
         lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
         lv_obj_clear_flag(active_segment->object, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
         active_segments[finger_id] = active_segment;

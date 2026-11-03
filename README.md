@@ -4,7 +4,7 @@
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.36 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.37 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
 
 启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.31 尚未上板测量，1 秒目标未达成。
 
@@ -12,7 +12,7 @@
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage_fastboot_v1.0.31_bootloader.log
-.\scripts\build.ps1 -Target OS -LogName stage_multitouch_v1.0.36_os.log
+.\scripts\build.ps1 -Target OS -LogName stage_finger_colors_v1.0.37_os.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
@@ -47,7 +47,7 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.36 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.36.img)，大小 4,280,832 字节，SHA-256 `e435b785ff0ea35aa0ca56bf2612de6e0154689abb67f05980d9536db95394b0`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+当前工厂镜像为 [v1.0.37 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.37.img)，大小 4,280,832 字节，SHA-256 `392937a543ad78dc70526f1d11fd1cf6e87df7d8eb08299223bd927416b41217`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
 
 ## 仓库内容
 
@@ -123,3 +123,9 @@ v1.0.36 屏幕检测白屏页通过 GT911 track ID 接收最多五个触点，�
 - [多指划线说明](docs/多指划线_v1.0.36.md)
 - [OS 构建日志](docs/stage_multitouch_v1.0.36_os.log)
 - [源码差异](docs/multitouch_v1.0.36_source.patch)
+
+
+v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫五种固定笔迹颜色。多指显示效果仍需板上验证。
+
+- [v1.0.37 构建日志](docs/stage_finger_colors_v1.0.37_os.log)
+- [源码差异](docs/finger_colors_v1.0.37_source.patch)
