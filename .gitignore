@@ -55,3 +55,5 @@ downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.31.img.sha256
 !downloads/d13x_d133cbv-hmi-nor_v1.0.32.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.32.img.sha256
+!downloads/d13x_d133cbv-hmi-nor_v1.0.33.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.33.img.sha256

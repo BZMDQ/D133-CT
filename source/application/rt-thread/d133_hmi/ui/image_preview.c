@@ -353,9 +353,26 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         }
         source_row = source_buffer + (size_t)(y % row_batch) * (size_t)source_bytes;
 
+        /* 标准 RGB565 无需逐像素转换，直接复制到目标行。 */
+        if (bits_per_pixel == 16 && red_mask == 0xF800U &&
+            green_mask == 0x07E0U && blue_mask == 0x001FU) {
+            memcpy(output_row, source_row, (size_t)source_bytes);
+            if (output_stride > output_width * 2U)
+                memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
+            continue;
+        }
+
         for (x = 0; x < output_width; x++) {
             uint16_t rgb565;
-            if (bits_per_pixel == 16) {
+            if (bits_per_pixel == 16 && red_mask == 0x7C00U &&
+                green_mask == 0x03E0U && blue_mask == 0x001FU) {
+                uint16_t pixel = read_le16(source_row + (size_t)x * 2U);
+                uint16_t green = (pixel >> 5) & 0x1FU;
+                /* 标准 RGB555 的 5 位绿色扩展到 6 位。 */
+                rgb565 = (uint16_t)(((pixel & 0x7C00U) << 1) |
+                                    (((green << 1) | (green >> 4)) << 5) |
+                                    (pixel & 0x001FU));
+            } else if (bits_per_pixel == 16) {
                 uint32_t pixel = read_le16(source_row + (size_t)x * 2U);
                 uint8_t red = bmp_mask_to_u8(pixel, red_mask);
                 uint8_t green = bmp_mask_to_u8(pixel, green_mask);
@@ -363,7 +380,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                 rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
                                     ((uint16_t)(green & 0xFCU) << 3) |
                                     ((uint16_t)blue >> 3));
-            } else if (bits_per_pixel == 32 && compression == 3) {
+            } else if (bits_per_pixel == 32 && compression == 3 &&
+                       !(red_mask == 0x00FF0000U && green_mask == 0x0000FF00U &&
+                         blue_mask == 0x000000FFU)) {
                 const uint8_t *pixel = source_row + (size_t)x * 4U;
                 uint32_t value = read_le32(pixel);
                 uint8_t red = bmp_mask_to_u8(value, red_mask);
