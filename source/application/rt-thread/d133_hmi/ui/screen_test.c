@@ -1,5 +1,6 @@
 #include "screen_test.h"
 #include "image_preview.h"
+#include "lv_port_indev.h"
 #include <rtdevice.h>
 #include <stdint.h>
 #include <string.h>
@@ -49,18 +50,17 @@ typedef struct {
     uint32_t count;
 } screen_test_segment_t;
 static screen_test_segment_t segments[SCREEN_TEST_LINE_SEGMENTS];
-static screen_test_segment_t *active_segment;
+static screen_test_segment_t *active_segments[AIC_LV_TOUCH_MAX_POINTS];
 static uint32_t next_segment;
 static lv_obj_t *test_image_status;
 static lv_obj_t *test_back_button;
 static lv_timer_t *image_poll_timer;
 static lv_timer_t *key_dispatch_timer;
+static lv_timer_t *touch_timer;
 static int32_t screen_width;
 static int32_t screen_height;
-static int32_t last_x;
-static int32_t last_y;
 static uint8_t current_test_page;
-static uint8_t touch_down;
+static uint8_t touch_was_pressed[AIC_LV_TOUCH_MAX_POINTS];
 static uint8_t image_request_pending;
 static uint8_t exit_started;
 static volatile uint8_t key_worker_starting;
@@ -74,24 +74,6 @@ static void *exit_context;
 static void screen_test_exit(void);
 
 /* 将触摸坐标裁剪到当前活动显示器的有效像素范围。 */
-static void screen_test_get_point(lv_indev_t *indev, int32_t *x, int32_t *y)
-{
-    lv_point_t point = {0};
-
-    if (indev)
-        lv_indev_get_point(indev, &point);
-    if (point.x < 0)
-        point.x = 0;
-    if (point.y < 0)
-        point.y = 0;
-    if (point.x >= screen_width)
-        point.x = screen_width - 1;
-    if (point.y >= screen_height)
-        point.y = screen_height - 1;
-    *x = point.x;
-    *y = point.y;
-}
-
 /* 新建无边框矩形，测试色值由 LVGL 按当前面板像素格式输出。 */
 static void screen_test_add_rect(int32_t x, int32_t y,
                                  int32_t width, int32_t height,
@@ -121,37 +103,49 @@ static void screen_test_begin_page(uint32_t rgb)
     lv_obj_set_style_bg_color(test_overlay, lv_color_hex(rgb), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(test_overlay, LV_OPA_COVER, LV_PART_MAIN);
     memset(segments, 0, sizeof(segments));
-    active_segment = NULL;
+    memset(active_segments, 0, sizeof(active_segments));
+    memset(touch_was_pressed, 0, sizeof(touch_was_pressed));
     next_segment = 0;
     test_image_status = NULL;
     test_back_button = NULL;
-    touch_down = 0;
 }
 
 /* 绘制白屏触摸测试专用的两像素蓝线。 */
-static void screen_test_add_touch_point(int32_t x, int32_t y)
+static void screen_test_add_touch_point(uint8_t finger_id, int32_t x, int32_t y)
 {
     int32_t min_x, min_y, max_x, max_y;
     uint32_t i;
     lv_point_precise_t previous = {0};
-    int carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
+    screen_test_segment_t *active_segment;
+    int carry;
+
+    if (finger_id >= AIC_LV_TOUCH_MAX_POINTS)
+        return;
+    active_segment = active_segments[finger_id];
+    carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
 
     if (carry)
         previous = active_segment->absolute[active_segment->count - 1U];
     if (!active_segment || carry) {
         active_segment = &segments[next_segment++ % SCREEN_TEST_LINE_SEGMENTS];
+        for (i = 0; i < AIC_LV_TOUCH_MAX_POINTS; i++) {
+            if (active_segments[i] == active_segment)
+                active_segments[i] = NULL;
+        }
         if (active_segment->object)
             lv_obj_delete(active_segment->object);
         memset(active_segment, 0, sizeof(*active_segment));
         active_segment->object = lv_line_create(test_overlay);
         if (!active_segment->object) {
             active_segment = NULL;
+            active_segments[finger_id] = NULL;
             return;
         }
         lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
         lv_obj_set_style_line_color(active_segment->object, lv_color_hex(0x0000FFU), LV_PART_MAIN);
         lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
         lv_obj_clear_flag(active_segment->object, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        active_segments[finger_id] = active_segment;
         if (carry)
             active_segment->absolute[active_segment->count++] = previous;
         if (test_back_button)
@@ -181,6 +175,37 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
         lv_line_set_points(active_segment->object, active_segment->relative, 2);
     } else {
         lv_line_set_points(active_segment->object, active_segment->relative, active_segment->count);
+    }
+}
+
+/* 在 LVGL 线程读取触摸适配层提供的五点快照，各指针保留自己的轨迹。 */
+static void screen_test_multitouch_timer(lv_timer_t *timer)
+{
+    aic_lv_touch_point_t points[AIC_LV_TOUCH_MAX_POINTS];
+    uint8_t i;
+
+    LV_UNUSED(timer);
+    aic_touch_snapshot(points, AIC_LV_TOUCH_MAX_POINTS);
+    for (i = 0; i < AIC_LV_TOUCH_MAX_POINTS; i++) {
+        if (current_test_page != SCREEN_TEST_WHITE) {
+            active_segments[i] = NULL;
+            touch_was_pressed[i] = 0;
+            continue;
+        }
+        if (!points[i].pressed) {
+            active_segments[i] = NULL;
+            touch_was_pressed[i] = 0;
+            continue;
+        }
+        if (!touch_was_pressed[i])
+            active_segments[i] = NULL;
+        touch_was_pressed[i] = 1;
+        /* 返回键区域不参与白屏划线。 */
+        if (test_back_button && points[i].x < 88 && points[i].y < 56) {
+            active_segments[i] = NULL;
+            continue;
+        }
+        screen_test_add_touch_point(i, points[i].x, points[i].y);
     }
 }
 
@@ -509,6 +534,10 @@ static void screen_test_exit(void)
         lv_timer_delete(key_dispatch_timer);
         key_dispatch_timer = NULL;
     }
+    if (touch_timer) {
+        lv_timer_delete(touch_timer);
+        touch_timer = NULL;
+    }
     if (image_poll_timer) {
         lv_timer_delete(image_poll_timer);
         image_poll_timer = NULL;
@@ -525,38 +554,6 @@ static void screen_test_exit(void)
     exit_context = NULL;
     if (callback)
         callback(context);
-}
-
-/* 测试页不响应触摸切换；白屏页只记录并绘制蓝色触摸轨迹。 */
-static void screen_test_input(lv_event_t *event)
-{
-    lv_event_code_t code = lv_event_get_code(event);
-    int32_t x;
-    int32_t y;
-
-    if (exit_started)
-        return;
-    screen_test_get_point(lv_event_get_indev(event), &x, &y);
-
-    if (code == LV_EVENT_PRESSED) {
-        active_segment = NULL;
-        last_x = x;
-        last_y = y;
-        touch_down = 1;
-        if (current_test_page == SCREEN_TEST_WHITE)
-            screen_test_add_touch_point(x, y);
-    } else if (code == LV_EVENT_PRESSING) {
-        if (touch_down && current_test_page == SCREEN_TEST_WHITE &&
-            (x != last_x || y != last_y))
-            screen_test_add_touch_point(x, y);
-        last_x = x;
-        last_y = y;
-    } else if (code == LV_EVENT_RELEASED) {
-        if (!touch_down)
-            return;
-        touch_down = 0;
-        active_segment = NULL;
-    }
 }
 
 int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
@@ -578,6 +575,7 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
     exit_started = 0;
     image_poll_timer = NULL;
     key_dispatch_timer = NULL;
+    touch_timer = NULL;
     image_request_pending = 0;
     pending_key = SCREEN_TEST_KEY_NONE;
     key_worker_enabled = 1;
@@ -596,12 +594,10 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
     lv_obj_set_style_pad_all(test_overlay, 0, LV_PART_MAIN);
     lv_obj_clear_flag(test_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(test_overlay, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSING, NULL);
-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_RELEASED, NULL);
     lv_obj_move_foreground(test_overlay);
     screen_test_start_key_worker();
     key_dispatch_timer = lv_timer_create(screen_test_dispatch_key, 10, NULL);
+    touch_timer = lv_timer_create(screen_test_multitouch_timer, 10, NULL);
     screen_test_show_page(SCREEN_TEST_WHITE);
     return 0;
 }

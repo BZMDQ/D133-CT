@@ -1,0 +1,224 @@
+diff --git a/.gitignore b/.gitignore
+index a829c02..ee362d3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -63,0 +64,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.36.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.36.img.sha256
+diff --git a/README.md b/README.md
+index a883d34..1323b3a 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.35 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.36 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_bmp_batch_v1.0.35_os.log
++.\scripts\build.ps1 -Target OS -LogName stage_multitouch_v1.0.36_os.log
+@@ -50 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.35 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.35.img)，大小 4,280,832 字节，SHA-256 `b66be6a14f0d8724e7c3bd8a87a9fed80a69af023246c5cddf5c06e60bea4dd0`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.36 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.36.img)，大小 4,280,832 字节，SHA-256 `e435b785ff0ea35aa0ca56bf2612de6e0154689abb67f05980d9536db95394b0`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -118,0 +119,7 @@ v1.0.35 将完整行 BMP 连续读取批次提升至最多 16 行，缓冲上限
++
++
++v1.0.36 屏幕检测白屏页通过 GT911 track ID 接收最多五个触点，为每根手指分别绘线。多指输入数据由现有触摸线程采集，LVGL 线程读取快照并更新笔迹。多指效果仍需 GT911 屏幕实机验证。
++
++- [多指划线说明](docs/多指划线_v1.0.36.md)
++- [OS 构建日志](docs/stage_multitouch_v1.0.36_os.log)
++- [源码差异](docs/multitouch_v1.0.36_source.patch)
+diff --git "a/docs/\345\244\232\346\214\207\345\210\222\347\272\277_v1.0.36.md" "b/docs/\345\244\232\346\214\207\345\210\222\347\272\277_v1.0.36.md"
+new file mode 100644
+index 0000000..3d856b4
+--- /dev/null
++++ "b/docs/\345\244\232\346\214\207\345\210\222\347\272\277_v1.0.36.md"
+@@ -0,0 +1,7 @@
++# 屏幕检测多指划线
++
++v1.0.36 将触摸 track ID 与坐标状态从 ArtInChip LVGL 触摸输入适配层提供给屏幕检测。白屏页为最多五个触点分别保留笔迹段，触点抬起后另起笔迹；多指不会共用一条轨迹。其它测试页忽略划线，左上角返回键仍由 LVGL 单指输入处理。
++
++每段最多 16 点，总共 64 段；达到容量后复用最旧线段。LVGL 线程通过快照读取触点状态并创建/更新线对象，GT911 采集仍由原触摸线程执行。本改动不修改 GT911 驱动。
++
++主机 OS 编译通过。需在支持多点的 GT911 屏上同时按住 2 至 5 指交叉划线、分别抬指、连续划超过 64 段，并检查轨迹是否串指、回收和触摸返回键；尚未实机验收。
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 98aa5d6..e20f936 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-b66be6a14f0d8724e7c3bd8a87a9fed80a69af023246c5cddf5c06e60bea4dd0  d13x_d133cbv-hmi-nor_v1.0.35.img
++e435b785ff0ea35aa0ca56bf2612de6e0154689abb67f05980d9536db95394b0  d13x_d133cbv-hmi-nor_v1.0.36.img
+diff --git a/source/application/rt-thread/d133_hmi/SConscript b/source/application/rt-thread/d133_hmi/SConscript
+index 8191726..7985dd3 100644
+--- a/source/application/rt-thread/d133_hmi/SConscript
++++ b/source/application/rt-thread/d133_hmi/SConscript
+@@ -15,0 +16,2 @@ inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/l
++inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
++inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index c21bfae..cd011cf 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.35
++D133-控制终端 1.0.36
+diff --git a/source/application/rt-thread/d133_hmi/ui/screen_test.c b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+index b837d68..0d771b6 100644
+--- a/source/application/rt-thread/d133_hmi/ui/screen_test.c
++++ b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+@@ -2,0 +3 @@
++#include "lv_port_indev.h"
+@@ -52 +53 @@ static screen_test_segment_t segments[SCREEN_TEST_LINE_SEGMENTS];
+-static screen_test_segment_t *active_segment;
++static screen_test_segment_t *active_segments[AIC_LV_TOUCH_MAX_POINTS];
+@@ -57,0 +59 @@ static lv_timer_t *key_dispatch_timer;
++static lv_timer_t *touch_timer;
+@@ -60,2 +61,0 @@ static int32_t screen_height;
+-static int32_t last_x;
+-static int32_t last_y;
+@@ -63 +63 @@ static uint8_t current_test_page;
+-static uint8_t touch_down;
++static uint8_t touch_was_pressed[AIC_LV_TOUCH_MAX_POINTS];
+@@ -77,18 +76,0 @@ static void screen_test_exit(void);
+-static void screen_test_get_point(lv_indev_t *indev, int32_t *x, int32_t *y)
+-{
+-    lv_point_t point = {0};
+-
+-    if (indev)
+-        lv_indev_get_point(indev, &point);
+-    if (point.x < 0)
+-        point.x = 0;
+-    if (point.y < 0)
+-        point.y = 0;
+-    if (point.x >= screen_width)
+-        point.x = screen_width - 1;
+-    if (point.y >= screen_height)
+-        point.y = screen_height - 1;
+-    *x = point.x;
+-    *y = point.y;
+-}
+-
+@@ -124 +106,2 @@ static void screen_test_begin_page(uint32_t rgb)
+-    active_segment = NULL;
++    memset(active_segments, 0, sizeof(active_segments));
++    memset(touch_was_pressed, 0, sizeof(touch_was_pressed));
+@@ -128 +110,0 @@ static void screen_test_begin_page(uint32_t rgb)
+-    touch_down = 0;
+@@ -132 +114 @@ static void screen_test_begin_page(uint32_t rgb)
+-static void screen_test_add_touch_point(int32_t x, int32_t y)
++static void screen_test_add_touch_point(uint8_t finger_id, int32_t x, int32_t y)
+@@ -137 +119,7 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
+-    int carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
++    screen_test_segment_t *active_segment;
++    int carry;
++
++    if (finger_id >= AIC_LV_TOUCH_MAX_POINTS)
++        return;
++    active_segment = active_segments[finger_id];
++    carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
+@@ -142,0 +131,4 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
++        for (i = 0; i < AIC_LV_TOUCH_MAX_POINTS; i++) {
++            if (active_segments[i] == active_segment)
++                active_segments[i] = NULL;
++        }
+@@ -148,0 +141 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
++            active_segments[finger_id] = NULL;
+@@ -154,0 +148 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
++        active_segments[finger_id] = active_segment;
+@@ -186,0 +181,31 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
++/* 在 LVGL 线程读取触摸适配层提供的五点快照，各指针保留自己的轨迹。 */
++static void screen_test_multitouch_timer(lv_timer_t *timer)
++{
++    aic_lv_touch_point_t points[AIC_LV_TOUCH_MAX_POINTS];
++    uint8_t i;
++
++    LV_UNUSED(timer);
++    aic_touch_snapshot(points, AIC_LV_TOUCH_MAX_POINTS);
++    for (i = 0; i < AIC_LV_TOUCH_MAX_POINTS; i++) {
++        if (current_test_page != SCREEN_TEST_WHITE) {
++            active_segments[i] = NULL;
++            touch_was_pressed[i] = 0;
++            continue;
++        }
++        if (!points[i].pressed) {
++            active_segments[i] = NULL;
++            touch_was_pressed[i] = 0;
++            continue;
++        }
++        if (!touch_was_pressed[i])
++            active_segments[i] = NULL;
++        touch_was_pressed[i] = 1;
++        /* 返回键区域不参与白屏划线。 */
++        if (test_back_button && points[i].x < 88 && points[i].y < 56) {
++            active_segments[i] = NULL;
++            continue;
++        }
++        screen_test_add_touch_point(i, points[i].x, points[i].y);
++    }
++}
++
+@@ -511,0 +537,4 @@ static void screen_test_exit(void)
++    if (touch_timer) {
++        lv_timer_delete(touch_timer);
++        touch_timer = NULL;
++    }
+@@ -530,32 +558,0 @@ static void screen_test_exit(void)
+-/* 测试页不响应触摸切换；白屏页只记录并绘制蓝色触摸轨迹。 */
+-static void screen_test_input(lv_event_t *event)
+-{
+-    lv_event_code_t code = lv_event_get_code(event);
+-    int32_t x;
+-    int32_t y;
+-
+-    if (exit_started)
+-        return;
+-    screen_test_get_point(lv_event_get_indev(event), &x, &y);
+-
+-    if (code == LV_EVENT_PRESSED) {
+-        active_segment = NULL;
+-        last_x = x;
+-        last_y = y;
+-        touch_down = 1;
+-        if (current_test_page == SCREEN_TEST_WHITE)
+-            screen_test_add_touch_point(x, y);
+-    } else if (code == LV_EVENT_PRESSING) {
+-        if (touch_down && current_test_page == SCREEN_TEST_WHITE &&
+-            (x != last_x || y != last_y))
+-            screen_test_add_touch_point(x, y);
+-        last_x = x;
+-        last_y = y;
+-    } else if (code == LV_EVENT_RELEASED) {
+-        if (!touch_down)
+-            return;
+-        touch_down = 0;
+-        active_segment = NULL;
+-    }
+-}
+-
+@@ -580,0 +578 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
++    touch_timer = NULL;
+@@ -599,3 +596,0 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
+-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSED, NULL);
+-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSING, NULL);
+-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_RELEASED, NULL);
+@@ -604,0 +600 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
++    touch_timer = lv_timer_create(screen_test_multitouch_timer, 10, NULL);
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 9dfdaca..3d5ed11 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -145 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.35"
++CONFIG_HMI_FW_VERSION="1.0.36"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 7faa425..3a8e0c3 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -143 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.35"
++CONFIG_HMI_FW_VERSION="1.0.36"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index 990c6b4..f65d0e1 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.35",
++            "version": "1.0.36",

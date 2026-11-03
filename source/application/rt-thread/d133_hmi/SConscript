@@ -13,5 +13,7 @@ if GetDepend('HMI_UI'):
     src += Glob('ui/*.c')
 inc=[cwd]+[cwd+'/'+m for m in modules+['network','ui']]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec'))]
+inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
+inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
 group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
 Return('group')
