@@ -353,6 +353,30 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         }
         source_row = source_buffer + (size_t)(y % row_batch) * (size_t)source_bytes;
 
+        /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
+        if (bits_per_pixel == 24 ||
+            (bits_per_pixel == 32 &&
+             (compression == 0 ||
+              (red_mask == 0x00FF0000U && green_mask == 0x0000FF00U &&
+               blue_mask == 0x000000FFU)))) {
+            const uint8_t *src = source_row;
+            uint16_t *dst = (uint16_t *)output_row;
+
+            for (x = 0; x < output_width; x++) {
+                uint8_t blue = src[0];
+                uint8_t green = src[1];
+                uint8_t red = src[2];
+                dst[x] = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                                    ((uint16_t)(green & 0xFCU) << 3) |
+                                    ((uint16_t)blue >> 3));
+                src += bytes_per_pixel;
+            }
+            if (output_stride > output_width * 2U)
+                memset(output_row + output_width * 2U, 0,
+                       output_stride - output_width * 2U);
+            continue;
+        }
+
         /* 标准 RGB565 无需逐像素转换，直接复制到目标行。 */
         if (bits_per_pixel == 16 && red_mask == 0xF800U &&
             green_mask == 0x07E0U && blue_mask == 0x001FU) {

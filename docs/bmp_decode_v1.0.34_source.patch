@@ -1,0 +1,105 @@
+diff --git a/.gitignore b/.gitignore
+index ab8c879..b2acb79 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -59,0 +60,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.34.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.34.img.sha256
+diff --git a/README.md b/README.md
+index 74d0a71..ec780e3 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.33 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.34 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_decode_v1.0.33_os.log
++.\scripts\build.ps1 -Target OS -LogName stage_bmp_decode_v1.0.34_os.log
+@@ -50 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.33 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.33.img)，大小 4,280,832 字节，SHA-256 `7d8a9923da174bb41c6a81da9361a2478d86124029f1e0c553cb4a582bc20c3e`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.34 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.34.img)，大小 4,280,832 字节，SHA-256 `fc6d3b2096ff9a9d7d8fbe87e5a3b0fcf874a72cb66b8bc5f895782ae61a51ce`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -104,0 +105,7 @@ v1.0.33 加快常见 BMP 像素转换：RGB565 直接复制，RGB555 使用等
++
++
++v1.0.34 为 24 位及标准 32 位 BMP 增加逐行直接转换路径，绕过通用像素格式分派及逐像素 memcpy。其他 BMP 掩码沿用通用转换；JPEG/PNG 仍由 SDK MPP 解码。速度和屏幕颜色需上板测量。
++
++- [BMP 解码优化说明](docs/bmp_decode_v1.0.34.md)
++- [OS 构建日志](docs/stage_bmp_decode_v1.0.34_os.log)
++- [源码差异](docs/bmp_decode_v1.0.34_source.patch)
+diff --git a/docs/bmp_decode_v1.0.34.md b/docs/bmp_decode_v1.0.34.md
+new file mode 100644
+index 0000000..877299d
+--- /dev/null
++++ b/docs/bmp_decode_v1.0.34.md
+@@ -0,0 +1,7 @@
++# v1.0.34 BMP 解码路径
++
++24 位 BI_RGB 和标准通道顺序的 32 位 BMP 使用专用 BGR 到 RGB565 行转换，避免每个像素进入通用格式分支并调用逐像素复制。16 位 RGB565/RGB555 继续使用 v1.0.33 快速路径；自定义 BI_BITFIELDS 使用通用掩码转换。BMP 文件仍按连续行批量读取，倒序 BMP 在输出时映射到对应显示行。
++
++改动覆盖文件管理图片预览和屏幕测试选图共用的 BMP 预览模块。JPEG/PNG 由 SDK MPP 解码，本版没有改动其核心解码器。实际速度、颜色和裁剪仍需用目标板与 SD 卡测量。
++
++验证：Luban-Lite OS 编译和 IMG 封装通过；目标板显示效果尚未验证。
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index c6bdd90..b1a0c27 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-7d8a9923da174bb41c6a81da9361a2478d86124029f1e0c553cb4a582bc20c3e  d13x_d133cbv-hmi-nor_v1.0.33.img
++fc6d3b2096ff9a9d7d8fbe87e5a3b0fcf874a72cb66b8bc5f895782ae61a51ce  d13x_d133cbv-hmi-nor_v1.0.34.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 13f90fd..9a3dd30 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.33
++D133-控制终端 1.0.34
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index e779395..a87664d 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -355,0 +356,24 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
++        /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
++        if (bits_per_pixel == 24 ||
++            (bits_per_pixel == 32 &&
++             (compression == 0 ||
++              (red_mask == 0x00FF0000U && green_mask == 0x0000FF00U &&
++               blue_mask == 0x000000FFU)))) {
++            const uint8_t *src = source_row;
++            uint16_t *dst = (uint16_t *)output_row;
++
++            for (x = 0; x < output_width; x++) {
++                uint8_t blue = src[0];
++                uint8_t green = src[1];
++                uint8_t red = src[2];
++                dst[x] = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
++                                    ((uint16_t)(green & 0xFCU) << 3) |
++                                    ((uint16_t)blue >> 3));
++                src += bytes_per_pixel;
++            }
++            if (output_stride > output_width * 2U)
++                memset(output_row + output_width * 2U, 0,
++                       output_stride - output_width * 2U);
++            continue;
++        }
++
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 3ef781c..c63b499 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -145 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.33"
++CONFIG_HMI_FW_VERSION="1.0.34"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 2ab53c8..6a831d8 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -143 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.33"
++CONFIG_HMI_FW_VERSION="1.0.34"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index 7156852..3df884b 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.33",
++            "version": "1.0.34",
