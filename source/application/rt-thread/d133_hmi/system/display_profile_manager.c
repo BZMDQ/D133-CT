@@ -40,11 +40,11 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
         return 0;
     }
     if (strcmp(code, "CS001") == 0) {
-        /* 1280x800 为 EK79202DA 芯片资料给出的候选显示配置；触摸暂未接入。 */
+        /* WJ101E5 规格为 800x1280、4 通道 MIPI、ILI9881C-04T00GA；触摸暂未接入。 */
         rt_snprintf(profile->code, sizeof(profile->code), "CS001");
-        profile->width = 1280;
-        profile->height = 800;
-        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-MIPI");
+        profile->width = 800;
+        profile->height = 1280;
+        rt_snprintf(profile->panel, sizeof(profile->panel), "ILI9881C-04T00GA MIPI-4L");
         rt_snprintf(profile->touch, sizeof(profile->touch), "DISABLED");
         profile->touch_enabled = 0;
         return 0;

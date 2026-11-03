@@ -1,0 +1,294 @@
+diff --git a/.gitignore b/.gitignore
+index 61880c1..a030836 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -14 +13,0 @@ keys/*.pem
+-
+@@ -35,2 +33,0 @@ downloads/*
+-!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img
+-!downloads/d13x_d133cbv-hmi-nor_v1.0.21.img.sha256
+@@ -67,0 +65,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.38.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.38.img.sha256
+diff --git a/README.md b/README.md
+index cdf1ad7..83ba66d 100644
+--- a/README.md
++++ b/README.md
+@@ -3 +3 @@
+-工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（1280×800 MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
++工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（800×1280 ILI9881C MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.37 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.38 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_finger_colors_v1.0.37_os.log
++.\scripts\build.ps1 -Target OS -LogName stage_cs001_ili9881c_v1.0.38_os.log
+@@ -26 +26 @@
+-UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 EK79202DA 1280×800 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
++UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 ILI9881C-04T00GA 800×1280 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
+@@ -50 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.37 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.37.img)，大小 4,280,832 字节，SHA-256 `392937a543ad78dc70526f1d11fd1cf6e87df7d8eb08299223bd927416b41217`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.38 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.38.img)，大小 4,295,168 字节，SHA-256 `734b41ff51fcf38599e7bc6287822594e9413ef4eef37613c51e699071079d30`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -130 +130 @@ v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫
+-- [v1.0.37 构建日志](docs/stage_finger_colors_v1.0.37_os.log)
++- [v1.0.38 CS001 ILI9881C 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
+@@ -131,0 +132,11 @@ v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫
++
++
++v1.0.38 将 CS001 切换为 SDK ILI9881C-04 面板配置，按 WJ101E5 图纸设置为 800×1280 四通道 MIPI。屏幕控制器初始化由 SDK 面板驱动提供，lane/极性、RESET 和出图仍待实板确认。
++
++- [CS001 ILI9881C MIPI 接入说明](docs/CS001_MIPI接入说明.md)
++- [v1.0.38 OS 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
++
++
++v1.0.38 将 CS001 profile 更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA，原生分辨率 800×1280，使用 SDK ILI9881C_04_DEFAULT 四通道 MIPI 驱动。panel 选择配置和面板时序已在主机侧构建；MIPI 出图和竖屏界面适配仍需上板确认。
++
++CS001 原 MIPI 面板型号已更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA。v1.0.38 使用 SDK ILI9881C_04_DEFAULT 和 800×1280 四通道 MIPI 配置；其驱动、FPC lane/极性、RESET、出图和竖屏 UI 仍需实板确认。
+diff --git "a/docs/CS001_MIPI\346\216\245\345\205\245\350\257\264\346\230\216.md" "b/docs/CS001_MIPI\346\216\245\345\205\245\350\257\264\346\230\216.md"
+index 22240d7..401dbf1 100644
+--- "a/docs/CS001_MIPI\346\216\245\345\205\245\350\257\264\346\230\216.md"
++++ "b/docs/CS001_MIPI\346\216\245\345\205\245\350\257\264\346\230\216.md"
+@@ -1 +1 @@
+-# CS001 MIPI-DSI 接入说明
++# CS001 ILI9881C MIPI-DSI 接入说明
+@@ -3 +3 @@
+-## 适用对象
++## 模组资料
+@@ -5,6 +5,5 @@
+-- 板：D133CBV-QFN88-V1-2 / D133CBS
+-- 面板控制芯片：EK79202D（模组料号 ICEK7920321XXXXXXX01）
+-- 接口：MIPI-DSI
+-- profile：CS001
+-- 应用分辨率：1280×800
+-- 触摸：当前禁用
++- 模组：WJ101E5TAAUMNG10#
++- 显示 IC：ILI9881C-04T00GA
++- 接口：4 lane MIPI-DSI，RGB
++- 原生分辨率：800×1280（竖屏）
++- 触摸：本版仍禁用
+@@ -12 +11 @@
+-## 工程实现
++这些参数来自随工程提供的 WJ101E5TAAUMNG10# 获批图纸；图纸标出 800×RGB×1280、4-lane MIPI 和 GT9271 触摸 IC。GT9271 软件与触摸接线尚未接入。供应商目录的 SSD2828 示例只用于核对 ILI9881C 初始化资料，D133 直接驱动面板，不包含 SSD2828。
+@@ -14 +13 @@
+-v1.0.25 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编译 LVDS 与 MIPI-DSI 控制器。aicfb_probe() 前读取官方 ENV 键 hmi_screen，按 profile 选择 connector 和显示引脚复用：
++## D133 配置
+@@ -16,3 +15 @@ v1.0.25 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编
+-- CS000：LVDS connector，PD18–PD27 function 3，ArtInChip simple 1024×600 panel。
+-- CS001：MIPI-DSI connector，PD18–PD27 function 4，EK79202D 1280×800 panel。
+-- 屏幕代号通过 UART0 选择，ENV 写入后软件重启应用新接口。
++CS001 仍经 UART0 写入官方 ENV `hmi_screen=CS001` 并重启。panel probe 根据该值选 MIPI connector；CS000 仍为 1024×600 LVDS/GT911。v1.0.38 选择 SDK 的 `panel_dsi_ili9881c.c` 匹配项 `ILI9881C_04_DEFAULT`，该项为 800×1280、4-lane RGB888。SDK 对应的候选时序为像素时钟 95 MHz、H sync/back porch/active/front porch 为 10/200/800/200，V sync/back porch/active/front porch 为 3/12/1280/12。面板复位由该 SDK 驱动指定 PD.14。
+@@ -20 +17 @@ v1.0.25 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编
+-CS001 的候选显示参数为 72.4 MHz、4-lane RGB888、DSI Video Pulse，H timing 为 20/68/1280/72，V timing 为 2/21/800/15。面板仅发送 PDF 列出的标准 DCS 软件复位、退出休眠和显示打开命令。
++屏幕 profile 的 RES 字段使用面板原生方向，返回 `800x1280`。LVGL 布局的竖屏适配尚未完成；现有控制终端页面按横向布局设计，出图后需确认页面排布。严禁把 `1280x800` 作为此模组的原生分辨率。
+@@ -22 +19 @@ CS001 的候选显示参数为 72.4 MHz、4-lane RGB888、DSI Video Pulse，H ti
+-## 资料限制和实机检查
++## 构建与验证
+@@ -24,9 +21 @@ CS001 的候选显示参数为 72.4 MHz、4-lane RGB888、DSI Video Pulse，H ti
+-PDF 的正文是 EK79202D 芯片 datasheet，不是该模组的连接器/硬件 strap 清单。资料没有确认：
+-
+-- 模组 IFSEL 是否设为 MIPI 4-lane，以及 LNSW/PNSW 实际 strap 电阻。
+-- 模组 FPC 中 D0–D3、clock lane 与 D133 PD18–PD27 的映射、极性。
+-- 模组电源、RESET、背光具体控制脚和时序。
+-
+-当前驱动采用 SDK 默认 DSI lane mapping/polarity。上板前应向模组供应方确认上述连接；首次验证时确认 CS001,READY、MIPI clock/data lane 活动、1280×800 图像、颜色/方向和背光。若没有出图，不要通过盲目改换 LVDS 参数排查，因为 CS001 物理接口是 MIPI。该 build 只证明固件可以编译和打包，不代表 MIPI PHY/模组已在硬件验证。
+-
+-用户已要求 CS001 暂不启动触摸输入。ATMXT1066TD 驱动和配置仍未接入。
+\ No newline at end of file
++Bootloader/OS 的编译和工厂 IMG 封装不验证 MIPI PHY、FPC lane 顺序、极性、PD.14 复位脚、背光或色彩。首次上板应确认串口 `CS001,READY,RES=800x1280,TOUCH=DISABLED`、面板出图、方向、颜色和冷启动；异常时可从串口切回 CS000。当前未执行实机烧录或 MIPI 验收。
+diff --git "a/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md" "b/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
+index c929d4c..b391406 100644
+--- "a/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
++++ "b/docs/\345\256\236\346\226\275\350\257\264\346\230\216.md"
+@@ -46 +46 @@ v1.0.23 正式 profile 将 RT 控制台切到静默设备，在板级驱动初
+-UART0 屏幕代号协议见 [屏幕代号串口协议](屏幕代号串口协议.md)。当前 `CS000` 为 1024×600 LVDS/GT911；`CS001` 可选择 1280×800 LVDS 并在切换后重启，触摸暂时关闭。新资料给出了 EK79202DA 芯片级时序，但模组 strap/lane/polarity 和 ATMXT1066TD 驱动仍未验证/接入。
++UART0 屏幕代号协议见 [屏幕代号串口协议](屏幕代号串口协议.md)。当前 `CS000` 为 1024×600 LVDS/GT911；`CS001` 为 800×1280 ILI9881C-04T00GA 四通道 MIPI，切换后重启，触摸暂时关闭。面板和 lane/极性仍待实板验证。
+@@ -77 +77 @@ LVGL 对象只由 `lv_user_gui_init` 所在的官方 LVGL 线程创建和更新
+-构建成功不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证 UART0 指令收发、CS001 1280×800 显示、LVDS strap/极性/颜色或串口 profile 回退。CS001 触摸被有意禁用，ATMXT1066TD 仍待后续接入。用户已手动烧录 v1.0.22 并报告发送命令无应答；v1.0.23 改为按 RX 回调长度读取并增加启动 profile 行，仍需用户手动烧录验证。本轮未改 PA0/BOOT 启动行为。
++构建成功不等于实机验收。本次没有使用 AiBurn、没有烧录或擦除 NOR，也没有验证 UART0 指令收发、CS001 800×1280 MIPI 显示、lane/极性/颜色或串口 profile 回退。CS001 触摸被有意禁用，ATMXT1066TD 仍待后续接入。用户已手动烧录 v1.0.22 并报告发送命令无应答；v1.0.23 改为按 RX 回调长度读取并增加启动 profile 行，仍需用户手动烧录验证。本轮未改 PA0/BOOT 启动行为。
+diff --git "a/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md" "b/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
+index 6238cf0..e68634f 100644
+--- "a/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
++++ "b/docs/\345\256\236\347\216\260\347\212\266\346\200\201.md"
+@@ -10 +10 @@
+-| 6 LVGL HMI | LVGL 9.1 官方线程；SD 图片小图居中、大图裁剪；CS001 1280×800 MIPI-DSI profile，触摸暂禁用 | stage_touch_device_health_v1.0.26_build.log |
++| 6 LVGL HMI | LVGL 9.1 官方线程；SD 图片小图居中、大图裁剪；CS001 800×1280 ILI9881C MIPI-DSI profile，触摸暂禁用 | stage_touch_device_health_v1.0.26_build.log |
+@@ -26 +26 @@ HMI 业务仍使用 Luban-Lite/RT-Thread 接口。v1.0.24 接入的 CS000 LVDS /
+-尚未完成实机验收：v1.0.26 周期复位是否停止、UART0 READY/CS000/CS001 RX/TX、CS001 MIPI 1280×800 出图、触摸识别、软件重启切换、lane strap/polarity/颜色、背光与冷启动、/data LittleFS 挂载及持久化、图片 CMA 余量、1 秒启动目标，以及 SD、RMII、蜂鸣、A/B OTA/工具箱验收。没有自动烧录/擦除 Flash，也未生成本版本日常 OTA。
++尚未完成实机验收：v1.0.26 周期复位是否停止、UART0 READY/CS000/CS001 RX/TX、CS001 ILI9881C MIPI 800×1280 出图、触摸识别、软件重启切换、lane strap/polarity/颜色、背光与冷启动、/data LittleFS 挂载及持久化、图片 CMA 余量、1 秒启动目标，以及 SD、RMII、蜂鸣、A/B OTA/工具箱验收。没有自动烧录/擦除 Flash，也未生成本版本日常 OTA。
+diff --git "a/docs/\345\261\217\345\271\225\344\273\243\345\217\267\344\270\262\345\217\243\345\215\217\350\256\256.md" "b/docs/\345\261\217\345\271\225\344\273\243\345\217\267\344\270\262\345\217\243\345\215\217\350\256\256.md"
+index 67a3e5b..766c178 100644
+--- "a/docs/\345\261\217\345\271\225\344\273\243\345\217\267\344\270\262\345\217\243\345\215\217\350\256\256.md"
++++ "b/docs/\345\261\217\345\271\225\344\273\243\345\217\267\344\270\262\345\217\243\345\215\217\350\256\256.md"
+@@ -3 +3 @@
+-## UART 接口
++UART0 使用 115200/8N1，输入 ASCII 屏幕代号。CS000 对应 1024×600 LVDS/GT911；CS001 对应 WJ101E5TAAUMNG10#、ILI9881C-04T00GA、800×1280 四通道 MIPI-DSI，触摸暂时禁用。
+@@ -5,6 +5 @@
+-- UART0：115200 baud、8 data bits、no parity、1 stop bit（8N1）。
+-- 命令：5 个 ASCII 字符，例如 CS000；可直接发送，也可追加 CR、LF 或 CRLF。
+-- 应答：ASCII 文本，以 CRLF 结束。
+-- RT-Thread/HMI/Shell 控制台保持静默；UART0 只用于屏幕 profile 状态行和命令应答。
+-- 命令由 RT-Thread 接收线程处理，不占用 LVGL 线程。
+-- 开机后主动发送当前 profile 行，确认固件和链路已就绪。
++启动时返回当前配置，例如：
+@@ -12 +7,3 @@
+-板端 UART0 为 3.3 V TTL。USB-UART 需要 TX/RX 交叉并共地，不要接 RS-232 电平。UART0 TX/RX 使用 PA0/PA1；PA0 同时与 UBOOT 按键采样有关，上电时不要把 PA0 拉低。
++```text
++CS001,READY,RES=800x1280,TOUCH=DISABLED
++```
+@@ -14 +11 @@
+-## 命令和应答
++发送 `CS001` 后，若需切换配置，设备通过官方 ENV API 保存设置并重启：
+@@ -16,5 +13,3 @@
+-| 命令 | 应答 | 屏幕配置 |
+-| --- | --- | --- |
+-| CS000 | 已是当前配置：CS000,OK,ACTIVE=CS000,RES=1024x600,TOUCH=GT911；从 CS001 切换：CS000,OK,REBOOTING,RES=1024x600,TOUCH=GT911 | 1024×600 LVDS，GT911 触摸 |
+-| CS001 | 已是当前配置：CS001,OK,ACTIVE=CS001,RES=1280x800,TOUCH=DISABLED；从 CS000 切换：CS001,OK,REBOOTING,RES=1280x800,TOUCH=DISABLED | EK79202DA 1280×800 MIPI-DSI 显示；触摸暂时关闭 |
+-| 其他代号 | <代号>,ERR,UNSUPPORTED_CODE,ACTIVE=<当前代号> | 固件尚未配置该屏幕代号 |
++```text
++CS001,OK,REBOOTING,RES=800x1280,TOUCH=DISABLED
++```
+@@ -22 +17 @@
+-每次启动发送一行：
++如果 CS001 已经是当前配置，则返回 `CS001,OK,ACTIVE=CS001,RES=800x1280,TOUCH=DISABLED`。不支持的代号返回错误，不更改 ENV。
+@@ -24,2 +19 @@
+-    CS000,READY,RES=1024x600,TOUCH=GT911
+-    CS001,READY,RES=1280x800,TOUCH=DISABLED
++## CS001 显示配置
+@@ -27 +21 @@
+-命令示例：
++v1.0.38 使用 SDK ILI9881C 面板驱动的 `ILI9881C_04_DEFAULT` 匹配项。资料确认面板原生有效尺寸为 800×1280、MIPI 四通道。SDK 候选接口参数为 RGB888、Video Burst、95 MHz；H sync/back porch/active/front porch 为 10/200/800/200，V sync/back porch/active/front porch 为 3/12/1280/12。面板 RESET 使用 SDK 驱动指定的 PD.14。
+@@ -29,3 +23 @@
+-    电脑发送：CS001
+-    开发板：  CS001,OK,REBOOTING,RES=1280x800,TOUCH=DISABLED
+-    设备重启后：CS001,READY,RES=1280x800,TOUCH=DISABLED
++获批图纸和供应商初始化参考文件位于用户提供的 WJ101E5TAAUMNG10# 资料目录；SDK 面板初始化及定时定义以随 Luban-Lite SDK 的 `panel_dsi_ili9881c.c` 为准。供应商参考 C 文件中的 SSD2828 主机代码不用于 D133 的直连 MIPI 通路。
+@@ -33,39 +25 @@
+-profile 修改通过官方 fw_env_write/fw_env_flush 保存到冗余 ENV，随后软件重启。显示控制器和 LVGL display 在启动时创建，因此切换需要重启，不支持运行中热切换。若启动时 ENV 不可读，安全默认值为 CS000/LVDS。
+-
+-## CS001 MIPI 配置来源
+-
+-CS001 对应资料 ICEK7920321XXXXXXX01，PDF 正文为 EK79202D source driver/TCON 芯片 preliminary datasheet。资料确认该芯片支持 MIPI DSI 4/3 lane、Video Mode 和标准 DCS 命令，也列出 1280×800 模式的典型时序。
+-
+-v1.0.25 工程按 4-lane RGB888、DSI Video Pulse 配置：
+-
+-| 参数 | 配置值 |
+-| --- | ---: |
+-| 有效分辨率 | 1280×800 |
+-| 像素时钟 | 72.4 MHz |
+-| H sync / back porch / active / front porch | 20 / 68 / 1280 / 72 DCLK |
+-| V sync / back porch / active / front porch | 2 / 21 / 800 / 15 行 |
+-| MIPI 数据通道 | 4 lane，RGB888 |
+-| 屏幕初始化 | DCS SWRESET、SLPOUT、DISPON |
+-| 触摸 | 暂时关闭 |
+-
+-按 1440 DCLK × 838 行和 72.4 MHz 计算，帧率约 60.0 Hz。SDK 已有 DSI controller/PHY 驱动；工程通过启动期读取 ENV 选择 LVDS 或 MIPI，并在 framebuffer probe 前把 PD18–PD27 切换到相应引脚复用。
+-
+-当前资料没有给出该模组实际的 IFSEL/LNSW/PNSW strap 电阻配置、FPC lane 对应、lane 极性，也没有模组厂提供的已验证 DSI lane mapping。代码使用 SDK 的默认 lane mapping/polarity 和 4-lane 设定；必须在目标板确认这与模组 strap、FPC 走线一致。编译成功不等于已验证出屏。
+-
+-## 触摸
+-
+-CS001 依用户要求仅启用显示，UART 状态返回 TOUCH=DISABLED，不会启动现有 GT911 驱动。CS000 继续使用 GT911。恢复 CS001 触摸还需要 ATMXT1066TD 的 RT-Thread 初始化配置、I²C 地址、IRQ/RESET 接线和坐标方向信息。
+-
+-## 串口无应答排查
+-
+-v1.0.22 的 UART0 RX 存在无应答问题。v1.0.23 曾改为按回调长度读取；v1.0.25 改为应用初始化同步打开串口和线程轮询接收；v1.0.26 保持该实现，并修正 CS000 健康检查中的 GT911/gt911 设备名大小写映射。若没有 READY，确认固件已进入应用并检查 UART0；有 READY 但无应答时，检查 USB-UART TX 到板端 PA1 RX、115200/8N1、TX/RX 交叉且共地。
+-
+-## 目标板验收
+-
+-1. 用 3.3 V USB-UART 连接 UART0，设置为 115200/8N1。
+-2. 上电后收到当前 profile 的 READY 行。
+-3. 发送 CS000，确认 1024×600 LVDS 和 GT911；若当前为 CS001，应保存后重启切回。
+-4. 发送 CS001，确认保存后重启，串口返回 READY，屏幕按 1280×800 MIPI-DSI 出图；触摸当前保持关闭。
+-5. 发送其他 5 字节代号，收到 UNSUPPORTED_CODE。
+-
+-本次仅执行 SDK 主机编译和镜像检查，没有连接、烧录或擦除开发板。CS001 MIPI 出图、lane/极性、色彩、冷启动和 UART 实收发仍需目标板验收。
+\ No newline at end of file
++FPC lane 顺序、极性、PD.14 到模组 RESET 的实际接线及背光仍需上板确认。当前源码编译和 IMG 封装不代表 MIPI 出图已验收。触摸保持关闭；虽然模组图纸列有 GT9271，本版没有接入其驱动和硬件配置。
+diff --git "a/docs/\346\225\205\351\232\234\346\216\222\346\237\245.md" "b/docs/\346\225\205\351\232\234\346\216\222\346\237\245.md"
+index 9fdc4b3..ec4fa90 100644
+--- "a/docs/\346\225\205\351\232\234\346\216\222\346\237\245.md"
++++ "b/docs/\346\225\205\351\232\234\346\216\222\346\237\245.md"
+@@ -18 +18 @@
+-| CS001 重启后黑屏/颜色异常 | `hmi_screen=CS001` 选择 1280×800 EK79202DA 候选时序。确认模组 strap 实际选择 LVDS、RES=1280×800、8-bit mapping 与 D133 单链路 lane/polarity 一致；必要时串口发 `CS000` 恢复并重启。CS001 触摸暂未启用。当前时序和映射尚未板测。 |
++| CS001 重启后黑屏/颜色异常 | `hmi_screen=CS001` 选择 ILI9881C-04T00GA、800×1280、4-lane MIPI。确认 FPC lane 顺序/极性、PD.14 RESET 和背光接线；必要时串口发 `CS000` 恢复并重启。CS001 触摸暂未启用。当前时序和映射尚未板测。 |
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 887c1cf..df26823 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-392937a543ad78dc70526f1d11fd1cf6e87df7d8eb08299223bd927416b41217  d13x_d133cbv-hmi-nor_v1.0.37.img
++734b41ff51fcf38599e7bc6287822594e9413ef4eef37613c51e699071079d30  d13x_d133cbv-hmi-nor_v1.0.38.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index dd29770..2c8d0b3 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.37
++D133-控制终端 1.0.38
+diff --git a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+index c5a36a7..c5b201d 100644
+--- a/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
++++ b/source/application/rt-thread/d133_hmi/system/display_profile_manager.c
+@@ -43 +43 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
+-        /* 1280x800 为 EK79202DA 芯片资料给出的候选显示配置；触摸暂未接入。 */
++        /* WJ101E5 规格为 800x1280、4 通道 MIPI、ILI9881C-04T00GA；触摸暂未接入。 */
+@@ -45,3 +45,3 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
+-        profile->width = 1280;
+-        profile->height = 800;
+-        rt_snprintf(profile->panel, sizeof(profile->panel), "EK79202DA-MIPI");
++        profile->width = 800;
++        profile->height = 1280;
++        rt_snprintf(profile->panel, sizeof(profile->panel), "ILI9881C-04T00GA MIPI-4L");
+diff --git a/source/bsp/artinchip/drv/display/panel/Kconfig b/source/bsp/artinchip/drv/display/panel/Kconfig
+index 4ebb6aa..768021b 100644
+--- a/source/bsp/artinchip/drv/display/panel/Kconfig
++++ b/source/bsp/artinchip/drv/display/panel/Kconfig
+@@ -33,4 +32,0 @@ if !AIC_DISP_PQ_TOOL
+-    config AIC_PANEL_DSI_ILI9881C
+-        bool "ArtInChip MIPI DSI ILI9881C panel"
+-        depends on AIC_DISP_MIPI_DSI
+-
+@@ -240 +236 @@ config AIC_PANEL_DSI_EK79202D
+-    default y
++    default n
+@@ -243,0 +240,6 @@ endif
++# HMI 动态屏配置需同时保留 LVDS SIMPLE 和可选 MIPI 面板。
++config AIC_PANEL_DSI_ILI9881C
++    bool "ArtInChip MIPI DSI ILI9881C panel"
++    depends on AIC_DISP_MIPI_DSI
++    default y if HMI_DISPLAY_PROFILE_SERIAL
++
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 7db68e1..0dae573 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -32,0 +33,2 @@ CONFIG_AIC_DISP_LVDS_SINGLE=y
++CONFIG_AIC_PANEL_DSI_ILI9881C=y
++CONFIG_ILI9881C_04_DEFAULT=y
+@@ -145 +147 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.37"
++CONFIG_HMI_FW_VERSION="1.0.38"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index f589b5c..aff1f1b 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -32,0 +33,2 @@ CONFIG_AIC_DISP_LVDS_SINGLE=y
++CONFIG_AIC_PANEL_DSI_ILI9881C=y
++CONFIG_ILI9881C_04_DEFAULT=y
+@@ -143 +145 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.37"
++CONFIG_HMI_FW_VERSION="1.0.38"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+index 983fab2..48bf07f 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig
+@@ -33,0 +34,2 @@ CONFIG_AIC_DISP_LVDS_SINGLE=y
++CONFIG_AIC_PANEL_DSI_ILI9881C=y
++CONFIG_ILI9881C_04_DEFAULT=y
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index c820cdf..7a4495e 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.37",
++            "version": "1.0.38",

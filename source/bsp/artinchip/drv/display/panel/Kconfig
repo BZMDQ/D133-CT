@@ -30,10 +30,6 @@ if !AIC_DISP_PQ_TOOL
         bool "ArtInChip MIPI DSI ST7703 panel"
         depends on AIC_DISP_MIPI_DSI
 
-    config AIC_PANEL_DSI_ILI9881C
-        bool "ArtInChip MIPI DSI ILI9881C panel"
-        depends on AIC_DISP_MIPI_DSI
-
     config AIC_PANEL_DSI_HX8394
         bool "ArtInChip MIPI DSI HX8394 panel"
         depends on AIC_DISP_MIPI_DSI
@@ -237,9 +233,15 @@ endif
 if HMI_DISPLAY_PROFILE_SERIAL
 config AIC_PANEL_DSI_EK79202D
     bool
-    default y
+    default n
     depends on AIC_DISP_MIPI_DSI
 endif
+
+# HMI 动态屏配置需同时保留 LVDS SIMPLE 和可选 MIPI 面板。
+config AIC_PANEL_DSI_ILI9881C
+    bool "ArtInChip MIPI DSI ILI9881C panel"
+    depends on AIC_DISP_MIPI_DSI
+    default y if HMI_DISPLAY_PROFILE_SERIAL
 
 config AIC_PANEL_CUSTOM_RESOLUTION
     bool "Custom Display Timing"

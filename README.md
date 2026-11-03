@@ -1,10 +1,10 @@
 # D133-控制终端
 
-工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（1280×800 MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
+工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（800×1280 ILI9881C MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
 
 固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.37 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.38 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
 
 启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.31 尚未上板测量，1 秒目标未达成。
 
@@ -12,7 +12,7 @@
 
 ```powershell
 .\scripts\build.ps1 -Target Bootloader -LogName stage_fastboot_v1.0.31_bootloader.log
-.\scripts\build.ps1 -Target OS -LogName stage_finger_colors_v1.0.37_os.log
+.\scripts\build.ps1 -Target OS -LogName stage_cs001_ili9881c_v1.0.38_os.log
 .\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
 .\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
 ```
@@ -23,7 +23,7 @@
 
 首页新增“屏幕检测”页面，提供全屏白屏划线、色条/灰阶、边框、测试图片和纯色测试。测试画面只由 UP/DOWN 按键切换；左上角“返回”按键返回说明页。触摸只在白屏页绘线。图片只从 `/sdcard/测试图像使用/` 选择与当前活动分辨率完全匹配的可解码 BMP/JPG/JPEG/PNG；缺卡或缺少匹配图时显示“SD没有本机测试图片”。扫描与解码在线程中运行，详细操作见[屏幕检测功能说明](docs/屏幕检测功能说明.md)。
 
-UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 EK79202DA 1280×800 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
+UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 ILI9881C-04T00GA 800×1280 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
 
 - [实施与构建说明](docs/实施说明.md)
 - [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
@@ -47,7 +47,7 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存�
 - [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
 - [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
 
-当前工厂镜像为 [v1.0.37 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.37.img)，大小 4,280,832 字节，SHA-256 `392937a543ad78dc70526f1d11fd1cf6e87df7d8eb08299223bd927416b41217`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+当前工厂镜像为 [v1.0.38 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.38.img)，大小 4,295,168 字节，SHA-256 `734b41ff51fcf38599e7bc6287822594e9413ef4eef37613c51e699071079d30`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
 
 ## 仓库内容
 
@@ -127,5 +127,16 @@ v1.0.36 屏幕检测白屏页通过 GT911 track ID 接收最多五个触点，�
 
 v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫五种固定笔迹颜色。多指显示效果仍需板上验证。
 
-- [v1.0.37 构建日志](docs/stage_finger_colors_v1.0.37_os.log)
+- [v1.0.38 CS001 ILI9881C 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
 - [源码差异](docs/finger_colors_v1.0.37_source.patch)
+
+
+v1.0.38 将 CS001 切换为 SDK ILI9881C-04 面板配置，按 WJ101E5 图纸设置为 800×1280 四通道 MIPI。屏幕控制器初始化由 SDK 面板驱动提供，lane/极性、RESET 和出图仍待实板确认。
+
+- [CS001 ILI9881C MIPI 接入说明](docs/CS001_MIPI接入说明.md)
+- [v1.0.38 OS 构建日志](docs/stage_cs001_ili9881c_v1.0.38_os.log)
+
+
+v1.0.38 将 CS001 profile 更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA，原生分辨率 800×1280，使用 SDK ILI9881C_04_DEFAULT 四通道 MIPI 驱动。panel 选择配置和面板时序已在主机侧构建；MIPI 出图和竖屏界面适配仍需上板确认。
+
+CS001 原 MIPI 面板型号已更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA。v1.0.38 使用 SDK ILI9881C_04_DEFAULT 和 800×1280 四通道 MIPI 配置；其驱动、FPC lane/极性、RESET、出图和竖屏 UI 仍需实板确认。

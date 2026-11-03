@@ -1,32 +1,21 @@
-# CS001 MIPI-DSI 接入说明
+# CS001 ILI9881C MIPI-DSI 接入说明
 
-## 适用对象
+## 模组资料
 
-- 板：D133CBV-QFN88-V1-2 / D133CBS
-- 面板控制芯片：EK79202D（模组料号 ICEK7920321XXXXXXX01）
-- 接口：MIPI-DSI
-- profile：CS001
-- 应用分辨率：1280×800
-- 触摸：当前禁用
+- 模组：WJ101E5TAAUMNG10#
+- 显示 IC：ILI9881C-04T00GA
+- 接口：4 lane MIPI-DSI，RGB
+- 原生分辨率：800×1280（竖屏）
+- 触摸：本版仍禁用
 
-## 工程实现
+这些参数来自随工程提供的 WJ101E5TAAUMNG10# 获批图纸；图纸标出 800×RGB×1280、4-lane MIPI 和 GT9271 触摸 IC。GT9271 软件与触摸接线尚未接入。供应商目录的 SSD2828 示例只用于核对 ILI9881C 初始化资料，D133 直接驱动面板，不包含 SSD2828。
 
-v1.0.25 保留 CS000 的 1024×600 LVDS/GT911，同时在同一个固件中编译 LVDS 与 MIPI-DSI 控制器。aicfb_probe() 前读取官方 ENV 键 hmi_screen，按 profile 选择 connector 和显示引脚复用：
+## D133 配置
 
-- CS000：LVDS connector，PD18–PD27 function 3，ArtInChip simple 1024×600 panel。
-- CS001：MIPI-DSI connector，PD18–PD27 function 4，EK79202D 1280×800 panel。
-- 屏幕代号通过 UART0 选择，ENV 写入后软件重启应用新接口。
+CS001 仍经 UART0 写入官方 ENV `hmi_screen=CS001` 并重启。panel probe 根据该值选 MIPI connector；CS000 仍为 1024×600 LVDS/GT911。v1.0.38 选择 SDK 的 `panel_dsi_ili9881c.c` 匹配项 `ILI9881C_04_DEFAULT`，该项为 800×1280、4-lane RGB888。SDK 对应的候选时序为像素时钟 95 MHz、H sync/back porch/active/front porch 为 10/200/800/200，V sync/back porch/active/front porch 为 3/12/1280/12。面板复位由该 SDK 驱动指定 PD.14。
 
-CS001 的候选显示参数为 72.4 MHz、4-lane RGB888、DSI Video Pulse，H timing 为 20/68/1280/72，V timing 为 2/21/800/15。面板仅发送 PDF 列出的标准 DCS 软件复位、退出休眠和显示打开命令。
+屏幕 profile 的 RES 字段使用面板原生方向，返回 `800x1280`。LVGL 布局的竖屏适配尚未完成；现有控制终端页面按横向布局设计，出图后需确认页面排布。严禁把 `1280x800` 作为此模组的原生分辨率。
 
-## 资料限制和实机检查
+## 构建与验证
 
-PDF 的正文是 EK79202D 芯片 datasheet，不是该模组的连接器/硬件 strap 清单。资料没有确认：
-
-- 模组 IFSEL 是否设为 MIPI 4-lane，以及 LNSW/PNSW 实际 strap 电阻。
-- 模组 FPC 中 D0–D3、clock lane 与 D133 PD18–PD27 的映射、极性。
-- 模组电源、RESET、背光具体控制脚和时序。
-
-当前驱动采用 SDK 默认 DSI lane mapping/polarity。上板前应向模组供应方确认上述连接；首次验证时确认 CS001,READY、MIPI clock/data lane 活动、1280×800 图像、颜色/方向和背光。若没有出图，不要通过盲目改换 LVDS 参数排查，因为 CS001 物理接口是 MIPI。该 build 只证明固件可以编译和打包，不代表 MIPI PHY/模组已在硬件验证。
-
-用户已要求 CS001 暂不启动触摸输入。ATMXT1066TD 驱动和配置仍未接入。
+Bootloader/OS 的编译和工厂 IMG 封装不验证 MIPI PHY、FPC lane 顺序、极性、PD.14 复位脚、背光或色彩。首次上板应确认串口 `CS001,READY,RES=800x1280,TOUCH=DISABLED`、面板出图、方向、颜色和冷启动；异常时可从串口切回 CS000。当前未执行实机烧录或 MIPI 验收。
