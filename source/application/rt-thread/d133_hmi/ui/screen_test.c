@@ -2,15 +2,12 @@
 #include "image_preview.h"
 #include <rtdevice.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <hal_adcim.h>
 
 #define SCREEN_TEST_PAGE_COUNT       9U
 #define SCREEN_TEST_GRAY_LEVELS      32U
 #define SCREEN_TEST_LINE_POINTS      512U
-#define SCREEN_TEST_SWIPE_PIXELS     60
-#define SCREEN_TEST_EXIT_CORNER      72
 #define SCREEN_TEST_IMAGE_DIR        "/sdcard/测试图像使用"
 #define SCREEN_TEST_KEYADC_CHANNEL   2U
 #define SCREEN_TEST_KEY_SAMPLE_MS    20U
@@ -47,19 +44,17 @@ static lv_obj_t *test_overlay;
 static lv_obj_t *test_line;
 static lv_obj_t *test_dot;
 static lv_obj_t *test_image_status;
+static lv_obj_t *test_back_button;
 static lv_timer_t *image_poll_timer;
 static lv_timer_t *key_dispatch_timer;
 static lv_point_precise_t line_points[SCREEN_TEST_LINE_POINTS];
 static uint32_t line_point_count;
 static int32_t screen_width;
 static int32_t screen_height;
-static int32_t press_x;
-static int32_t press_y;
 static int32_t last_x;
 static int32_t last_y;
 static uint8_t current_test_page;
 static uint8_t touch_down;
-static uint8_t ignore_stroke;
 static uint8_t image_request_pending;
 static uint8_t exit_started;
 static volatile uint8_t key_worker_starting;
@@ -69,6 +64,8 @@ static volatile uint8_t pending_key;
 static const lv_font_t *test_font;
 static screen_test_exit_cb_t exit_callback;
 static void *exit_context;
+
+static void screen_test_exit(void);
 
 /* 将触摸坐标裁剪到当前活动显示器的有效像素范围。 */
 static void screen_test_get_point(lv_indev_t *indev, int32_t *x, int32_t *y)
@@ -120,9 +117,9 @@ static void screen_test_begin_page(uint32_t rgb)
     test_line = NULL;
     test_dot = NULL;
     test_image_status = NULL;
+    test_back_button = NULL;
     line_point_count = 0;
     touch_down = 0;
-    ignore_stroke = 0;
 }
 
 /* 绘制白屏触摸测试专用的两像素蓝线。 */
@@ -249,6 +246,8 @@ static void screen_test_poll_image(lv_timer_t *timer)
                 lv_obj_center(image);
                 lv_obj_clear_flag(image,
                                   LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+                if (test_back_button)
+                    lv_obj_move_foreground(test_back_button);
                 return;
             }
         }
@@ -274,6 +273,42 @@ static void screen_test_start_image_search(void)
     image_poll_timer = lv_timer_create(screen_test_poll_image, 80, NULL);
     if (!image_poll_timer)
         lv_label_set_text(test_image_status, "SD 图片读取服务不可用");
+}
+
+/* 左上角返回键是全屏测试画面唯一的常驻控件。 */
+static void screen_test_back_clicked(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    screen_test_exit();
+}
+
+static void screen_test_add_back_button(void)
+{
+    lv_obj_t *text;
+
+    test_back_button = lv_button_create(test_overlay);
+    if (!test_back_button)
+        return;
+    lv_obj_set_pos(test_back_button, 8, 8);
+    lv_obj_set_size(test_back_button, 76, 44);
+    lv_obj_set_style_bg_color(test_back_button, lv_color_hex(0x2778D4U),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(test_back_button, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(test_back_button, lv_color_hex(0xFFFFFFU),
+                                  LV_PART_MAIN);
+    lv_obj_set_style_border_width(test_back_button, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(test_back_button, 8, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(test_back_button, 0, LV_PART_MAIN);
+    text = lv_label_create(test_back_button);
+    if (text) {
+        lv_label_set_text(text, "返回");
+        lv_obj_set_style_text_color(text, lv_color_hex(0xFFFFFFU), LV_PART_MAIN);
+        if (test_font)
+            lv_obj_set_style_text_font(text, test_font, LV_PART_MAIN);
+        lv_obj_center(text);
+    }
+    lv_obj_add_event_cb(test_back_button, screen_test_back_clicked,
+                        LV_EVENT_CLICKED, NULL);
 }
 
 /* 根据测试顺序重画页面，并在离开图片页时释放解码缓存。 */
@@ -302,8 +337,10 @@ static void screen_test_show_page(uint8_t page)
     } else if (page == SCREEN_TEST_IMAGE) {
         screen_test_begin_page(0x000000U);
         test_image_status = lv_label_create(test_overlay);
-        if (!test_image_status)
+        if (!test_image_status) {
+            screen_test_add_back_button();
             return;
+        }
         lv_label_set_text(test_image_status, "正在查找 SD 本机测试图片……");
         lv_obj_set_style_text_color(test_image_status, lv_color_hex(0xFFFFFFU),
                                     LV_PART_MAIN);
@@ -324,6 +361,7 @@ static void screen_test_show_page(uint8_t page)
     } else {
         screen_test_begin_page(0x000000U);
     }
+    screen_test_add_back_button();
 }
 
 /* 通过 SDK 的 RT-Thread ADC 设备接口读取板载 GPAI2 电阻按键。 */
@@ -431,7 +469,7 @@ static void screen_test_start_key_worker(void)
     }
 }
 
-/* 长按页面左上角无图形区域退出，纯色/灰阶测试画面不叠加控件。 */
+/* UP/DOWN 仅切换测试画面，返回操作由左上角控件处理。 */
 static void screen_test_exit(void)
 {
     screen_test_exit_cb_t callback;
@@ -464,7 +502,7 @@ static void screen_test_exit(void)
         callback(context);
 }
 
-/* 垂直滑动切换测试页；白屏页同时记录并绘制蓝色触摸轨迹。 */
+/* 测试页不响应触摸切换；白屏页只记录并绘制蓝色触摸轨迹。 */
 static void screen_test_input(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
@@ -476,36 +514,21 @@ static void screen_test_input(lv_event_t *event)
     screen_test_get_point(lv_event_get_indev(event), &x, &y);
 
     if (code == LV_EVENT_PRESSED) {
-        press_x = last_x = x;
-        press_y = last_y = y;
+        last_x = x;
+        last_y = y;
         touch_down = 1;
-        ignore_stroke = (x < SCREEN_TEST_EXIT_CORNER &&
-                         y < SCREEN_TEST_EXIT_CORNER);
-        if (current_test_page == SCREEN_TEST_WHITE && !ignore_stroke)
+        if (current_test_page == SCREEN_TEST_WHITE)
             screen_test_add_touch_point(x, y);
     } else if (code == LV_EVENT_PRESSING) {
-        if (touch_down && current_test_page == SCREEN_TEST_WHITE && !ignore_stroke &&
+        if (touch_down && current_test_page == SCREEN_TEST_WHITE &&
             (x != last_x || y != last_y))
             screen_test_add_touch_point(x, y);
         last_x = x;
         last_y = y;
-    } else if (code == LV_EVENT_LONG_PRESSED) {
-        if (press_x < SCREEN_TEST_EXIT_CORNER &&
-            press_y < SCREEN_TEST_EXIT_CORNER)
-            screen_test_exit();
     } else if (code == LV_EVENT_RELEASED) {
-        int32_t delta_y = y - press_y;
-
         if (!touch_down)
             return;
         touch_down = 0;
-        if (abs(delta_y) >= SCREEN_TEST_SWIPE_PIXELS) {
-            uint8_t next = delta_y < 0 ?
-                (uint8_t)((current_test_page + SCREEN_TEST_PAGE_COUNT - 1U) %
-                          SCREEN_TEST_PAGE_COUNT) :
-                (uint8_t)((current_test_page + 1U) % SCREEN_TEST_PAGE_COUNT);
-            screen_test_show_page(next);
-        }
     }
 }
 
@@ -549,7 +572,6 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
     lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_LONG_PRESSED, NULL);
     lv_obj_move_foreground(test_overlay);
     screen_test_start_key_worker();
     key_dispatch_timer = lv_timer_create(screen_test_dispatch_key, 10, NULL);

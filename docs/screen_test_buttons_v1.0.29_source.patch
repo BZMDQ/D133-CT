@@ -1,0 +1,200 @@
+diff --git a/.gitignore b/.gitignore
+index 3a4af19..9501e85 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -30,0 +31,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.29.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.29.img.sha256
+diff --git a/README.md b/README.md
+index 46187f3..ed6caec 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.28 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.29 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -9 +9 @@
+-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.28 尚未上板测量，1 秒目标未达成。
++启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.29 尚未上板测量，1 秒目标未达成。
+@@ -15,2 +15,2 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_screen_test_v1.0.28_os_build.log
+-.\scripts\build.ps1 -Target OtaCandidate -LogName stage_touch_device_health_v1.0.27_ota_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_screen_test_buttons_v1.0.29_os_build.log
++.\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
+@@ -24 +24 @@
+-首页新增“屏幕检测”页面，提供全屏白屏划线、色条/灰阶、边框、测试图片和纯色测试。图片只从 `/sdcard/测试图像使用/` 选择与当前活动分辨率完全匹配的可解码 BMP/JPG/JPEG/PNG；缺卡或缺少匹配图时显示“SD没有本机测试图片”。扫描与解码在线程中运行，详细操作见[屏幕检测功能说明](docs/屏幕检测功能说明.md)。
++首页新增“屏幕检测”页面，提供全屏白屏划线、色条/灰阶、边框、测试图片和纯色测试。测试画面只由 UP/DOWN 按键切换；左上角“返回”按键返回说明页。触摸只在白屏页绘线。图片只从 `/sdcard/测试图像使用/` 选择与当前活动分辨率完全匹配的可解码 BMP/JPG/JPEG/PNG；缺卡或缺少匹配图时显示“SD没有本机测试图片”。扫描与解码在线程中运行，详细操作见[屏幕检测功能说明](docs/屏幕检测功能说明.md)。
+@@ -35,0 +36,2 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
++- [v1.0.29 按键切页与返回键 OS 构建日志](docs/stage_screen_test_buttons_v1.0.29_os_build.log)
++- [v1.0.29 按键切页与返回键源码差异](docs/screen_test_buttons_v1.0.29_source.patch)
+@@ -45 +47 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.28 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.28.img)，大小 4,280,832 字节，SHA-256 `dbce3160694b98d41bf6dc50e5c61aafcbb0ccb9318ddc57ffe96eb0c6581777`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。屏幕检测按键、触摸和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.29 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.29.img)，大小 4,280,832 字节，SHA-256 `45d7f36cde7d48804146ac10249715aa551b5b796b1f6fbce56d8f7c55eec688`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -67 +69 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-首页采用 5×3 应用网格，显示七个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。点击“屏幕检测”进入说明页，再启动无导航覆盖层的全屏测试。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
++首页采用 5×3 应用网格，显示七个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。点击“屏幕检测”进入说明页，再启动全屏测试；测试页仅由 UP/DOWN 按键切换，并在左上角提供返回键。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+@@ -75 +77 @@ v1.0.27 修复 UART0 配置覆盖：先用 RT_SERIAL_GET_CONFIG 读取 SDK 注
+-v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。GPAI2 UP/DOWN 使用现有 RT-Thread ADC 接口，LVGL 仅在 LVGL 线程更新；SDK 构建和工厂镜像封装已完成，未连接开发板验证。
++v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。v1.0.29 将测试页切换限制为 GPAI2 UP/DOWN 按键，并增加左上角触摸返回键；白屏页触摸仅绘制蓝线。SDK OS 构建和工厂镜像封装已完成，未连接开发板验证。
+diff --git "a/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md" "b/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md"
+index 3518cfd..6d6891e 100644
+--- "a/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md"
++++ "b/docs/\345\261\217\345\271\225\346\243\200\346\265\213\345\212\237\350\203\275\350\257\264\346\230\216.md"
+@@ -16 +16 @@
+-白屏笔迹在切页时清除。纯色、灰阶、边框页不绘制标题或导航控件。
++白屏笔迹在切页时清除。全屏测试期间不显示标题或状态文字；左上角“返回”键始终可见并覆盖约 76×44 像素，其余区域显示测试图案。
+@@ -21,3 +21,2 @@
+-- 触摸上下滑动也可切页，方便没有实体按键的屏幕配置。
+-- 在全屏测试画面左上角长按可返回“屏幕检测”说明页。此区域不绘制返回图标，避免影响色彩和边界检查。
+-- 只有白屏页响应触摸划线。
++- 全屏测试画面左上角有“返回”按键，可返回“屏幕检测”说明页。
++- 触摸不切换测试画面；只有白屏页响应触摸划线。
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 4afeae4..15b2866 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-dbce3160694b98d41bf6dc50e5c61aafcbb0ccb9318ddc57ffe96eb0c6581777  d13x_d133cbv-hmi-nor_v1.0.28.img
++45d7f36cde7d48804146ac10249715aa551b5b796b1f6fbce56d8f7c55eec688  d13x_d133cbv-hmi-nor_v1.0.29.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index cba3432..36fd7a5 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.28
++D133-控制终端 1.0.29
+diff --git a/source/application/rt-thread/d133_hmi/ui/screen_test.c b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+index 0b1251f..4d5e118 100644
+--- a/source/application/rt-thread/d133_hmi/ui/screen_test.c
++++ b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+@@ -5 +4,0 @@
+-#include <stdlib.h>
+@@ -12,2 +10,0 @@
+-#define SCREEN_TEST_SWIPE_PIXELS     60
+-#define SCREEN_TEST_EXIT_CORNER      72
+@@ -49,0 +47 @@ static lv_obj_t *test_image_status;
++static lv_obj_t *test_back_button;
+@@ -56,2 +53,0 @@ static int32_t screen_height;
+-static int32_t press_x;
+-static int32_t press_y;
+@@ -62 +57,0 @@ static uint8_t touch_down;
+-static uint8_t ignore_stroke;
+@@ -72,0 +68,2 @@ static void *exit_context;
++static void screen_test_exit(void);
++
+@@ -122,0 +120 @@ static void screen_test_begin_page(uint32_t rgb)
++    test_back_button = NULL;
+@@ -125 +122,0 @@ static void screen_test_begin_page(uint32_t rgb)
+-    ignore_stroke = 0;
+@@ -251,0 +249,2 @@ static void screen_test_poll_image(lv_timer_t *timer)
++                if (test_back_button)
++                    lv_obj_move_foreground(test_back_button);
+@@ -278,0 +278,36 @@ static void screen_test_start_image_search(void)
++/* 左上角返回键是全屏测试画面唯一的常驻控件。 */
++static void screen_test_back_clicked(lv_event_t *event)
++{
++    LV_UNUSED(event);
++    screen_test_exit();
++}
++
++static void screen_test_add_back_button(void)
++{
++    lv_obj_t *text;
++
++    test_back_button = lv_button_create(test_overlay);
++    if (!test_back_button)
++        return;
++    lv_obj_set_pos(test_back_button, 8, 8);
++    lv_obj_set_size(test_back_button, 76, 44);
++    lv_obj_set_style_bg_color(test_back_button, lv_color_hex(0x2778D4U),
++                              LV_PART_MAIN);
++    lv_obj_set_style_bg_opa(test_back_button, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_border_color(test_back_button, lv_color_hex(0xFFFFFFU),
++                                  LV_PART_MAIN);
++    lv_obj_set_style_border_width(test_back_button, 1, LV_PART_MAIN);
++    lv_obj_set_style_radius(test_back_button, 8, LV_PART_MAIN);
++    lv_obj_set_style_shadow_width(test_back_button, 0, LV_PART_MAIN);
++    text = lv_label_create(test_back_button);
++    if (text) {
++        lv_label_set_text(text, "返回");
++        lv_obj_set_style_text_color(text, lv_color_hex(0xFFFFFFU), LV_PART_MAIN);
++        if (test_font)
++            lv_obj_set_style_text_font(text, test_font, LV_PART_MAIN);
++        lv_obj_center(text);
++    }
++    lv_obj_add_event_cb(test_back_button, screen_test_back_clicked,
++                        LV_EVENT_CLICKED, NULL);
++}
++
+@@ -305 +340,2 @@ static void screen_test_show_page(uint8_t page)
+-        if (!test_image_status)
++        if (!test_image_status) {
++            screen_test_add_back_button();
+@@ -306,0 +343 @@ static void screen_test_show_page(uint8_t page)
++        }
+@@ -326,0 +364 @@ static void screen_test_show_page(uint8_t page)
++    screen_test_add_back_button();
+@@ -434 +472 @@ static void screen_test_start_key_worker(void)
+-/* 长按页面左上角无图形区域退出，纯色/灰阶测试画面不叠加控件。 */
++/* UP/DOWN 仅切换测试画面，返回操作由左上角控件处理。 */
+@@ -467 +505 @@ static void screen_test_exit(void)
+-/* 垂直滑动切换测试页；白屏页同时记录并绘制蓝色触摸轨迹。 */
++/* 测试页不响应触摸切换；白屏页只记录并绘制蓝色触摸轨迹。 */
+@@ -479,2 +517,2 @@ static void screen_test_input(lv_event_t *event)
+-        press_x = last_x = x;
+-        press_y = last_y = y;
++        last_x = x;
++        last_y = y;
+@@ -482,3 +520 @@ static void screen_test_input(lv_event_t *event)
+-        ignore_stroke = (x < SCREEN_TEST_EXIT_CORNER &&
+-                         y < SCREEN_TEST_EXIT_CORNER);
+-        if (current_test_page == SCREEN_TEST_WHITE && !ignore_stroke)
++        if (current_test_page == SCREEN_TEST_WHITE)
+@@ -487 +523 @@ static void screen_test_input(lv_event_t *event)
+-        if (touch_down && current_test_page == SCREEN_TEST_WHITE && !ignore_stroke &&
++        if (touch_down && current_test_page == SCREEN_TEST_WHITE &&
+@@ -492,4 +527,0 @@ static void screen_test_input(lv_event_t *event)
+-    } else if (code == LV_EVENT_LONG_PRESSED) {
+-        if (press_x < SCREEN_TEST_EXIT_CORNER &&
+-            press_y < SCREEN_TEST_EXIT_CORNER)
+-            screen_test_exit();
+@@ -497,2 +528,0 @@ static void screen_test_input(lv_event_t *event)
+-        int32_t delta_y = y - press_y;
+-
+@@ -502,7 +531,0 @@ static void screen_test_input(lv_event_t *event)
+-        if (abs(delta_y) >= SCREEN_TEST_SWIPE_PIXELS) {
+-            uint8_t next = delta_y < 0 ?
+-                (uint8_t)((current_test_page + SCREEN_TEST_PAGE_COUNT - 1U) %
+-                          SCREEN_TEST_PAGE_COUNT) :
+-                (uint8_t)((current_test_page + 1U) % SCREEN_TEST_PAGE_COUNT);
+-            screen_test_show_page(next);
+-        }
+@@ -552 +574,0 @@ int screen_test_start(lv_obj_t *parent, const lv_font_t *font,
+-    lv_obj_add_event_cb(test_overlay, screen_test_input, LV_EVENT_LONG_PRESSED, NULL);
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index a79bf39..ada3d07 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -822 +822 @@ static void screen(unsigned number)
+-              "检测画面中按 UP/DOWN 键或上下滑动切换项目；长按左上角返回。白屏页触摸可绘制蓝色检测线。\n"
++              "测试画面仅由 UP/DOWN 按键切换；左上角“返回”键回到说明页。触摸仅在白屏页绘制蓝色检测线。\n"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 87b4c9e..4313a77 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -145 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.28"
++CONFIG_HMI_FW_VERSION="1.0.29"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index cf5decb..839955a 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -143 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.28"
++CONFIG_HMI_FW_VERSION="1.0.29"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index 0ae59df..9afca40 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.28",
++            "version": "1.0.29",
