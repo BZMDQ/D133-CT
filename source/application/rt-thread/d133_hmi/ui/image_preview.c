@@ -202,6 +202,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
 {
     uint8_t header[54];
     uint8_t *source_row = NULL;
+    uint8_t *source_buffer = NULL;
     uint8_t *raw = NULL;
     uint8_t *output;
     FILE *file = NULL;
@@ -232,6 +233,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t output_size;
     uint64_t source_bytes;
     uint64_t next_offset = UINT64_MAX;
+    uint32_t row_batch;
     uint32_t y;
     int top_down;
     int result = IMAGE_PREVIEW_ERR_DECODE;
@@ -311,9 +313,16 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         goto done;
     }
 
-    source_row = (uint8_t *)rt_malloc((size_t)source_bytes);
+    /* 连续完整行一次读取最多四行，减少 SD 文件系统调用。 */
+    row_batch = (source_bytes == source_stride && source_bytes <= SIZE_MAX / 4U) ? 4U : 1U;
+    source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
+    if (!source_buffer && row_batch > 1U) {
+        /* 内存紧张时回退逐行读取，保持大图预览可用。 */
+        row_batch = 1U;
+        source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes);
+    }
     raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
-    if (!source_row || !raw) {
+    if (!source_buffer || !raw) {
         result = IMAGE_PREVIEW_ERR_SIZE;
         goto done;
     }
@@ -328,13 +337,21 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         uint8_t *output_row = output + (size_t)output_y * output_stride;
         uint32_t x;
 
-        if (source_offset + source_bytes > image_end || source_offset > LONG_MAX ||
-            (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
-            fread(source_row, 1, (size_t)source_bytes, file) != source_bytes) {
-            result = IMAGE_PREVIEW_ERR_DECODE;
-            goto done;
+        if ((y % row_batch) == 0U) {
+            uint32_t rows = output_height - y;
+            size_t read_bytes;
+            if (rows > row_batch)
+                rows = row_batch;
+            read_bytes = (size_t)source_bytes * rows;
+            if (source_offset + read_bytes > image_end || source_offset > LONG_MAX ||
+                (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
+                fread(source_buffer, 1, read_bytes, file) != read_bytes) {
+                result = IMAGE_PREVIEW_ERR_DECODE;
+                goto done;
+            }
+            next_offset = source_offset + read_bytes;
         }
-        next_offset = source_offset + source_bytes;
+        source_row = source_buffer + (size_t)(y % row_batch) * (size_t)source_bytes;
 
         for (x = 0; x < output_width; x++) {
             uint16_t rgb565;
@@ -384,8 +401,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     result = IMAGE_PREVIEW_ERR_NONE;
 
 done:
-    if (source_row)
-        rt_free(source_row);
+    if (source_buffer)
+        rt_free(source_buffer);
     if (raw)
         aicos_free(MEM_CMA, raw);
     if (file)

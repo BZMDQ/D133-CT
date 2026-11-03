@@ -263,6 +263,9 @@ static void list_folder(void)
 {
     storage_request_t request = {0};
 
+    /* 地址栏随当前目录更新；目录读取仍由存储线程执行。 */
+    if (pathbox)
+        lv_textarea_set_text(pathbox, folder);
     request.op = ST_LIST;
     snprintf(request.path, sizeof(request.path), "%s", folder);
     submit(&request);
@@ -523,6 +526,11 @@ static void file_action(lv_event_t *event)
         list_folder();
         return;
     }
+    if (operation == 103) {
+        snprintf(folder, sizeof(folder), "/sdcard");
+        list_folder();
+        return;
+    }
 
     request.op = (storage_op_t)operation;
     snprintf(request.path, sizeof(request.path), "%s", lv_textarea_get_text(pathbox));
@@ -705,18 +713,23 @@ static void screen(unsigned number)
                      180, 112, app_targets[i], app_colors[i]);
         }
     } else if (number == 1) {
-        panel(content, 16, 8, 960, 482, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        pathbox = input(content, folder, 32, 24, 928, 44);
-        targetbox = input(content, "/sdcard/new_folder", 32, 76, 928, 44);
+        /* 左侧位置栏、顶部地址和操作栏、右侧文件列表。 */
+        panel(content, 16, 8, 164, 474, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        label(content, "位置", 30, 26, 130);
+        button(content, "SD 卡", 26, 72, 144, file_action, (void *)(uintptr_t)103);
+        button(content, "上一级", 26, 132, 144, file_action, (void *)(uintptr_t)101);
+        panel(content, 192, 8, 784, 474, UI_COLOR_WHITE, 0);
+        pathbox = input(content, folder, 204, 22, 752, 44);
+        targetbox = input(content, "/sdcard/new_folder", 204, 76, 752, 44);
         for (i = 0; i < 7; i++)
-            button(content, file_buttons[i], 32 + (int)i * 132, 132, 120,
+            button(content, file_buttons[i], 204 + (int)i * 107, 132, 100,
                    file_action, (void *)(uintptr_t)file_operations[i]);
         table = lv_table_create(content);
-        lv_obj_set_pos(table, 32, 196);
-        lv_obj_set_size(table, 550, 240);
+        lv_obj_set_pos(table, 204, 194);
+        lv_obj_set_size(table, 470, 222);
         lv_table_set_column_count(table, 2);
-        lv_table_set_column_width(table, 0, 420);
-        lv_table_set_column_width(table, 1, 112);
+        lv_table_set_column_width(table, 0, 330);
+        lv_table_set_column_width(table, 1, 120);
         lv_obj_set_style_bg_color(table, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(table, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_color(table, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
@@ -724,12 +737,12 @@ static void screen(unsigned number)
         lv_obj_set_style_text_color(table, lv_color_hex(UI_COLOR_TEXT), LV_PART_ITEMS);
         lv_obj_set_style_text_font(table, small_font(), LV_PART_ITEMS);
         lv_obj_add_event_cb(table, table_event, LV_EVENT_VALUE_CHANGED, NULL);
-        editor = input(content, "", 602, 196, 358, 178);
+        editor = input(content, "", 690, 194, 266, 160);
         lv_textarea_set_max_length(editor, 511);
-        button(content, "保存文本", 602, 386, 168, file_action, (void *)(uintptr_t)ST_WRITE);
-        button(content, "容量查询", 782, 386, 178, file_action, (void *)(uintptr_t)ST_CAPACITY);
+        button(content, "保存文本", 690, 368, 126, file_action, (void *)(uintptr_t)ST_WRITE);
+        button(content, "容量查询", 830, 368, 126, file_action, (void *)(uintptr_t)ST_CAPACITY);
         details = label(content, "选择文件后可读取、复制、重命名或删除。",
-                        32, 448, 550);
+                        204, 440, 752);
         list_folder();
     } else if (number == 2) {
         panel(content, 16, 8, 960, 442, UI_COLOR_SURFACE, UI_COLOR_ACCENT);

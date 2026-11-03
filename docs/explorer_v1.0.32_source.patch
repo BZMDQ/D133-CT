@@ -1,0 +1,176 @@
+diff --git a/.gitignore b/.gitignore
+index 5c30747..25c9efa 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -55,0 +56,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.32.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.32.img.sha256
+diff --git a/README.md b/README.md
+index bde6d7c..78c5365 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.31 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.32 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_fastboot_v1.0.31_os.log
++.\scripts\build.ps1 -Target OS -LogName stage_explorer_v1.0.32_final_os.log
+@@ -50 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.31 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.31.img)，大小 4,280,832 字节，SHA-256 `7e152f71664c552a00e28c44d1f051855f9173a5373c7806e2073b4b1532799a`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.32 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.32.img)，大小 4,280,832 字节，SHA-256 `b64d9fb69f87fc10960a99b308c9a9115279dc7e1dd0da0d8307e995239a17c5`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -90,0 +91,7 @@ v1.0.31 在专用 Bootloader 中跳过普通 NOR 开机的 U 盘自动扫描，
++
++
++v1.0.32 文件管理页采用位置栏、地址栏、工具栏与文件列表布局；BMP 连续完整行分批读取，内存不足时回退逐行读取。JPEG/PNG 继续使用 SDK MPP 解码。界面显示、图片颜色和加速效果仍需在设备上验证。
++
++- [文件管理与图片说明](docs/文件管理_v1.0.32.md)
++- [OS 最终构建日志](docs/stage_explorer_v1.0.32_final_os.log)
++- [源码差异](docs/explorer_v1.0.32_source.patch)
+diff --git "a/docs/\346\226\207\344\273\266\347\256\241\347\220\206_v1.0.32.md" "b/docs/\346\226\207\344\273\266\347\256\241\347\220\206_v1.0.32.md"
+new file mode 100644
+index 0000000..5d8e338
+--- /dev/null
++++ "b/docs/\346\226\207\344\273\266\347\256\241\347\220\206_v1.0.32.md"
+@@ -0,0 +1,9 @@
++# 文件管理与图片预览
++
++文件管理页采用左侧位置栏、顶部地址及目标路径、操作工具栏、文件列表和右侧文本预览区。选择列表项后按“打开 / 读取”进入文件夹、打开图片或读取文本；“SD 卡”和“上一级”用于目录导航。复制、重命名、新建文件夹使用目标路径框；删除和文本保存有确认提示。目录列表沿用现有 32 项上限，超出时显示截断提示。
++
++BMP 可见区域在文件中连续、且行无填充时，最多四行合并读取；其他情况逐行读取。额外缓冲分配失败时自动回退逐行，输出仍按原像素居中或裁剪。文件管理和屏幕测试共用图片预览线程；JPEG/PNG 继续使用 SDK MPP 解码，本次未修改其解码算法。上板前不能推断具体耗时改善。
++
++## 上板验证
++
++使用同一张 FAT32 卡和同一组正向、倒向、带行填充及大于屏幕的 16/24/32 位 BMP，检查颜色、方向、居中及裁剪，并对比打开时间；同时检查 JPEG/PNG。分别测试文件浏览、进入目录、上一级、复制、重命名、删除、新建文件夹、文本读取与保存；再次进入屏幕测试图片页，确认匹配分辨率和返回键。GUI、SD 兼容性及实际速度尚未在板上验证。
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 5c2b7c0..6bedaac 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-7e152f71664c552a00e28c44d1f051855f9173a5373c7806e2073b4b1532799a  d13x_d133cbv-hmi-nor_v1.0.31.img
++b64d9fb69f87fc10960a99b308c9a9115279dc7e1dd0da0d8307e995239a17c5  d13x_d133cbv-hmi-nor_v1.0.32.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 86c717f..2030ff2 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.31
++D133-控制终端 1.0.32
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index fac1a5a..6083012 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -204,0 +205 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
++    uint8_t *source_buffer = NULL;
+@@ -234,0 +236 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
++    uint32_t row_batch;
+@@ -314 +316,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-    source_row = (uint8_t *)rt_malloc((size_t)source_bytes);
++    /* 连续完整行一次读取最多四行，减少 SD 文件系统调用。 */
++    row_batch = (source_bytes == source_stride && source_bytes <= SIZE_MAX / 4U) ? 4U : 1U;
++    source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes * row_batch);
++    if (!source_buffer && row_batch > 1U) {
++        /* 内存紧张时回退逐行读取，保持大图预览可用。 */
++        row_batch = 1U;
++        source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes);
++    }
+@@ -316 +325 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-    if (!source_row || !raw) {
++    if (!source_buffer || !raw) {
+@@ -331,5 +340,13 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-        if (source_offset + source_bytes > image_end || source_offset > LONG_MAX ||
+-            (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
+-            fread(source_row, 1, (size_t)source_bytes, file) != source_bytes) {
+-            result = IMAGE_PREVIEW_ERR_DECODE;
+-            goto done;
++        if ((y % row_batch) == 0U) {
++            uint32_t rows = output_height - y;
++            size_t read_bytes;
++            if (rows > row_batch)
++                rows = row_batch;
++            read_bytes = (size_t)source_bytes * rows;
++            if (source_offset + read_bytes > image_end || source_offset > LONG_MAX ||
++                (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
++                fread(source_buffer, 1, read_bytes, file) != read_bytes) {
++                result = IMAGE_PREVIEW_ERR_DECODE;
++                goto done;
++            }
++            next_offset = source_offset + read_bytes;
+@@ -337 +354 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-        next_offset = source_offset + source_bytes;
++        source_row = source_buffer + (size_t)(y % row_batch) * (size_t)source_bytes;
+@@ -387,2 +404,2 @@ done:
+-    if (source_row)
+-        rt_free(source_row);
++    if (source_buffer)
++        rt_free(source_buffer);
+diff --git a/source/application/rt-thread/d133_hmi/ui/ui_manager.c b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+index ada3d07..0f22de5 100644
+--- a/source/application/rt-thread/d133_hmi/ui/ui_manager.c
++++ b/source/application/rt-thread/d133_hmi/ui/ui_manager.c
+@@ -265,0 +266,3 @@ static void list_folder(void)
++    /* 地址栏随当前目录更新；目录读取仍由存储线程执行。 */
++    if (pathbox)
++        lv_textarea_set_text(pathbox, folder);
+@@ -525,0 +529,5 @@ static void file_action(lv_event_t *event)
++    if (operation == 103) {
++        snprintf(folder, sizeof(folder), "/sdcard");
++        list_folder();
++        return;
++    }
+@@ -708,3 +716,8 @@ static void screen(unsigned number)
+-        panel(content, 16, 8, 960, 482, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+-        pathbox = input(content, folder, 32, 24, 928, 44);
+-        targetbox = input(content, "/sdcard/new_folder", 32, 76, 928, 44);
++        /* 左侧位置栏、顶部地址和操作栏、右侧文件列表。 */
++        panel(content, 16, 8, 164, 474, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
++        label(content, "位置", 30, 26, 130);
++        button(content, "SD 卡", 26, 72, 144, file_action, (void *)(uintptr_t)103);
++        button(content, "上一级", 26, 132, 144, file_action, (void *)(uintptr_t)101);
++        panel(content, 192, 8, 784, 474, UI_COLOR_WHITE, 0);
++        pathbox = input(content, folder, 204, 22, 752, 44);
++        targetbox = input(content, "/sdcard/new_folder", 204, 76, 752, 44);
+@@ -712 +725 @@ static void screen(unsigned number)
+-            button(content, file_buttons[i], 32 + (int)i * 132, 132, 120,
++            button(content, file_buttons[i], 204 + (int)i * 107, 132, 100,
+@@ -715,2 +728,2 @@ static void screen(unsigned number)
+-        lv_obj_set_pos(table, 32, 196);
+-        lv_obj_set_size(table, 550, 240);
++        lv_obj_set_pos(table, 204, 194);
++        lv_obj_set_size(table, 470, 222);
+@@ -718,2 +731,2 @@ static void screen(unsigned number)
+-        lv_table_set_column_width(table, 0, 420);
+-        lv_table_set_column_width(table, 1, 112);
++        lv_table_set_column_width(table, 0, 330);
++        lv_table_set_column_width(table, 1, 120);
+@@ -727 +740 @@ static void screen(unsigned number)
+-        editor = input(content, "", 602, 196, 358, 178);
++        editor = input(content, "", 690, 194, 266, 160);
+@@ -729,2 +742,2 @@ static void screen(unsigned number)
+-        button(content, "保存文本", 602, 386, 168, file_action, (void *)(uintptr_t)ST_WRITE);
+-        button(content, "容量查询", 782, 386, 178, file_action, (void *)(uintptr_t)ST_CAPACITY);
++        button(content, "保存文本", 690, 368, 126, file_action, (void *)(uintptr_t)ST_WRITE);
++        button(content, "容量查询", 830, 368, 126, file_action, (void *)(uintptr_t)ST_CAPACITY);
+@@ -732 +745 @@ static void screen(unsigned number)
+-                        32, 448, 550);
++                        204, 440, 752);
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index e34dbe6..8e0dfda 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -145 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.31"
++CONFIG_HMI_FW_VERSION="1.0.32"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index ed8088c..40124b4 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -143 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.31"
++CONFIG_HMI_FW_VERSION="1.0.32"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index df37f9e..c791080 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.31",
++            "version": "1.0.32",
