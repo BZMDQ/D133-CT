@@ -1,0 +1,230 @@
+diff --git a/.gitignore b/.gitignore
+index 9501e85..857d45f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -32,0 +33,2 @@ downloads/*
++!downloads/d13x_d133cbv-hmi-nor_v1.0.30.img
++!downloads/d13x_d133cbv-hmi-nor_v1.0.30.img.sha256
+diff --git a/README.md b/README.md
+index ed6caec..35a493a 100644
+--- a/README.md
++++ b/README.md
+@@ -7 +7 @@
+-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.29 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
++旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.30 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+@@ -15 +15 @@
+-.\scripts\build.ps1 -Target OS -LogName stage_screen_test_buttons_v1.0.29_os_build.log
++.\scripts\build.ps1 -Target OS -LogName stage_speed_v1.0.30_final_os_build.log
+@@ -32,0 +33 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
++- [图片与划线性能优化及板上对比方法](docs/图片与划线性能优化.md)
+@@ -37,0 +39,2 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
++- [v1.0.30 图片与划线构建日志](docs/stage_speed_v1.0.30_final_os_build.log)
++- [v1.0.30 源码差异](docs/speed_v1.0.30_source.patch)
+@@ -47 +50 @@ UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存
+-当前工厂镜像为 [v1.0.29 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.29.img)，大小 4,280,832 字节，SHA-256 `45d7f36cde7d48804146ac10249715aa551b5b796b1f6fbce56d8f7c55eec688`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
++当前工厂镜像为 [v1.0.30 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.30.img)，大小 4,280,832 字节，SHA-256 `fe0867781ce9b0f219520ff8cb11145fa05a7365c1838d3c9480088447e3e05a`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
+@@ -77,0 +81,2 @@ v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。v1.0.29 将测试
++
++v1.0.30 将触摸笔迹分为局部线段，减少单次重绘区域；BMP 可视区域按文件偏移正向读取，并在内存中处理倒置行，文件管理与屏幕测试共用。最多保留 64 段笔迹，超出时移除最旧线段。屏幕测试复用已读取的图片头，JPEG/PNG 解码继续使用 SDK MPP；实际打开耗时和显示效果需在板上对比测量。
+diff --git "a/docs/\345\233\276\347\211\207\344\270\216\345\210\222\347\272\277\346\200\247\350\203\275\344\274\230\345\214\226.md" "b/docs/\345\233\276\347\211\207\344\270\216\345\210\222\347\272\277\346\200\247\350\203\275\344\274\230\345\214\226.md"
+new file mode 100644
+index 0000000..b3563c7
+--- /dev/null
++++ "b/docs/\345\233\276\347\211\207\344\270\216\345\210\222\347\272\277\346\200\247\350\203\275\344\274\230\345\214\226.md"
+@@ -0,0 +1,11 @@
++# 图片与划线性能优化
++
++- 白屏触摸笔迹按每段最多 16 个点绘制，每段仅覆盖对应的局部区域；不同笔画不再自动连接。最多保留 64 段，超出后删除最旧段，切页清空笔迹。
++- BMP 按文件偏移递增读取可见区域，倒序存储时将读取行写入对应的显示行。可视行连续时避免逐行定位；裁剪或行填充导致不连续时仍需定位。文件管理和屏幕测试共用此路径。
++- 屏幕测试扫描到匹配图片后复用已获得的图片头，减少 JPEG/PNG 的重复读取；JPEG/PNG 的解码和颜色转换仍由既有 SDK 路径处理。
++
++## 板上对比
++
++使用相同 SD 卡，在 v1.0.29 与 v1.0.30 分别从文件管理打开相同的 BMP、JPEG、PNG；再在屏幕测试目录放入与当前分辨率相同的图片并进入图片页。记录从操作到画面稳定显示的时间，并确认颜色、居中、裁剪及返回键。对白屏连续慢划、快划、抬笔后再划，检查连贯性、断笔和抬笔处是否错误连接；超过 64 段时检查最旧线段按预期消失。检查按键切页与返回键仍可用。
++
++构建成功不代表目标板速度、触摸效果或 SD 兼容性已通过验证；本次未连接设备测量。
+diff --git a/downloads/SHA256SUMS_current.txt b/downloads/SHA256SUMS_current.txt
+index 15b2866..c24c19e 100644
+--- a/downloads/SHA256SUMS_current.txt
++++ b/downloads/SHA256SUMS_current.txt
+@@ -1 +1 @@
+-45d7f36cde7d48804146ac10249715aa551b5b796b1f6fbce56d8f7c55eec688  d13x_d133cbv-hmi-nor_v1.0.29.img
++fe0867781ce9b0f219520ff8cb11145fa05a7365c1838d3c9480088447e3e05a  d13x_d133cbv-hmi-nor_v1.0.30.img
+diff --git a/source/application/rt-thread/d133_hmi/assets/version.txt b/source/application/rt-thread/d133_hmi/assets/version.txt
+index 36fd7a5..4605aeb 100644
+--- a/source/application/rt-thread/d133_hmi/assets/version.txt
++++ b/source/application/rt-thread/d133_hmi/assets/version.txt
+@@ -1 +1 @@
+-D133-控制终端 1.0.29
++D133-控制终端 1.0.30
+diff --git a/source/application/rt-thread/d133_hmi/ui/image_preview.c b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+index 8be9ee8..fac1a5a 100644
+--- a/source/application/rt-thread/d133_hmi/ui/image_preview.c
++++ b/source/application/rt-thread/d133_hmi/ui/image_preview.c
+@@ -233,0 +234 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
++    uint64_t next_offset = UINT64_MAX;
+@@ -322 +323,3 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-        uint32_t source_y = top_down ? crop_y + y : height - 1U - (crop_y + y);
++        /* 总是按文件偏移递增读取，倒序 BMP 在内存中翻转显示行。 */
++        uint32_t source_y = top_down ? crop_y + y : height - crop_y - output_height + y;
++        uint32_t output_y = top_down ? y : output_height - 1U - y;
+@@ -325 +328 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-        uint8_t *output_row = output + (size_t)y * output_stride;
++        uint8_t *output_row = output + (size_t)output_y * output_stride;
+@@ -329 +332 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
+-            fseek(file, (long)source_offset, SEEK_SET) != 0 ||
++            (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
+@@ -333,0 +337 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
++        next_offset = source_offset + source_bytes;
+@@ -565 +569 @@ static int decode_mpp_image(const lv_image_header_t *header)
+-static int load_image(const char *path)
++static int load_image(const char *path, const lv_image_header_t *known_header)
+@@ -626 +630,4 @@ static int load_image(const char *path)
+-    if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
++    /* 屏幕测试目录扫描已读取文件头时，避免对同一图片重复读取。 */
++    if (known_header) {
++        header = *known_header;
++    } else if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
+@@ -708 +715 @@ static int load_matching_image(const image_preview_job_t *job)
+-        last_decode_error = load_image(candidate);
++        last_decode_error = load_image(candidate, &header);
+@@ -744 +751 @@ static void image_worker(void *parameter)
+-        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path);
++        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path, NULL);
+diff --git a/source/application/rt-thread/d133_hmi/ui/screen_test.c b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+index 4d5e118..b837d68 100644
+--- a/source/application/rt-thread/d133_hmi/ui/screen_test.c
++++ b/source/application/rt-thread/d133_hmi/ui/screen_test.c
+@@ -10 +10,2 @@
+-#define SCREEN_TEST_LINE_POINTS      512U
++#define SCREEN_TEST_LINE_POINTS      16U
++#define SCREEN_TEST_LINE_SEGMENTS    64U
+@@ -44,2 +45,9 @@ static lv_obj_t *test_overlay;
+-static lv_obj_t *test_line;
+-static lv_obj_t *test_dot;
++typedef struct {
++    lv_obj_t *object;
++    lv_point_precise_t absolute[SCREEN_TEST_LINE_POINTS];
++    lv_point_precise_t relative[SCREEN_TEST_LINE_POINTS];
++    uint32_t count;
++} screen_test_segment_t;
++static screen_test_segment_t segments[SCREEN_TEST_LINE_SEGMENTS];
++static screen_test_segment_t *active_segment;
++static uint32_t next_segment;
+@@ -50,2 +57,0 @@ static lv_timer_t *key_dispatch_timer;
+-static lv_point_precise_t line_points[SCREEN_TEST_LINE_POINTS];
+-static uint32_t line_point_count;
+@@ -117,2 +123,3 @@ static void screen_test_begin_page(uint32_t rgb)
+-    test_line = NULL;
+-    test_dot = NULL;
++    memset(segments, 0, sizeof(segments));
++    active_segment = NULL;
++    next_segment = 0;
+@@ -121 +127,0 @@ static void screen_test_begin_page(uint32_t rgb)
+-    line_point_count = 0;
+@@ -128,4 +134,15 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
+-    if (!test_line) {
+-        test_line = lv_line_create(test_overlay);
+-        test_dot = lv_obj_create(test_overlay);
+-        if (!test_line || !test_dot)
++    int32_t min_x, min_y, max_x, max_y;
++    uint32_t i;
++    lv_point_precise_t previous = {0};
++    int carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
++
++    if (carry)
++        previous = active_segment->absolute[active_segment->count - 1U];
++    if (!active_segment || carry) {
++        active_segment = &segments[next_segment++ % SCREEN_TEST_LINE_SEGMENTS];
++        if (active_segment->object)
++            lv_obj_delete(active_segment->object);
++        memset(active_segment, 0, sizeof(*active_segment));
++        active_segment->object = lv_line_create(test_overlay);
++        if (!active_segment->object) {
++            active_segment = NULL;
+@@ -133,16 +150,9 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
+-        lv_obj_set_pos(test_line, 0, 0);
+-        lv_obj_set_size(test_line, (lv_coord_t)screen_width,
+-                        (lv_coord_t)screen_height);
+-        lv_obj_set_style_line_width(test_line, 2, LV_PART_MAIN);
+-        lv_obj_set_style_line_color(test_line, lv_color_hex(0x0000FFU), LV_PART_MAIN);
+-        lv_obj_set_style_line_rounded(test_line, true, LV_PART_MAIN);
+-        lv_obj_clear_flag(test_line, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+-
+-        lv_obj_set_pos(test_dot, (lv_coord_t)(x - 1), (lv_coord_t)(y - 1));
+-        lv_obj_set_size(test_dot, 2, 2);
+-        lv_obj_set_style_bg_color(test_dot, lv_color_hex(0x0000FFU), LV_PART_MAIN);
+-        lv_obj_set_style_bg_opa(test_dot, LV_OPA_COVER, LV_PART_MAIN);
+-        lv_obj_set_style_border_width(test_dot, 0, LV_PART_MAIN);
+-        lv_obj_set_style_radius(test_dot, 0, LV_PART_MAIN);
+-        lv_obj_set_style_pad_all(test_dot, 0, LV_PART_MAIN);
+-        lv_obj_clear_flag(test_dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++        }
++        lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
++        lv_obj_set_style_line_color(active_segment->object, lv_color_hex(0x0000FFU), LV_PART_MAIN);
++        lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
++        lv_obj_clear_flag(active_segment->object, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
++        if (carry)
++            active_segment->absolute[active_segment->count++] = previous;
++        if (test_back_button)
++            lv_obj_move_foreground(test_back_button);
+@@ -150,5 +160,24 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
+-
+-    if (line_point_count == SCREEN_TEST_LINE_POINTS) {
+-        memmove(line_points, line_points + 1,
+-                (SCREEN_TEST_LINE_POINTS - 1U) * sizeof(line_points[0]));
+-        line_point_count--;
++    active_segment->absolute[active_segment->count].x = x;
++    active_segment->absolute[active_segment->count++].y = y;
++    min_x = max_x = active_segment->absolute[0].x;
++    min_y = max_y = active_segment->absolute[0].y;
++    for (i = 1; i < active_segment->count; i++) {
++        int32_t px = active_segment->absolute[i].x;
++        int32_t py = active_segment->absolute[i].y;
++        if (px < min_x) min_x = px;
++        if (px > max_x) max_x = px;
++        if (py < min_y) min_y = py;
++        if (py > max_y) max_y = py;
++    }
++    /* 每段只重绘自己的包围区域，旧笔迹保持独立。 */
++    for (i = 0; i < active_segment->count; i++) {
++        active_segment->relative[i].x = active_segment->absolute[i].x - min_x + 2;
++        active_segment->relative[i].y = active_segment->absolute[i].y - min_y + 2;
++    }
++    lv_obj_set_pos(active_segment->object, min_x - 2, min_y - 2);
++    lv_obj_set_size(active_segment->object, max_x - min_x + 5, max_y - min_y + 5);
++    if (active_segment->count == 1U) {
++        active_segment->relative[1] = active_segment->relative[0];
++        lv_line_set_points(active_segment->object, active_segment->relative, 2);
++    } else {
++        lv_line_set_points(active_segment->object, active_segment->relative, active_segment->count);
+@@ -156,4 +184,0 @@ static void screen_test_add_touch_point(int32_t x, int32_t y)
+-    line_points[line_point_count].x = x;
+-    line_points[line_point_count].y = y;
+-    line_point_count++;
+-    lv_line_set_points(test_line, line_points, line_point_count);
+@@ -516,0 +542 @@ static void screen_test_input(lv_event_t *event)
++        active_segment = NULL;
+@@ -531,0 +558 @@ static void screen_test_input(lv_event_t *event)
++        active_segment = NULL;
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+index 4313a77..4657434 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig
+@@ -145 +145 @@ CONFIG_LPKG_LVGL_THREAD_STACK_SIZE=32768
+-CONFIG_HMI_FW_VERSION="1.0.29"
++CONFIG_HMI_FW_VERSION="1.0.30"
+diff --git a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+index 839955a..1045a51 100644
+--- a/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
++++ b/source/target/configs/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig
+@@ -143 +143 @@ CONFIG_HMI_UI=y
+-CONFIG_HMI_FW_VERSION="1.0.29"
++CONFIG_HMI_FW_VERSION="1.0.30"
+diff --git a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+index 9afca40..6a85f8f 100644
+--- a/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
++++ b/source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json
+@@ -19 +19 @@
+-            "version": "1.0.29",
++            "version": "1.0.30",

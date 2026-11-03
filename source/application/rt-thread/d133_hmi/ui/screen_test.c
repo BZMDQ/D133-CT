@@ -7,7 +7,8 @@
 
 #define SCREEN_TEST_PAGE_COUNT       9U
 #define SCREEN_TEST_GRAY_LEVELS      32U
-#define SCREEN_TEST_LINE_POINTS      512U
+#define SCREEN_TEST_LINE_POINTS      16U
+#define SCREEN_TEST_LINE_SEGMENTS    64U
 #define SCREEN_TEST_IMAGE_DIR        "/sdcard/测试图像使用"
 #define SCREEN_TEST_KEYADC_CHANNEL   2U
 #define SCREEN_TEST_KEY_SAMPLE_MS    20U
@@ -41,14 +42,19 @@ static const uint32_t screen_test_bar_colors[8] = {
 };
 
 static lv_obj_t *test_overlay;
-static lv_obj_t *test_line;
-static lv_obj_t *test_dot;
+typedef struct {
+    lv_obj_t *object;
+    lv_point_precise_t absolute[SCREEN_TEST_LINE_POINTS];
+    lv_point_precise_t relative[SCREEN_TEST_LINE_POINTS];
+    uint32_t count;
+} screen_test_segment_t;
+static screen_test_segment_t segments[SCREEN_TEST_LINE_SEGMENTS];
+static screen_test_segment_t *active_segment;
+static uint32_t next_segment;
 static lv_obj_t *test_image_status;
 static lv_obj_t *test_back_button;
 static lv_timer_t *image_poll_timer;
 static lv_timer_t *key_dispatch_timer;
-static lv_point_precise_t line_points[SCREEN_TEST_LINE_POINTS];
-static uint32_t line_point_count;
 static int32_t screen_width;
 static int32_t screen_height;
 static int32_t last_x;
@@ -114,49 +120,68 @@ static void screen_test_begin_page(uint32_t rgb)
     lv_obj_clean(test_overlay);
     lv_obj_set_style_bg_color(test_overlay, lv_color_hex(rgb), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(test_overlay, LV_OPA_COVER, LV_PART_MAIN);
-    test_line = NULL;
-    test_dot = NULL;
+    memset(segments, 0, sizeof(segments));
+    active_segment = NULL;
+    next_segment = 0;
     test_image_status = NULL;
     test_back_button = NULL;
-    line_point_count = 0;
     touch_down = 0;
 }
 
 /* 绘制白屏触摸测试专用的两像素蓝线。 */
 static void screen_test_add_touch_point(int32_t x, int32_t y)
 {
-    if (!test_line) {
-        test_line = lv_line_create(test_overlay);
-        test_dot = lv_obj_create(test_overlay);
-        if (!test_line || !test_dot)
+    int32_t min_x, min_y, max_x, max_y;
+    uint32_t i;
+    lv_point_precise_t previous = {0};
+    int carry = active_segment && active_segment->count == SCREEN_TEST_LINE_POINTS;
+
+    if (carry)
+        previous = active_segment->absolute[active_segment->count - 1U];
+    if (!active_segment || carry) {
+        active_segment = &segments[next_segment++ % SCREEN_TEST_LINE_SEGMENTS];
+        if (active_segment->object)
+            lv_obj_delete(active_segment->object);
+        memset(active_segment, 0, sizeof(*active_segment));
+        active_segment->object = lv_line_create(test_overlay);
+        if (!active_segment->object) {
+            active_segment = NULL;
             return;
-        lv_obj_set_pos(test_line, 0, 0);
-        lv_obj_set_size(test_line, (lv_coord_t)screen_width,
-                        (lv_coord_t)screen_height);
-        lv_obj_set_style_line_width(test_line, 2, LV_PART_MAIN);
-        lv_obj_set_style_line_color(test_line, lv_color_hex(0x0000FFU), LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(test_line, true, LV_PART_MAIN);
-        lv_obj_clear_flag(test_line, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_set_pos(test_dot, (lv_coord_t)(x - 1), (lv_coord_t)(y - 1));
-        lv_obj_set_size(test_dot, 2, 2);
-        lv_obj_set_style_bg_color(test_dot, lv_color_hex(0x0000FFU), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(test_dot, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(test_dot, 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(test_dot, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(test_dot, 0, LV_PART_MAIN);
-        lv_obj_clear_flag(test_dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        }
+        lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
+        lv_obj_set_style_line_color(active_segment->object, lv_color_hex(0x0000FFU), LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
+        lv_obj_clear_flag(active_segment->object, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        if (carry)
+            active_segment->absolute[active_segment->count++] = previous;
+        if (test_back_button)
+            lv_obj_move_foreground(test_back_button);
     }
-
-    if (line_point_count == SCREEN_TEST_LINE_POINTS) {
-        memmove(line_points, line_points + 1,
-                (SCREEN_TEST_LINE_POINTS - 1U) * sizeof(line_points[0]));
-        line_point_count--;
+    active_segment->absolute[active_segment->count].x = x;
+    active_segment->absolute[active_segment->count++].y = y;
+    min_x = max_x = active_segment->absolute[0].x;
+    min_y = max_y = active_segment->absolute[0].y;
+    for (i = 1; i < active_segment->count; i++) {
+        int32_t px = active_segment->absolute[i].x;
+        int32_t py = active_segment->absolute[i].y;
+        if (px < min_x) min_x = px;
+        if (px > max_x) max_x = px;
+        if (py < min_y) min_y = py;
+        if (py > max_y) max_y = py;
     }
-    line_points[line_point_count].x = x;
-    line_points[line_point_count].y = y;
-    line_point_count++;
-    lv_line_set_points(test_line, line_points, line_point_count);
+    /* 每段只重绘自己的包围区域，旧笔迹保持独立。 */
+    for (i = 0; i < active_segment->count; i++) {
+        active_segment->relative[i].x = active_segment->absolute[i].x - min_x + 2;
+        active_segment->relative[i].y = active_segment->absolute[i].y - min_y + 2;
+    }
+    lv_obj_set_pos(active_segment->object, min_x - 2, min_y - 2);
+    lv_obj_set_size(active_segment->object, max_x - min_x + 5, max_y - min_y + 5);
+    if (active_segment->count == 1U) {
+        active_segment->relative[1] = active_segment->relative[0];
+        lv_line_set_points(active_segment->object, active_segment->relative, 2);
+    } else {
+        lv_line_set_points(active_segment->object, active_segment->relative, active_segment->count);
+    }
 }
 
 /* 白到黑的灰阶按照 round(255 * (31 - i) / 31) 计算。 */
@@ -514,6 +539,7 @@ static void screen_test_input(lv_event_t *event)
     screen_test_get_point(lv_event_get_indev(event), &x, &y);
 
     if (code == LV_EVENT_PRESSED) {
+        active_segment = NULL;
         last_x = x;
         last_y = y;
         touch_down = 1;
@@ -529,6 +555,7 @@ static void screen_test_input(lv_event_t *event)
         if (!touch_down)
             return;
         touch_down = 0;
+        active_segment = NULL;
     }
 }
 

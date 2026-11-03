@@ -231,6 +231,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t image_end;
     uint64_t output_size;
     uint64_t source_bytes;
+    uint64_t next_offset = UINT64_MAX;
     uint32_t y;
     int top_down;
     int result = IMAGE_PREVIEW_ERR_DECODE;
@@ -319,18 +320,21 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     output = (uint8_t *)ALIGN_UP((ulong)raw, CACHE_LINE_SIZE);
 
     for (y = 0; y < output_height; y++) {
-        uint32_t source_y = top_down ? crop_y + y : height - 1U - (crop_y + y);
+        /* 总是按文件偏移递增读取，倒序 BMP 在内存中翻转显示行。 */
+        uint32_t source_y = top_down ? crop_y + y : height - crop_y - output_height + y;
+        uint32_t output_y = top_down ? y : output_height - 1U - y;
         uint64_t source_offset = (uint64_t)pixel_offset +
             (uint64_t)source_y * source_stride + (uint64_t)crop_x * bytes_per_pixel;
-        uint8_t *output_row = output + (size_t)y * output_stride;
+        uint8_t *output_row = output + (size_t)output_y * output_stride;
         uint32_t x;
 
         if (source_offset + source_bytes > image_end || source_offset > LONG_MAX ||
-            fseek(file, (long)source_offset, SEEK_SET) != 0 ||
+            (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
             fread(source_row, 1, (size_t)source_bytes, file) != source_bytes) {
             result = IMAGE_PREVIEW_ERR_DECODE;
             goto done;
         }
+        next_offset = source_offset + source_bytes;
 
         for (x = 0; x < output_width; x++) {
             uint16_t rgb565;
@@ -562,7 +566,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
     return result;
 }
 
-static int load_image(const char *path)
+static int load_image(const char *path, const lv_image_header_t *known_header)
 {
     struct stat st;
     lv_image_header_t header = {0};
@@ -623,7 +627,10 @@ static int load_image(const char *path)
     }
 
     info_started = rt_tick_get_millisecond();
-    if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
+    /* 屏幕测试目录扫描已读取文件头时，避免对同一图片重复读取。 */
+    if (known_header) {
+        header = *known_header;
+    } else if (lv_image_decoder_get_info(preview_source_path, &header) != LV_RESULT_OK) {
         hmi_serial_log("[image_preview] SDK 解码器无法识别文件头：%s\n", path);
         return IMAGE_PREVIEW_ERR_DECODE;
     }
@@ -705,7 +712,7 @@ static int load_matching_image(const image_preview_job_t *job)
             continue;
 
         found_matching_size = 1;
-        last_decode_error = load_image(candidate);
+        last_decode_error = load_image(candidate, &header);
         if (last_decode_error == IMAGE_PREVIEW_ERR_NONE) {
             closedir(directory);
             return IMAGE_PREVIEW_ERR_NONE;
@@ -741,7 +748,7 @@ static void image_worker(void *parameter)
 
         if (rt_mq_recv(job_queue, &job, sizeof(job), RT_WAITING_FOREVER) != RT_EOK)
             continue;
-        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path);
+        result = job.match_resolution ? load_matching_image(&job) : load_image(job.path, NULL);
         rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
         cancelled = cancel_requested || result == IMAGE_PREVIEW_ERR_CANCELLED;
         rt_mutex_release(&state_lock);
