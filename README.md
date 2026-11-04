@@ -1,4 +1,7 @@
 
+当前版本 v1.0.46：[烧录包](downloads/D133-CT_factory_v1.0.46.zip)，网络 OTA 等待期间允许独立健康查询，增加升级状态字段并调整 BMP 双缓冲调度。详见 [说明](docs/网络OTA与BMP_v1.0.46.md)，实机升级与性能待验证。
+
+
 当前版本 v1.0.45：[烧录包](downloads/D133-CT_factory_v1.0.45.zip)，BMP 双缓冲、RGB555 优化和 LVGL 完成通知；实机结果待验证。详见 [说明](docs/BMP并发读取_v1.0.45.md)。
 
 

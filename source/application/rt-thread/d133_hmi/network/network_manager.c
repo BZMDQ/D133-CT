@@ -23,7 +23,8 @@
 #define OP_HEALTH 0xD105
 #define STAGING "/sdcard/UPDATE/ota.cpio.part"
 #define PACKAGE "/sdcard/UPDATE/ota.cpio"
-static unsigned char payload[16384];
+static struct rt_mutex upload_lock;
+static rt_mq_t clients;
 static int exact(int fd,void *data,unsigned size,int sending)
 {unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
@@ -32,6 +33,9 @@ void network_manager_status(char *out,unsigned cap)
 {if(netif_default)rt_snprintf(out,cap,"以太网%s | IP：%s | TCP %u",netif_is_link_up(netif_default)?"已连接":"未连接",ipaddr_ntoa(&netif_default->ip_addr),D133_TCP_PORT);else rt_snprintf(out,cap,"以太网初始化中 | TCP %u",D133_TCP_PORT);}
 static void session(int fd)
 {
+    /* 每个连接独享报文缓冲，避免健康查询覆盖升级数据。 */
+    unsigned char payload[16384];
+    int owns_upload=0;
     uint32_t h[5],total=0,written=0;unsigned char sha[32],actual[32];char version[32]={0};FILE *file=0;int active=0,tcp_event_sent=0;
     struct timeval timeout={120,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
     while(!exact(fd,h,20,0)){
@@ -39,11 +43,13 @@ static void session(int fd)
         if(exact(fd,payload,h[3],0))break;
         if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
         if(h[1]==OP_INFO||h[1]==OP_HEALTH){
-            char info[512],event_name[32],device_message[192];boot_status_t boot;rt_uint32_t event_id=0;
+            char info[768],event_name[32],device_message[192];boot_status_t boot;rt_uint32_t event_id=0;
             if(h[1]==OP_INFO&&!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
             boot_manager_get(&boot);
             device_event_manager_snapshot(event_name,sizeof(event_name),device_message,sizeof(device_message),&event_id);
-            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\"}",boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)event_id,event_name,device_message);
+            hmi_ota_status_t ota;ota_manager_get(&ota);
+            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d}",boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
+            if(length<0||length>=(int)sizeof(info))break;
             if(reply(fd,h[1],0,info,length))break;
             continue;
         }
@@ -53,6 +59,9 @@ static void session(int fd)
             memcpy(&total,payload,4);
             if(!total||total>7*1024*1024+8192||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
             if(!sd_manager_ready()||file_manager_capacity("/sdcard",&capacity,&free_bytes)||free_bytes<total+65536){reply(fd,h[1],5,0,0);continue;}
+            if(!owns_upload){if(rt_mutex_take(&upload_lock,0)!=RT_EOK){reply(fd,h[1],3,0,0);continue;}owns_upload=1;}
+            ota_manager_get(&state);
+            if(state.state!=OTA_IDLE&&state.state!=OTA_FAILED){reply(fd,h[1],3,0,0);break;}
             memcpy(sha,payload+4,32);memcpy(version,payload+100,32);mkdir("/sdcard/UPDATE",0777);file=fopen(STAGING,"wb");if(!file){reply(fd,h[1],5,0,0);continue;}
             written=0;active=1;
             if(!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
@@ -87,14 +96,21 @@ static void session(int fd)
         reply(fd,h[1],11,0,0);break;
     }
     if(file)fclose(file);
+    if(owns_upload)rt_mutex_release(&upload_lock);
     /* 断线只保留未激活的暂存文件，绝不提交 ENV。 */
+}
+/* 一个连接等待校验/写入时，另一个连接仍可查询状态。 */
+static void client_worker(void *unused)
+{
+    int fd;
+    while(1){if(rt_mq_recv(clients,&fd,sizeof(fd),RT_WAITING_FOREVER)==RT_EOK){session(fd);closesocket(fd);}}
 }
 static void server(void *unused)
 {
     int listener=socket(AF_INET,SOCK_STREAM,0);struct sockaddr_in addr;int yes=1;
     if(listener<0){system_manager_log("TCP 服务套接字创建失败");return;}setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(D133_TCP_PORT);addr.sin_addr.s_addr=INADDR_ANY;
     if(bind(listener,(void*)&addr,sizeof(addr))||listen(listener,1)){closesocket(listener);system_manager_log("TCP 服务端口绑定或监听失败");return;}
-    system_manager_log("D133CBS 工具箱 OTA 服务已启动，端口 8899");while(1){int fd=accept(listener,0,0);if(fd<0){rt_thread_mdelay(100);continue;}session(fd);closesocket(fd);}
+    system_manager_log("D133CBS 工具箱 OTA 服务已启动，端口 8899");while(1){int fd=accept(listener,0,0);if(fd<0){rt_thread_mdelay(100);continue;}if(rt_mq_send(clients,&fd,sizeof(fd))!=RT_EOK)closesocket(fd);}
 }
 typedef struct {char ip[16],mask[16],gateway[16];int dhcp;} network_config_t;
 static rt_mq_t config_queue;
@@ -115,6 +131,10 @@ int network_manager_configure(const char *ip,const char *mask,const char *gw,int
 }
 int network_manager_init(void)
 {
+    unsigned i;
+    rt_mutex_init(&upload_lock,"otaupload",RT_IPC_FLAG_PRIO);
+    clients=rt_mq_create("tcpjobs",sizeof(int),2,RT_IPC_FLAG_FIFO);if(!clients)return -1;
+    for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,24576,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
     rt_thread_t t;config_queue=rt_mq_create("netcfg",sizeof(network_config_t),2,RT_IPC_FLAG_FIFO);if(!config_queue)return -1;
     t=rt_thread_create("hmi_netcfg",configure_worker,0,3072,24,10);if(!t)return -1;rt_thread_startup(t);
     t=rt_thread_create("hmi_tcp",server,0,8192,23,10);return t?rt_thread_startup(t):-1;

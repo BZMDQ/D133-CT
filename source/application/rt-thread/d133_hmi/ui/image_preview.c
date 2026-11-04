@@ -947,7 +947,8 @@ int image_preview_init(void)
     job_queue = rt_mq_create("imgprev", sizeof(image_preview_job_t), 1, RT_IPC_FLAG_FIFO);
     if (!job_queue)
         return -2;
-    thread = rt_thread_create("hmi_imgprev", image_worker, NULL, 8192, 26, 10);
+    /* 与读取线程使用相同短时间片，避免转换长时间占用 CPU 后才启动预读。 */
+    thread = rt_thread_create("hmi_imgprev", image_worker, NULL, 8192, 26, 2);
     if (!thread)
         return -3;
     if (rt_thread_startup(thread) != RT_EOK)
