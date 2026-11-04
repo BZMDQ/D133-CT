@@ -1,3 +1,6 @@
+
+当前版本 v1.0.43：[烧录包](downloads/D133-CT_factory_v1.0.43.zip)，BMP 批读上限 256 KiB / 64 行；实机性能待验证。
+
 # D133-控制终端
 
 当前版本 **v1.0.42**：[工厂烧录 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.42.img)、[完整烧录包 ZIP](downloads/D133-CT_factory_v1.0.42.zip)、[烧录与 BMP 优化说明](docs/BMP优化与烧录_v1.0.42.md)。

@@ -16,8 +16,8 @@
 #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
 #define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
-#define IMAGE_BMP_BATCH_ROWS 32U
-#define IMAGE_BMP_BATCH_MAX_BYTES (128U * 1024U)
+#define IMAGE_BMP_BATCH_ROWS 64U
+#define IMAGE_BMP_BATCH_MAX_BYTES (256U * 1024U)
 
 typedef struct {
     char path[FM_PATH_MAX];
@@ -326,6 +326,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         row_batch = IMAGE_BMP_BATCH_MAX_BYTES / source_stride;
         if (row_batch > IMAGE_BMP_BATCH_ROWS)
             row_batch = IMAGE_BMP_BATCH_ROWS;
+        /* 小图无需申请超出可见高度的缓存。 */
+        if (row_batch > output_height)
+            row_batch = output_height;
     }
     source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
     if (!source_buffer && row_batch > 1U) {
