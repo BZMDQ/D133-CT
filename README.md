@@ -1,4 +1,7 @@
 
+当前版本 v1.0.45：[烧录包](downloads/D133-CT_factory_v1.0.45.zip)，BMP 双缓冲、RGB555 优化和 LVGL 完成通知；实机结果待验证。详见 [说明](docs/BMP并发读取_v1.0.45.md)。
+
+
 当前版本 v1.0.44：[烧录包](downloads/D133-CT_factory_v1.0.44.zip)，BMP 批读上限 512 KiB / 128 行；实机性能待验证。
 
 

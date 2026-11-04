@@ -1,4 +1,6 @@
 #include "image_preview.h"
+#include "bmp_reader.h"
+#include "ui_manager.h"
 #include "hmi_serial_log.h"
 #include "file_manager.h"
 #include "display_profile_manager.h"
@@ -136,21 +138,30 @@ static uint32_t read_be32(const uint8_t *p)
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint8_t bmp_mask_to_u8(uint32_t pixel, uint32_t mask)
-{
-    uint32_t shift = 0;
+typedef struct {
+    uint32_t mask;
+    uint32_t shift;
     uint32_t maximum;
-    uint32_t value;
+} bmp_mask_info_t;
 
-    while (shift < 32U && ((mask >> shift) & 1U) == 0U)
-        shift++;
-    if (shift == 32U)
+/* 掩码在整张图内不变，只在读取文件头后计算一次。 */
+static bmp_mask_info_t bmp_mask_info(uint32_t mask)
+{
+    bmp_mask_info_t info = {mask, 0, 0};
+    while (info.shift < 32U && ((mask >> info.shift) & 1U) == 0U)
+        info.shift++;
+    if (info.shift < 32U)
+        info.maximum = mask >> info.shift;
+    return info;
+}
+
+static uint8_t bmp_mask_to_u8(uint32_t pixel, const bmp_mask_info_t *info)
+{
+    uint32_t value;
+    if (!info->maximum)
         return 0;
-    maximum = mask >> shift;
-    value = (pixel & mask) >> shift;
-    if (maximum == 0U)
-        return 0;
-    return (uint8_t)((value * 255U + maximum / 2U) / maximum);
+    value = (pixel & info->mask) >> info->shift;
+    return (uint8_t)((value * 255U + info->maximum / 2U) / info->maximum);
 }
 
 static void preview_viewport(uint16_t *width, uint16_t *height)
@@ -205,6 +216,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint8_t header[54];
     uint8_t *source_row = NULL;
     uint8_t *source_buffer = NULL;
+    uint8_t *source_buffer2 = NULL;
+    uint8_t *batch_buffer = NULL;
+    bmp_reader_t reader = {0};
     uint8_t *raw = NULL;
     uint8_t *output;
     FILE *file = NULL;
@@ -218,6 +232,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint32_t red_mask = 0;
     uint32_t green_mask = 0;
     uint32_t blue_mask = 0;
+    bmp_mask_info_t red_info, green_info, blue_info;
     uint32_t source_stride;
     uint64_t source_stride_wide;
     uint32_t crop_x;
@@ -285,6 +300,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         blue_mask = 0x001FU;
     }
 
+    red_info = bmp_mask_info(red_mask);
+    green_info = bmp_mask_info(green_mask);
+    blue_info = bmp_mask_info(blue_mask);
     width = (uint32_t)signed_width;
     height = (uint32_t)(signed_height < 0 ? -signed_height : signed_height);
     top_down = signed_height < 0;
@@ -350,6 +368,15 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     }
     output = (uint8_t *)ALIGN_UP((ulong)raw, CACHE_LINE_SIZE);
 
+    /* 双缓冲失败时退回原有单线程读取，不影响低内存场景。 */
+    if (row_batch > 1U && output_height > row_batch) {
+        source_buffer2 = (uint8_t *)rt_malloc(batch_stride * row_batch);
+        if (source_buffer2 && bmp_reader_start(&reader, file) != 0) {
+            rt_free(source_buffer2);
+            source_buffer2 = NULL;
+        }
+    }
+
     for (y = 0; y < output_height; y++) {
         /* 总是按文件偏移递增读取，倒序 BMP 在内存中翻转显示行。 */
         uint32_t source_y = top_down ? crop_y + y : height - crop_y - output_height + y;
@@ -362,6 +389,10 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         if ((y % row_batch) == 0U) {
             uint32_t rows = output_height - y;
             size_t read_bytes;
+            if (preview_cancelled()) {
+                result = IMAGE_PREVIEW_ERR_CANCELLED;
+                goto done;
+            }
             if (rows > row_batch)
                 rows = row_batch;
             /* 最后一行仅读取可视像素，避免跨越图片像素区尾部。 */
@@ -370,15 +401,44 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
              * 避免每批 fseek 导致标准库缓存失效。最后一批保留精确边界。 */
             if (rows > 1U && y + rows < output_height)
                 read_bytes = batch_stride * rows;
-            if (source_offset + read_bytes > image_end || source_offset > LONG_MAX ||
-                (source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
-                fread(source_buffer, 1, read_bytes, file) != read_bytes) {
+            if (source_offset + read_bytes > image_end || source_offset > LONG_MAX) {
                 result = IMAGE_PREVIEW_ERR_DECODE;
                 goto done;
             }
-            next_offset = source_offset + read_bytes;
+            if (reader.active) {
+                unsigned slot = (y / row_batch) & 1U;
+                batch_buffer = slot ? source_buffer2 : source_buffer;
+                if (!y)
+                    bmp_reader_submit(&reader, batch_buffer, (long)source_offset, read_bytes);
+                if (bmp_reader_wait(&reader) != 0) {
+                    result = IMAGE_PREVIEW_ERR_DECODE;
+                    goto done;
+                }
+                if (y + rows < output_height) {
+                    uint32_t remaining = output_height - y - rows;
+                    uint32_t next_rows = remaining > row_batch ? row_batch : remaining;
+                    size_t next_bytes = batch_stride * (next_rows - 1U) + (size_t)source_bytes;
+                    uint64_t next = source_offset + (uint64_t)rows * source_stride;
+                    if (next_rows > 1U && next_rows < remaining)
+                        next_bytes = batch_stride * next_rows;
+                    if (next > LONG_MAX || next + next_bytes > image_end) {
+                        result = IMAGE_PREVIEW_ERR_DECODE;
+                        goto done;
+                    }
+                    bmp_reader_submit(&reader, slot ? source_buffer : source_buffer2,
+                                      (long)next, next_bytes);
+                }
+            } else {
+                batch_buffer = source_buffer;
+                if ((source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
+                    fread(source_buffer, 1, read_bytes, file) != read_bytes) {
+                    result = IMAGE_PREVIEW_ERR_DECODE;
+                    goto done;
+                }
+                next_offset = source_offset + read_bytes;
+            }
         }
-        source_row = source_buffer + (size_t)(y % row_batch) * batch_stride;
+        source_row = batch_buffer + (size_t)(y % row_batch) * batch_stride;
 
         /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
         if (bits_per_pixel == 24 ||
@@ -413,21 +473,29 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             continue;
         }
 
-        for (x = 0; x < output_width; x++) {
-            uint16_t rgb565;
-            if (bits_per_pixel == 16 && red_mask == 0x7C00U &&
-                green_mask == 0x03E0U && blue_mask == 0x001FU) {
+        /* RGB555 常见格式单独处理，避免对每个像素重复分支和 memcpy。 */
+        if (bits_per_pixel == 16 && red_mask == 0x7C00U &&
+            green_mask == 0x03E0U && blue_mask == 0x001FU) {
+            uint16_t *dst = (uint16_t *)output_row;
+            for (x = 0; x < output_width; x++) {
                 uint16_t pixel = read_le16(source_row + (size_t)x * 2U);
                 uint16_t green = (pixel >> 5) & 0x1FU;
-                /* 标准 RGB555 的 5 位绿色扩展到 6 位。 */
-                rgb565 = (uint16_t)(((pixel & 0x7C00U) << 1) |
+                dst[x] = (uint16_t)(((pixel & 0x7C00U) << 1) |
                                     (((green << 1) | (green >> 4)) << 5) |
                                     (pixel & 0x001FU));
-            } else if (bits_per_pixel == 16) {
+            }
+            if (output_stride > output_width * 2U)
+                memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
+            continue;
+        }
+
+        for (x = 0; x < output_width; x++) {
+            uint16_t rgb565;
+            if (bits_per_pixel == 16) {
                 uint32_t pixel = read_le16(source_row + (size_t)x * 2U);
-                uint8_t red = bmp_mask_to_u8(pixel, red_mask);
-                uint8_t green = bmp_mask_to_u8(pixel, green_mask);
-                uint8_t blue = bmp_mask_to_u8(pixel, blue_mask);
+                uint8_t red = bmp_mask_to_u8(pixel, &red_info);
+                uint8_t green = bmp_mask_to_u8(pixel, &green_info);
+                uint8_t blue = bmp_mask_to_u8(pixel, &blue_info);
                 rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
                                     ((uint16_t)(green & 0xFCU) << 3) |
                                     ((uint16_t)blue >> 3));
@@ -436,9 +504,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                          blue_mask == 0x000000FFU)) {
                 const uint8_t *pixel = source_row + (size_t)x * 4U;
                 uint32_t value = read_le32(pixel);
-                uint8_t red = bmp_mask_to_u8(value, red_mask);
-                uint8_t green = bmp_mask_to_u8(value, green_mask);
-                uint8_t blue = bmp_mask_to_u8(value, blue_mask);
+                uint8_t red = bmp_mask_to_u8(value, &red_info);
+                uint8_t green = bmp_mask_to_u8(value, &green_info);
+                uint8_t blue = bmp_mask_to_u8(value, &blue_info);
                 rgb565 = (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
                                     ((uint16_t)(green & 0xFCU) << 3) |
                                     ((uint16_t)blue >> 3));
@@ -471,6 +539,10 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     result = IMAGE_PREVIEW_ERR_NONE;
 
 done:
+    /* 先等待读取线程退出，才能释放缓冲区和关闭文件。 */
+    bmp_reader_stop(&reader);
+    if (source_buffer2)
+        rt_free(source_buffer2);
     if (source_buffer)
         rt_free(source_buffer);
     if (raw)
@@ -847,6 +919,7 @@ static void image_worker(void *parameter)
             cancel_requested = 0;
             last_error = IMAGE_PREVIEW_ERR_NONE;
             rt_mutex_release(&state_lock);
+            hmi_ui_image_signal();
             continue;
         }
 
@@ -859,6 +932,7 @@ static void image_worker(void *parameter)
         else
             current_state = IMAGE_PREVIEW_FAILED;
         rt_mutex_release(&state_lock);
+        hmi_ui_image_signal();
     }
 }
 

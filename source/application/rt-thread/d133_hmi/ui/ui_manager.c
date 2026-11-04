@@ -50,6 +50,29 @@ static lv_obj_t *image_area;
 static lv_obj_t *image_status_label;
 static lv_obj_t *image_object;
 static lv_timer_t *image_ui_timer;
+static volatile int image_ui_pending;
+
+void hmi_ui_image_signal(void)
+{
+    rt_enter_critical();
+    image_ui_pending = 1;
+    rt_exit_critical();
+}
+
+/* 此函数只由 LVGL 线程调用，不跨线程操作 LVGL 对象。 */
+void hmi_ui_image_dispatch(void)
+{
+    int pending;
+    rt_enter_critical();
+    pending = image_ui_pending;
+    image_ui_pending = 0;
+    rt_exit_critical();
+    if (pending) {
+        if (image_ui_timer)
+            lv_timer_ready(image_ui_timer);
+        screen_test_image_ready();
+    }
+}
 static lv_obj_t *ip_input;
 static lv_obj_t *mask_input;
 static lv_obj_t *gw_input;

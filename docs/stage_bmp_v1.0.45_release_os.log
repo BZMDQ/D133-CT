@@ -1,0 +1,74 @@
+scons: Reading SConscript files ...
+Newlib version:3.2.0
+scons: done reading SConscript files.
+scons: Building targets ...
+
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
+  CC application\rt-thread\d133_hmi\ui\image_preview.c
+  CC application\rt-thread\d133_hmi\ui\screen_test.c
+  CC application\rt-thread\d133_hmi\ui\ui_manager.c
+LINK output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
+-rw-r--r-- 1 12081720 Nov  4 08:43 output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
+
+riscv64-unknown-elf-objcopy -O binary output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.bin
+riscv64-unknown-elf-size output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf
+   text	   data	    bss	    dec	    hex	filename
+1112404	  13628	 492392	1618424	 18b1f8	output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.elf
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --clean rodata/hmi
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/fsinstall.py --sdkout D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ --src D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\application\rt-thread\d133_hmi\assets/ --dst rodata/hmi
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/linked_size.py -m D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x.map
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makefatfs.py --fullpart --volab default --cluster 8 --sector 512 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir rodata --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/rodata.fatfs --reserved 50
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/makelittlefs.py --pagesize 256 --blocksize 4096 --tooldir D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/ --inputdir data/ --outfile D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs --reserved 50
+Info: inputdir data/ is not exist, use a empty one.
+D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty
+D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/tools/scripts/mklittlefs.exe -c D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/empty -b 4096 -p 256 -s 1048576 D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs
+Backup raw image: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/data.lfs.raw
+Trim trailing 0xFF: 1048576 -> 8192
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_private_resource.py -v -l D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.json,D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/partition.json -o D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin
+Generated D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_cfg.bin: 1992 bytes
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/elf_parse.py output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi\images\d13x.elf D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/ riscv64-unknown-elf-
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mk_image.py -v -c D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/image_cfg.json -d D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/usbupg-psram-init.aic ...
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/pbp_ext.aic ...
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/loader.aic ...
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/bootloader.aic ...
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_os.itb ...
+	Creating D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/env.bin ...
+	Image header is generated.
+	Meta data for image components:
+		Meta for image.updater.psram       offset in file 0x1a00     size in file 0x5b10 (23312)
+		Meta for image.updater.spl         offset in file 0x7a00     size in file 0x4b610 (308752)
+		Meta for image.info                offset in file 0x0        size in file 0x800 (2048)
+		Meta for image.target.spl          offset in file 0x53200    size in file 0x4b610 (308752)
+		Meta for image.target.env          offset in file 0x9ea00    size in file 0x1000 (4096)
+		Meta for image.target.env_r        offset in file 0x9fa00    size in file 0x1000 (4096)
+		Meta for image.target.os           offset in file 0xa0a00    size in file 0x113800 (1128448)
+		Meta for image.target.rodata       offset in file 0x1b4200   size in file 0x263000 (2502656)
+		Meta for image.target.data         offset in file 0x417200   size in file 0x2000 (8192)
+	Packing file data:
+		usbupg-psram-init.aic
+		bootloader.aic
+		bootloader.aic
+		env.bin
+		env.bin
+		d13x_os.itb
+		rodata.fatfs
+		data.lfs
+	Image file is generated: D:/Users/ws2608007/Desktop/D113/D133CES/luban-lite-master/output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/d13x_d133cbv-hmi-nor_v1.0.45.img
+
+
+make CPIO image begin...
+python3 D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\tools/scripts/mkcpio.py Windows D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\target/d13x/d133cbv-hmi-nor/pack/ D:\Users\ws2608007\Desktop\D113\D133CES\luban-lite-master\output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/
+ota_info.bin
+d13x_os.itb
+rodata.fatfs
+7094 blocks
+Successfully updated size to ota.cpio
+make CPIO image done...
+
+Luban-Lite is built successfully
+
+scons: done building targets.

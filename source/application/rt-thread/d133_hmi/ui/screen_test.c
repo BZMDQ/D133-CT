@@ -60,6 +60,11 @@ static uint32_t next_segment;
 static lv_obj_t *test_image_status;
 static lv_obj_t *test_back_button;
 static lv_timer_t *image_poll_timer;
+void screen_test_image_ready(void)
+{
+    if (image_poll_timer)
+        lv_timer_ready(image_poll_timer);
+}
 static lv_timer_t *key_dispatch_timer;
 static lv_timer_t *touch_timer;
 static int32_t screen_width;
