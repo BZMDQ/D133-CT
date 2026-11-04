@@ -1,4 +1,7 @@
 
+当前版本 v1.0.47：[烧录包](downloads/D133-CT_factory_v1.0.47.zip)，启用 SDK SDMC 中断等待，增加 BMP 加载阶段及停留时间显示。[测试说明](docs/SD中断与BMP诊断_v1.0.47.md)。SD 读写、OTA 与性能尚待上板验证。
+
+
 当前版本 v1.0.46：[烧录包](downloads/D133-CT_factory_v1.0.46.zip)，网络 OTA 等待期间允许独立健康查询，增加升级状态字段并调整 BMP 双缓冲调度。详见 [说明](docs/网络OTA与BMP_v1.0.46.md)，实机升级与性能待验证。
 
 

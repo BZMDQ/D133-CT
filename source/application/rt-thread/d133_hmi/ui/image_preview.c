@@ -41,6 +41,17 @@ static int manager_ready;
 static image_preview_state_t current_state = IMAGE_PREVIEW_IDLE;
 static int last_error;
 static int cancel_requested;
+static char loading_phase[48] = "正在读取图片";
+static rt_uint32_t phase_started;
+
+/* 加载阶段在界面上可见，不依赖已经关闭的串口日志。 */
+static void preview_phase(const char *text)
+{
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    snprintf(loading_phase, sizeof(loading_phase), "%s", text);
+    phase_started = rt_tick_get_millisecond();
+    rt_mutex_release(&state_lock);
+}
 static int decoder_opened;
 static lv_image_decoder_dsc_t decoder_dsc;
 static lv_image_dsc_t preview_image;
@@ -256,6 +267,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     int top_down;
     int result = IMAGE_PREVIEW_ERR_DECODE;
 
+    preview_phase("BMP：打开文件和读取文件头");
     file = fopen(path, "rb");
     if (!file)
         return IMAGE_PREVIEW_ERR_PATH;
@@ -348,6 +360,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         if (row_batch > output_height)
             row_batch = output_height;
     }
+    preview_phase("BMP：分配批读与显示缓存");
     source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
     if (!source_buffer && row_batch > 1U) {
         /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
@@ -389,6 +402,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         if ((y % row_batch) == 0U) {
             uint32_t rows = output_height - y;
             size_t read_bytes;
+            preview_phase("BMP：SD 读取／等待预读");
             if (preview_cancelled()) {
                 result = IMAGE_PREVIEW_ERR_CANCELLED;
                 goto done;
@@ -437,6 +451,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                 }
                 next_offset = source_offset + read_bytes;
             }
+            preview_phase("BMP：像素转换");
         }
         source_row = batch_buffer + (size_t)(y % row_batch) * batch_stride;
 
@@ -525,6 +540,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
     }
 
+    preview_phase("BMP：同步显示缓存");
     aicos_dcache_clean_range((unsigned long *)output, (int64_t)output_size);
     preview_owned_buffer = raw;
     raw = NULL;
@@ -969,6 +985,8 @@ int image_preview_request(const char *path)
         return -2;
     }
     current_state = IMAGE_PREVIEW_LOADING;
+    snprintf(loading_phase, sizeof(loading_phase), "%s", "图片任务排队");
+    phase_started = rt_tick_get_millisecond();
     cancel_requested = 0;
     last_error = IMAGE_PREVIEW_ERR_NONE;
     snprintf(job.path, sizeof(job.path), "%s", path);
@@ -997,6 +1015,8 @@ int image_preview_request_matching(const char *directory,
         return -2;
     }
     current_state = IMAGE_PREVIEW_LOADING;
+    snprintf(loading_phase, sizeof(loading_phase), "%s", "目录扫描任务排队");
+    phase_started = rt_tick_get_millisecond();
     cancel_requested = 0;
     last_error = IMAGE_PREVIEW_ERR_NONE;
     snprintf(job.path, sizeof(job.path), "%s", directory);
@@ -1028,6 +1048,12 @@ image_preview_state_t image_preview_status(char *text, size_t text_size)
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     state = current_state;
     error = last_error;
+    if (state == IMAGE_PREVIEW_LOADING && text && text_size) {
+        snprintf(text, text_size, "%s（%u ms）", loading_phase,
+                 (unsigned)(rt_tick_get_millisecond() - phase_started));
+        rt_mutex_release(&state_lock);
+        return state;
+    }
     rt_mutex_release(&state_lock);
 
     if (!text || !text_size)
