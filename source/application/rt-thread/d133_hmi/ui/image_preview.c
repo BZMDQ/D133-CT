@@ -260,7 +260,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t image_end;
     uint64_t output_size;
     uint64_t source_bytes;
-    uint64_t next_offset = UINT64_MAX;
+    size_t batch_prefix = 0;
     uint32_t row_batch;
     size_t batch_stride;
     uint32_t y;
@@ -271,6 +271,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     file = fopen(path, "rb");
     if (!file)
         return IMAGE_PREVIEW_ERR_PATH;
+    /* 禁止 stdio 二次缓冲，保证对齐窗口直接交给 DFS/FATFS。 */
+    if (setvbuf(file, NULL, _IONBF, 0) != 0)
+        goto done;
     if (fread(header, 1, sizeof(header), file) != sizeof(header) ||
         header[0] != 'B' || header[1] != 'M')
         goto done;
@@ -361,18 +364,18 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             row_batch = output_height;
     }
     preview_phase("BMP：分配批读与显示缓存");
-    source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
+    source_buffer = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
     if (!source_buffer && row_batch > 1U) {
         /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
         while (!source_buffer && row_batch > 1U) {
             row_batch /= 2U;
-            source_buffer = (uint8_t *)rt_malloc(batch_stride * row_batch);
+            source_buffer = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
         }
     }
     if (!source_buffer) {
         row_batch = 1U;
         batch_stride = (size_t)source_bytes;
-        source_buffer = (uint8_t *)rt_malloc((size_t)source_bytes);
+        source_buffer = (uint8_t *)rt_malloc_align((size_t)source_bytes + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
     }
     raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
     if (!source_buffer || !raw) {
@@ -383,9 +386,9 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
 
     /* 双缓冲失败时退回原有单线程读取，不影响低内存场景。 */
     if (row_batch > 1U && output_height > row_batch) {
-        source_buffer2 = (uint8_t *)rt_malloc(batch_stride * row_batch);
-        if (source_buffer2 && bmp_reader_start(&reader, file) != 0) {
-            rt_free(source_buffer2);
+        source_buffer2 = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
+        if (source_buffer2 && bmp_reader_start(&reader, file, file_size) != 0) {
+            rt_free_align(source_buffer2);
             source_buffer2 = NULL;
         }
     }
@@ -428,6 +431,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                     result = IMAGE_PREVIEW_ERR_DECODE;
                     goto done;
                 }
+                /* 下一批预读会改写 reader.prefix，先保存本批偏移。 */
+                batch_prefix = reader.prefix;
                 if (y + rows < output_height) {
                     uint32_t remaining = output_height - y - rows;
                     uint32_t next_rows = remaining > row_batch ? row_batch : remaining;
@@ -444,16 +449,15 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                 }
             } else {
                 batch_buffer = source_buffer;
-                if ((source_offset != next_offset && fseek(file, (long)source_offset, SEEK_SET) != 0) ||
-                    fread(source_buffer, 1, read_bytes, file) != read_bytes) {
+                if (bmp_reader_read(file, source_buffer, (long)source_offset,
+                                    read_bytes, file_size, &batch_prefix) != 0) {
                     result = IMAGE_PREVIEW_ERR_DECODE;
                     goto done;
                 }
-                next_offset = source_offset + read_bytes;
             }
             preview_phase("BMP：像素转换");
         }
-        source_row = batch_buffer + (size_t)(y % row_batch) * batch_stride;
+        source_row = batch_buffer + batch_prefix + (size_t)(y % row_batch) * batch_stride;
 
         /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
         if (bits_per_pixel == 24 ||
@@ -558,9 +562,9 @@ done:
     /* 先等待读取线程退出，才能释放缓冲区和关闭文件。 */
     bmp_reader_stop(&reader);
     if (source_buffer2)
-        rt_free(source_buffer2);
+        rt_free_align(source_buffer2);
     if (source_buffer)
-        rt_free(source_buffer);
+        rt_free_align(source_buffer);
     if (raw)
         aicos_free(MEM_CMA, raw);
     if (file)

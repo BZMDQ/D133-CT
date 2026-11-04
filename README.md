@@ -1,4 +1,7 @@
 
+当前版本 v1.0.48：[烧录包](downloads/D133-CT_factory_v1.0.48.zip)，BMP 使用对齐缓冲、对齐文件窗口和 DFS/POSIX 直接读取，按偏移访问像素。[说明](docs/BMP对齐读取_v1.0.48.md)。实际提速待上板验证。
+
+
 当前版本 v1.0.47：[烧录包](downloads/D133-CT_factory_v1.0.47.zip)，启用 SDK SDMC 中断等待，增加 BMP 加载阶段及停留时间显示。[测试说明](docs/SD中断与BMP诊断_v1.0.47.md)。SD 读写、OTA 与性能尚待上板验证。
 
 
