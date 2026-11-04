@@ -16,7 +16,7 @@
         "info": { // Header information about image
             "platform": "d13x",
             "product": "d133cbv-hmi-nor",
-            "version": "1.0.48",
+            "version": "1.0.49",
             "media": {
                 "type": "spi-nor",
                 "device_id": 0,

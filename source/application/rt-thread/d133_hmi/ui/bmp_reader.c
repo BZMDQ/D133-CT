@@ -4,8 +4,10 @@
 #include <unistd.h>
 #include <errno.h>
 
-int bmp_reader_read(FILE *file, uint8_t *buffer, long offset, size_t size,
-                    uint64_t file_size, size_t *prefix)
+static int bmp_reader_read_window(FILE *file, uint8_t *buffer, long offset,
+                    size_t size, uint64_t file_size, size_t *prefix,
+                    const uint8_t *previous, uint64_t prev_start,
+                    uint64_t prev_end, uint64_t *actual_start, uint64_t *actual_end)
 {
     uint64_t start, end, limit;
     int fd;
@@ -24,7 +26,21 @@ int bmp_reader_read(FILE *file, uint8_t *buffer, long offset, size_t size,
     /* 像素读取直接使用 DFS POSIX 接口，绕过 stdio 的分块缓冲。 */
     fd = fileno(file);
     wanted = (size_t)(end - start);
-    if (fd < 0 || lseek(fd, (off_t)start, SEEK_SET) != (off_t)start)
+    if (fd < 0)
+        return -1;
+    /* 复用上一批末尾重叠扇区，避免每批向后定位及重复读卡。
+     * 上一批缓冲在转换线程中仅被读取，复制是安全的。 */
+    if (previous && start >= prev_start && start < prev_end) {
+        uint64_t overlap_end = prev_end < end ? prev_end : end;
+        done = (size_t)(overlap_end - start);
+        memcpy(buffer, previous + (size_t)(start - prev_start), done);
+    }
+    /* 若窗口完全落在上一批内，保持文件位置与新窗口末端一致。 */
+    if (done == wanted && end != prev_end &&
+        lseek(fd, (off_t)end, SEEK_SET) != (off_t)end)
+        return -1;
+    if (done < wanted && (!previous || start + done != prev_end) &&
+        lseek(fd, (off_t)(start + done), SEEK_SET) != (off_t)(start + done))
         return -1;
     while (done < wanted) {
         ssize_t n = read(fd, buffer + done, wanted - done);
@@ -34,18 +50,31 @@ int bmp_reader_read(FILE *file, uint8_t *buffer, long offset, size_t size,
             return -1;
         done += (size_t)n;
     }
+    if (actual_start) *actual_start = start;
+    if (actual_end) *actual_end = end;
     return 0;
+}
+
+int bmp_reader_read(FILE *file, uint8_t *buffer, long offset, size_t size,
+                    uint64_t file_size, size_t *prefix)
+{
+    return bmp_reader_read_window(file, buffer, offset, size, file_size,
+                                  prefix, NULL, 0, 0, NULL, NULL);
 }
 
 static void bmp_reader_thread(void *parameter)
 {
     bmp_reader_t *r = (bmp_reader_t *)parameter;
+    const uint8_t *previous = NULL;
+    uint64_t prev_start = 0, prev_end = 0;
     for (;;) {
         rt_sem_take(&r->request, RT_WAITING_FOREVER);
         if (r->stop)
             break;
-        r->result = bmp_reader_read(r->file, r->buffer, r->offset, r->size,
-                                   r->file_size, &r->prefix);
+        r->result = bmp_reader_read_window(r->file, r->buffer, r->offset,
+                    r->size, r->file_size, &r->prefix, previous,
+                    prev_start, prev_end, &prev_start, &prev_end);
+        previous = r->result ? NULL : r->buffer;
         rt_sem_release(&r->complete);
     }
     rt_sem_release(&r->stopped);

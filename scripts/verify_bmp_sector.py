@@ -1,6 +1,7 @@
 """检查对齐读取布局和原图像素一致性；不代替目标 C 程序上板测试。"""
 import argparse
 import struct
+import io
 from pathlib import Path
 
 ALIGN = 4096
@@ -43,6 +44,33 @@ def check_bmp(path):
                 reference = data[pos + row * stride:pos + row * stride + visible]
                 assert actual == reference
     print('PASS: original BMP pixel windows, full screen and cropped views')
+
+    # 使用真实文件字节验证相邻批次复用：每一行与原始数据独立比对。
+    # 双缓冲第二批可复制上一批的扇区尾部，再从当前位置读取新数据。
+    stream = io.BytesIO(data)
+    prior, prior_start, prior_end = b'', 0, 0
+    read_total = seeks = 0
+    rows_per_batch = max(1, min(128, 512 * 1024 // stride))
+    for y in range(0, h, rows_per_batch):
+        rows = min(rows_per_batch, h - y)
+        pos = offset + y * stride
+        size = rows * stride
+        start = pos & ~(ALIGN - 1)
+        end = min((pos + size + ALIGN - 1) & ~(ALIGN - 1), len(data))
+        overlap = min(prior_end, end) - start if prior and prior_start <= start < prior_end else 0
+        block = bytearray(end - start)
+        if overlap:
+            block[:overlap] = prior[start - prior_start:start - prior_start + overlap]
+        if stream.tell() != start + overlap:
+            stream.seek(start + overlap)
+            seeks += 1
+        chunk = stream.read(end - start - overlap)
+        read_total += len(chunk)
+        block[overlap:] = chunk
+        assert block[pos - start:pos - start + size] == data[pos:pos + size]
+        prior, prior_start, prior_end = block, start, end
+    assert read_total <= len(data) and seeks <= 1
+    print('PASS: prefetch overlap reuse, read bytes=%d, extra seeks=%d' % (read_total, seeks))
 
 
 if __name__ == '__main__':

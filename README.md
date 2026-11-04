@@ -1,4 +1,7 @@
 
+当前版本 v1.0.49：[烧录包](downloads/D133-CT_factory_v1.0.49.zip)，BMP 双缓冲复用对齐窗口重叠扇区，减少反复定位。[说明](docs/BMP预读优化_v1.0.49.md)；实际提速待上板验证。
+
+
 当前版本 v1.0.48：[烧录包](downloads/D133-CT_factory_v1.0.48.zip)，BMP 使用对齐缓冲、对齐文件窗口和 DFS/POSIX 直接读取，按偏移访问像素。[说明](docs/BMP对齐读取_v1.0.48.md)。实际提速待上板验证。
 
 
