@@ -8,8 +8,8 @@ def verify(width, height, bpp, vw, vh, top_down, fallback=False):
     cx, cy = (width - ow) // 2, (height - oh) // 2
     n = ow * (bpp // 8)
     pitch, batch = n, 1
-    if stride <= 256 * 1024 and stride <= n * 2:
-        pitch, batch = stride, min(64, oh, 256 * 1024 // stride)
+    if stride <= 512 * 1024 and stride <= n * 2:
+        pitch, batch = stride, min(128, oh, 512 * 1024 // stride)
     if fallback:
         pitch, batch = n, 1
     data = random.Random(width + bpp).randbytes(stride * height)
