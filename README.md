@@ -1,3 +1,8 @@
+当前候选版 v1.0.54：[公开工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.54.img)、[说明](docs/WiFi_SDIO_v1.0.54.md)。针对无线卡死风险调整 SDK SDIO 收包线程；实际板卡稳定性尚待验证。
+
+
+当前版本 v1.0.51：[公开通用工厂烧录包](downloads/D133-CT_factory_v1.0.51.zip)，支持 AIC8800D40L SDIO STA+AP、最多五组 STA 网络及新 A/B 分区布局。[无线与分区说明](docs/WiFi_STA_AP_v1.0.51.md)。此公开镜像不含默认路由器密码。
+
 
 当前版本 v1.0.49：[烧录包](downloads/D133-CT_factory_v1.0.49.zip)，BMP 双缓冲复用对齐窗口重叠扇区，减少反复定位。[说明](docs/BMP预读优化_v1.0.49.md)；实际提速待上板验证。
 

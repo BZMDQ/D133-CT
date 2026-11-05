@@ -14,6 +14,7 @@ static boot_status_t state;
 static int pending_at_boot;
 static volatile rt_tick_t heartbeat;
 static volatile int rebooting;
+static volatile rt_uint32_t health_faults;
 static struct rt_mutex lock;
 void boot_manager_get(boot_status_t *out){rt_mutex_take(&lock,RT_WAITING_FOREVER);*out=state;rt_mutex_release(&lock);}
 void boot_manager_ui_heartbeat(void){heartbeat=rt_tick_get();}
@@ -22,6 +23,14 @@ void boot_manager_set_rebooting(int value)
     rt_enter_critical();
     rebooting = value;
     rt_exit_critical();
+}
+rt_uint32_t boot_manager_health_faults(void)
+{
+    rt_uint32_t value;
+    rt_enter_critical();
+    value = health_faults;
+    rt_exit_critical();
+    return value;
 }
 int boot_manager_confirm(void)
 {
@@ -40,9 +49,18 @@ static void monitor(void *arg)
         boot_status_t snapshot;boot_manager_get(&snapshot);
         display_profile_info_t profile;display_profile_get_active(&profile);
         struct dfs_filesystem *ro=dfs_filesystem_lookup("/rodata");
+        rt_tick_t now=rt_tick_get();
         int touch_ok=!profile.touch_enabled || (profile.touch_device[0] && rt_device_find(profile.touch_device));
-        int ok=watchdog_ok && touch_ok && snapshot.current==snapshot.resource && heartbeat && rt_tick_get()-heartbeat<rt_tick_from_millisecond(3000) && ro && !strcmp(ro->path, "/rodata");
-        if(ok && !rebooting){rt_enter_critical();if(wdt && !rebooting)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);rt_exit_critical();if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed&&!rebooting)boot_manager_confirm();}else healthy=0;
+        int ui_alive=heartbeat && now-heartbeat<rt_tick_from_millisecond(3000);
+        int slot_ok=snapshot.current==snapshot.resource;
+        int ro_ok=ro && !strcmp(ro->path, "/rodata");
+        int ok=watchdog_ok && touch_ok && slot_ok && ui_alive && ro_ok;
+        rt_uint32_t faults=(!watchdog_ok?1U:0U)|(!touch_ok?2U:0U)|(!slot_ok?4U:0U)|(!ui_alive?8U:0U)|(!ro_ok?16U:0U);
+        rt_enter_critical();health_faults=faults;rt_exit_critical();
+        /* 已确认系统只因可诊断的外设/挂载检查失败而停止喂狗，会形成永久重启环。
+         * 有效LVGL心跳仍在时维持运行并报告失败位；试运行槽仍严格回退。 */
+        if(!rebooting && watchdog_ok && (ok || (!pending_at_boot && ui_alive))){rt_enter_critical();if(wdt && !rebooting)rt_device_control(wdt,RT_DEVICE_CTRL_WDT_KEEPALIVE,0);rt_exit_critical();}
+        if(ok && !rebooting){if(healthy<30)healthy++;if(healthy==30&&pending_at_boot&&!state.confirmed&&!rebooting)boot_manager_confirm();}else healthy=0;
         rt_thread_mdelay(1000);
     }
 }

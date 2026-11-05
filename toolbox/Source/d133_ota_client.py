@@ -13,7 +13,7 @@ HARDWARE = 'D133CBV-QFN88-V1-2'
 PORT = 8899
 INFO, BEGIN, DATA, COMMIT, SIGNATURE = range(0xD100, 0xD105)
 HEALTH = 0xD105
-LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 2*1024*1024, 'rodata.fatfs': 5*1024*1024}
+LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 3392*1024, 'rodata.fatfs': 5*1024*1024}
 
 def validate_cpio(data):
     """只接受官方 crc CPIO，校验成员、长度、加和及固定分区白名单。"""

@@ -9,6 +9,7 @@
 #include "ota_package.h"
 #include "boot_manager.h"
 #include "network_manager.h"
+#include "wifi_manager.h"
 #include "system_manager.h"
 #include "image_preview.h"
 #include "screen_test.h"
@@ -76,6 +77,12 @@ void hmi_ui_image_dispatch(void)
 static lv_obj_t *ip_input;
 static lv_obj_t *mask_input;
 static lv_obj_t *gw_input;
+static lv_obj_t *wifi_ssid_input;
+static lv_obj_t *wifi_password_input;
+static lv_obj_t *wifi_ap_ssid_input;
+static lv_obj_t *wifi_ap_password_input;
+static lv_obj_t *wifi_saved_dropdown;
+static unsigned wifi_saved_dropdown_count = UINT32_MAX;
 static lv_obj_t *logo_image;
 static lv_font_t *hmi_font;
 static lv_font_t *hmi_font_small;
@@ -89,7 +96,7 @@ static storage_request_t pending;
 
 static const char *titles[] = {
     "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
-    "设备总览", "屏幕检测"
+    "设备总览", "屏幕检测", "WiFi 设置"
 };
 
 static const lv_font_t *body_font(void)
@@ -652,6 +659,49 @@ static void apply_network(lv_event_t *event)
         message("网络配置繁忙，或 IPv4 参数格式无效。");
 }
 
+enum {
+    WIFI_CONNECT_TYPED = 1,
+    WIFI_CONNECT_SELECTED,
+    WIFI_AP_START,
+    WIFI_AP_STOP
+};
+
+static void wifi_action(lv_event_t *event)
+{
+    uintptr_t action = (uintptr_t)lv_event_get_user_data(event);
+    int result = -1;
+    if (keyboard)
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    if (action == WIFI_CONNECT_TYPED && wifi_ssid_input && wifi_password_input) {
+        result = wifi_manager_connect(lv_textarea_get_text(wifi_ssid_input),
+                                      lv_textarea_get_text(wifi_password_input));
+        lv_textarea_set_text(wifi_password_input, "");
+    } else if (action == WIFI_CONNECT_SELECTED && wifi_saved_dropdown) {
+        result = wifi_manager_connect_saved(lv_dropdown_get_selected(wifi_saved_dropdown));
+    } else if (action == WIFI_AP_START && wifi_ap_ssid_input && wifi_ap_password_input) {
+        result = wifi_manager_start_ap(lv_textarea_get_text(wifi_ap_ssid_input),
+                                      lv_textarea_get_text(wifi_ap_password_input));
+        lv_textarea_set_text(wifi_ap_password_input, "");
+    } else if (action == WIFI_AP_STOP) {
+        result = wifi_manager_stop_ap();
+    }
+    if (result)
+        message("WiFi 请求失败：请检查输入、密码长度或稍后重试。");
+    else if (details)
+        lv_label_set_text(details, "已提交到无线工作线程，状态将自动刷新。");
+}
+
+static void wifi_refresh_saved(void)
+{
+    char options[5 * 34 + 48];
+    if (!wifi_saved_dropdown)
+        return;
+    if (wifi_manager_saved_options(options, sizeof(options)) >= 0) {
+        lv_dropdown_set_options(wifi_saved_dropdown, options);
+        wifi_saved_dropdown_count = wifi_manager_saved_count();
+    }
+}
+
 /* 测试画面退出后回到屏幕检测说明页。 */
 static void screen_test_return_to_menu(void *context)
 {
@@ -666,6 +716,12 @@ static void start_screen_test(lv_event_t *event)
     if (screen_test_start(lv_screen_active(), body_font(),
                           screen_test_return_to_menu, NULL) != 0)
         message("屏幕检测启动失败，请确认显示器已初始化。");
+}
+
+static void open_wifi_settings(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    screen(8);
 }
 
 static void screen(unsigned number)
@@ -701,7 +757,7 @@ static void screen(unsigned number)
         snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
     }
 
-    if (number >= 8)
+    if (number >= 9)
         return;
     page = number;
     lv_label_set_text(page_title, number == 0 ? "D133-控制终端" : titles[number]);
@@ -724,6 +780,9 @@ static void screen(unsigned number)
     lv_obj_clean(content);
     details = table = pathbox = targetbox = editor = progress = NULL;
     ip_input = mask_input = gw_input = NULL;
+    wifi_ssid_input = wifi_password_input = NULL;
+    wifi_ap_ssid_input = wifi_ap_password_input = NULL;
+    wifi_saved_dropdown = NULL;
 
     if (number == 0) {
         /* 首页只显示已实现的应用入口，设备状态在独立总览页查看。 */
@@ -802,7 +861,7 @@ static void screen(unsigned number)
         label(content, "当前网络、A/B 槽位、健康状态和运行时间请查看设备总览。",
               32, 294, 920);
     } else if (number == 4) {
-        panel(content, 16, 8, 960, 438, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        panel(content, 16, 8, 960, 478, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
         label(content, "RMII 以太网 / RTL8201F | TCP OTA 端口：8899", 32, 24, 920);
         details = label(content, "正在等待以太网连接……", 32, 60, 920);
         label(content, "IPv4 地址", 32, 120, 280);
@@ -815,6 +874,39 @@ static void screen(unsigned number)
         button(content, "启用 DHCP", 310, 226, 240, apply_network, (void *)(uintptr_t)1);
         label(content, "网络参数仅在本次运行期间生效，重启后恢复编译配置。",
               32, 300, 920);
+        button(content, "STA + AP WiFi 设置", 32, 365, 330,
+               open_wifi_settings, NULL);
+    } else if (number == 8) {
+        panel(content, 16, 8, 960, 468, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        details = label(content, "正在初始化 AIC8800D40L；SSID 和密钥不会显示在日志中。",
+                        32, 18, 920);
+        label(content, "STA 路由器 SSID", 32, 66, 210);
+        wifi_ssid_input = input(content, "", 32, 94, 430, 48);
+        lv_textarea_set_max_length(wifi_ssid_input, 32);
+        label(content, "路由器密码", 480, 66, 210);
+        wifi_password_input = input(content, "", 480, 94, 430, 48);
+        lv_textarea_set_max_length(wifi_password_input, 63);
+        lv_textarea_set_password_mode(wifi_password_input, true);
+        button(content, "连接并保存（最多 5 组）", 32, 154, 430,
+               wifi_action, (void *)(uintptr_t)WIFI_CONNECT_TYPED);
+        wifi_saved_dropdown = lv_dropdown_create(content);
+        lv_obj_set_pos(wifi_saved_dropdown, 480, 154);
+        lv_obj_set_size(wifi_saved_dropdown, 430, 52);
+        wifi_refresh_saved();
+        button(content, "连接所选网络", 480, 216, 430,
+               wifi_action, (void *)(uintptr_t)WIFI_CONNECT_SELECTED);
+        label(content, "设备热点（AP）", 32, 236, 260);
+        wifi_ap_ssid_input = input(content, "", 32, 266, 430, 48);
+        lv_textarea_set_max_length(wifi_ap_ssid_input, 32);
+        wifi_ap_password_input = input(content, "", 480, 266, 430, 48);
+        lv_textarea_set_max_length(wifi_ap_password_input, 63);
+        lv_textarea_set_password_mode(wifi_ap_password_input, true);
+        label(content, "热点名称", 32, 318, 210);
+        label(content, "热点密码（至少 8 位）", 480, 318, 300);
+        button(content, "启动并保存热点", 32, 364, 260,
+               wifi_action, (void *)(uintptr_t)WIFI_AP_START);
+        button(content, "关闭热点", 310, 364, 260,
+               wifi_action, (void *)(uintptr_t)WIFI_AP_STOP);
     } else if (number == 5) {
         lv_obj_t *log_card = panel(content, 16, 8, 960, 480,
                                    UI_COLOR_SURFACE, UI_COLOR_VIOLET);
@@ -890,7 +982,28 @@ static void timer(lv_timer_t *timer_obj)
     boot_manager_ui_heartbeat();
     boot_manager_get(&boot);
     ota_manager_get(&ota);
-    network_manager_status(network, sizeof(network));
+    if (page == 0) {
+        rt_uint32_t faults = boot_manager_health_faults();
+        if (faults) {
+            snprintf(text, sizeof(text), "启动健康检查待处理：0x%02lx  （总览页查看故障位）",
+                     (unsigned long)faults);
+            lv_label_set_text(top, text);
+            lv_obj_clear_flag(top, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(top, lv_color_hex(0xFDE8E7), LV_PART_MAIN);
+            lv_obj_set_style_text_color(top, lv_color_hex(0xB42318), LV_PART_MAIN);
+        } else {
+            lv_obj_add_flag(top, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (page == 4 || page == 6)
+        network_manager_status(network, sizeof(network));
+
+    if (page == 8 && details) {
+        wifi_manager_status(network, sizeof(network));
+        lv_label_set_text(details, network);
+        if (wifi_saved_dropdown && wifi_manager_saved_count() != wifi_saved_dropdown_count)
+            wifi_refresh_saved();
+    }
 
     if (page != 0) {
         snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
@@ -971,10 +1084,12 @@ static void timer(lv_timer_t *timer_obj)
     if (details) {
         if (page == 6) {
             snprintf(text, sizeof(text),
-                     "当前系统槽 %c  下次启动 %c  资源槽 %c  健康状态 %s\n"
+                     "当前系统槽 %c  下次启动 %c  资源槽 %c  OTA 健康状态 %s\n"
+                     "健康检查故障位 0x%02lx（1看门狗/2触摸/4槽位/8界面心跳/16资源挂载）\n"
                      "网络：%s  SD 卡：%s  运行时间：%lu 秒",
                      boot.current, boot.next, boot.resource,
-                     boot.confirmed ? "已确认" : "健康检查中", network,
+                     boot.confirmed ? "已确认" : "健康检查中",
+                     (unsigned long)boot_manager_health_faults(), network,
                      sd_manager_ready() ? "已就绪" : "未插入",
                      (unsigned long)(rt_tick_get() / RT_TICK_PER_SECOND));
             lv_label_set_text(details, text);

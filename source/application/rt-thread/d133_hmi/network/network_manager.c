@@ -9,6 +9,7 @@
 #include <rtthread.h>
 #include <lwip/sockets.h>
 #include <lwip/netif.h>
+#include <lwip/tcpip.h>
 #include <netdev.h>
 #include <aic_crc32.h>
 #include <stdio.h>
@@ -30,7 +31,19 @@ static int exact(int fd,void *data,unsigned size,int sending)
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
 {uint32_t h[5];memcpy(h,"LNET",4);h[1]=op;h[2]=status;h[3]=length;h[4]=crc32(crc32(0,(void*)h,16),body,length);return exact(fd,h,20,1)||exact(fd,(void*)body,length,1);}
 void network_manager_status(char *out,unsigned cap)
-{if(netif_default)rt_snprintf(out,cap,"以太网%s | IP：%s | TCP %u",netif_is_link_up(netif_default)?"已连接":"未连接",ipaddr_ntoa(&netif_default->ip_addr),D133_TCP_PORT);else rt_snprintf(out,cap,"以太网初始化中 | TCP %u",D133_TCP_PORT);}
+{
+    char ip[IPADDR_STRLEN_MAX] = "0.0.0.0";
+    int linked = 0;
+    /* netif_default 会由以太网/WiFi 注册线程更新，读取需持有 lwIP 核心锁。 */
+    LOCK_TCPIP_CORE();
+    if (netif_default) {
+        linked = netif_is_link_up(netif_default);
+        ipaddr_ntoa_r(&netif_default->ip_addr, ip, sizeof(ip));
+    }
+    UNLOCK_TCPIP_CORE();
+    rt_snprintf(out,cap,"默认网络%s | IP：%s | TCP %u",
+                linked?"已连接":"未连接",ip,D133_TCP_PORT);
+}
 static void session(int fd)
 {
     /* 每个连接独享报文缓冲，避免健康查询覆盖升级数据。 */
@@ -48,7 +61,7 @@ static void session(int fd)
             boot_manager_get(&boot);
             device_event_manager_snapshot(event_name,sizeof(event_name),device_message,sizeof(device_message),&event_id);
             hmi_ota_status_t ota;ota_manager_get(&ota);
-            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d}",boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
+            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"health_faults\":%lu,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d}",boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)boot_manager_health_faults(),(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
             if(length<0||length>=(int)sizeof(info))break;
             if(reply(fd,h[1],0,info,length))break;
             continue;
@@ -57,7 +70,8 @@ static void session(int fd)
             hmi_ota_status_t state;ota_manager_get(&state);uint64_t capacity,free_bytes;
             if(active||h[3]!=132||(state.state!=OTA_IDLE&&state.state!=OTA_FAILED)){reply(fd,h[1],3,0,0);continue;}
             memcpy(&total,payload,4);
-            if(!total||total>7*1024*1024+8192||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
+            /* 上限与新 A/B 分区大小一致，并预留 CPIO 头与填充空间。 */
+            if(!total||total>(3392U+3904U)*1024U+8192U||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
             if(!sd_manager_ready()||file_manager_capacity("/sdcard",&capacity,&free_bytes)||free_bytes<total+65536){reply(fd,h[1],5,0,0);continue;}
             if(!owns_upload){if(rt_mutex_take(&upload_lock,0)!=RT_EOK){reply(fd,h[1],3,0,0);continue;}owns_upload=1;}
             ota_manager_get(&state);

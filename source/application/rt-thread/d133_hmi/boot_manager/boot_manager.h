@@ -1,5 +1,6 @@
 #ifndef HMI_BOOT_MANAGER_H
 #define HMI_BOOT_MANAGER_H
+#include <rtthread.h>
 /* 槽位快照由管理器缓存，UI 不直接打开 ENV。 */
 typedef struct {char current,next,resource;int pending,confirmed;} boot_status_t;
 int boot_manager_init(void);
@@ -9,5 +10,8 @@ int boot_manager_confirm(void);
 int boot_manager_refresh(void);
 /* 重启过程中暂停健康线程喂狗。 */
 void boot_manager_set_rebooting(int rebooting);
+/* 返回当前健康检查未通过位：bit0=WDT, bit1=触摸, bit2=槽位,
+ * bit3=LVGL心跳, bit4=RODATA挂载。 */
+rt_uint32_t boot_manager_health_faults(void);
 #endif
 

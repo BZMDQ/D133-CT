@@ -46,6 +46,11 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
         $version=$versionMatch.Groups[0].Value -replace '^.*"([^\"]+)"$','$1'
     }
     Set-D133ImageVersion (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\image_cfg.json') $version
+    # 隐藏的 SDK 临时镜像配置也需采用工程分区表，避免镜像打包静默沿用旧槽位大小。
+    $overlayImageCfgTmp=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp'
+    if(Test-Path -LiteralPath $overlayImageCfgTmp){
+        Copy-Item -LiteralPath $overlayImageCfgTmp -Destination (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') -Force
+    }
     Set-D133ImageVersion (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') $version
     Push-Location $sdk
     try {

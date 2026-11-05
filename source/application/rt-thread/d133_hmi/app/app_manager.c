@@ -18,6 +18,7 @@ unsigned int app_manager_boot_elapsed_ms(void)
 #include "ota_manager.h"
 #ifdef HMI_NETWORK
 #include "network_manager.h"
+#include "wifi_manager.h"
 #endif
 /* 按依赖顺序创建服务；初始化失败直接向启动线程报告错误。 */
 int app_manager_init(void)
@@ -32,6 +33,7 @@ int app_manager_init(void)
     if(boot_manager_init())return -2;
 #ifdef HMI_NETWORK
     if(network_manager_init())return -3;
+    if(wifi_manager_init())system_manager_log("WiFi 服务未启动；有线网络和 OTA 继续可用");
 #endif
     ready=1;system_manager_log("应用服务初始化完成");
     hmi_serial_log("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());

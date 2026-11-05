@@ -5,10 +5,10 @@
             "spl":        { "size": "512k" },
             "env":        { "size": "128k" },
             "env_r":      { "size": "128k" },
-            "os":         { "size": "2m" },
-            "os_r":       { "size": "2m" },
-            "rodata":     { "size": "5m" },
-            "rodata_r":   { "size": "5m" },
+            "os":         { "size": "3392k" },
+            "os_r":       { "size": "3392k" },
+            "rodata":     { "size": "3904k" },
+            "rodata_r":   { "size": "3904k" },
             "data":       { "size": "1m" }
         },
     },
@@ -16,7 +16,7 @@
         "info": { // Header information about image
             "platform": "d13x",
             "product": "d133cbv-hmi-nor",
-            "version": "1.0.49",
+            "version": "1.0.54",
             "media": {
                 "type": "spi-nor",
                 "device_id": 0,

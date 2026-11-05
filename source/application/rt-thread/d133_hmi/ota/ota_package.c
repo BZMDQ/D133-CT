@@ -92,8 +92,8 @@ int ota_package_check(const char *path,char version[32])
         if((mode&0170000)!=0100000)goto done;
         unsigned flag=0;
         if(!strcmp(name,"ota_info.bin")&&size==512)flag=1;
-        else if(!strcmp(name,"d13x_os.itb")&&size&&size<=2097152)flag=2;
-        else if(!strcmp(name,"rodata.fatfs")&&size&&size<=5242880)flag=4;
+        else if(!strcmp(name,"d13x_os.itb")&&size&&size<=3473408)flag=2;
+        else if(!strcmp(name,"rodata.fatfs")&&size&&size<=3997696)flag=4;
         if(!flag||(seen&flag)||(!seen&&flag!=1))goto done;
         seen|=flag;sum=0;remaining=size;uint32_t offset=0;
         while(remaining){size_t n=remaining>sizeof(buffer)?sizeof(buffer):remaining;
