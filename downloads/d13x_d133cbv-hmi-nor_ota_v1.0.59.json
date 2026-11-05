@@ -1,0 +1,9 @@
+{
+  "product": "D133CBS",
+  "hardware": "D133CBV-QFN88-V1-2",
+  "version": "1.0.59",
+  "size": 6185984,
+  "sha256": "3b65563b562ccc24f5b10398a258aa55b7b8843ffeecb788bdd2d37c6d769aeb",
+  "package": "d13x_d133cbv-hmi-nor_ota_v1.0.59.cpio",
+  "signature": "d13x_d133cbv-hmi-nor_ota_v1.0.59.cpio.sig"
+}

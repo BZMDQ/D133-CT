@@ -56,15 +56,21 @@ static void video_worker(void *parameter)
         }
         width = (unsigned)media.video_stream.width;
         height = (unsigned)media.video_stream.height;
-        pixels = rt_malloc(width * height * 2U);
-        if (!pixels) { set_state(VIDEO_ERROR, "视频缓冲内存不足"); failed = 1; goto cleanup; }
-        rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
-        frame_buffer = pixels; frame_width = width; frame_height = height; frame_sequence = 0;
-        rt_mutex_release(&video_lock);
         if (stop_requested) goto cleanup;
-        if (aic_player_start(player)) {
-            set_state(VIDEO_ERROR, "视频解码器启动失败，请确认 AVI 使用 MJPEG 编码");
-            failed = 1; goto cleanup;
+        {
+            int start_result = aic_player_start(player);
+            if (start_result) {
+                rt_size_t total = 0, used = 0, peak = 0;
+                char diagnostic[128];
+                /* 返回码来自 SDK；系统堆与 DMA 内存是不同统计范围。 */
+                rt_memory_info(&total, &used, &peak);
+                rt_snprintf(diagnostic, sizeof(diagnostic),
+                            "解码器启动失败：%d\n系统堆空闲：%lu KiB  视频：%ux%u",
+                            start_result, (unsigned long)((total >= used ? total - used : 0) / 1024U),
+                            width, height);
+                set_state(VIDEO_ERROR, diagnostic);
+                failed = 1; goto cleanup;
+            }
         }
         started = 1;
         set_state(VIDEO_PLAYING, "正在播放");
@@ -89,6 +95,15 @@ static void video_worker(void *parameter)
                 aic_player_put_frame(player, &frame);
                 set_state(VIDEO_ERROR, "视频帧格式不受支持"); failed = 1; break;
             }
+            /* 首帧出现后再申请交换缓存并通知 LVGL，避免显示缓存抢占解码器启动内存。 */
+            if (!pixels) {
+                pixels = rt_malloc(width * height * 2U);
+                if (!pixels) {
+                    aic_player_put_frame(player, &frame);
+                    set_state(VIDEO_ERROR, "首帧已解码，但视频交换缓冲内存不足");
+                    failed = 1; break;
+                }
+            }
             if (frame.pts >= 0) {
                 if (first_pts < 0) { first_pts = frame.pts; start_ms = rt_tick_get_millisecond(); }
                 while (!stop_requested && frame.pts >= first_pts &&
@@ -102,6 +117,7 @@ static void video_worker(void *parameter)
             for (unsigned y = 0; y < height; y++)
                 memcpy(pixels + y * width * 2U,
                        (const uint8_t *)(uintptr_t)frame.buf.phy_addr[0] + y * frame.buf.stride[0], width * 2U);
+            frame_buffer = pixels; frame_width = width; frame_height = height;
             frame_sequence++;
             rt_mutex_release(&video_lock);
             aic_player_put_frame(player, &frame);
