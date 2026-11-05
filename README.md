@@ -1,3 +1,5 @@
+当前候选版 v1.0.56：[工厂包](downloads/D133-CT_factory_v1.0.56.zip)、[签名 OTA](downloads/d13x_d133cbv-hmi-nor_ota_v1.0.56.cpio)、[工具箱补丁](downloads/D133_工具箱兼容补丁_v1.0.56.zip)、[TCP 操作说明](docs/TCP信息与升级_v1.0.56.md)。TCP 实机连接和 OTA 待验证。
+
 当前候选版 v1.0.55：[通用工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.55.img)、[说明](docs/WiFi界面与连接_v1.0.55.md)。修正无线初始化顺序并增加附近网络扫描；实机验证待完成。
 
 当前候选版 v1.0.54：[公开工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.54.img)、[说明](docs/WiFi_SDIO_v1.0.54.md)。针对无线卡死风险调整 SDK SDIO 收包线程；实际板卡稳定性尚待验证。

@@ -874,7 +874,7 @@ static void screen(unsigned number)
               32, 294, 920);
     } else if (number == 4) {
         panel(content, 16, 8, 960, 478, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        label(content, "RMII 以太网 / RTL8201F | TCP OTA 端口：8899", 32, 24, 920);
+        label(content, "TCP 信息端口：5000（无需 Key） | D133 OTA 端口：8899", 32, 24, 920);
         details = label(content, "正在等待以太网连接……", 32, 60, 920);
         label(content, "IPv4 地址", 32, 120, 280);
         label(content, "子网掩码", 346, 120, 280);

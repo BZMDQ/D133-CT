@@ -6,6 +6,7 @@
 #include "system_manager.h"
 #include "device_event_manager.h"
 #include "boot_manager.h"
+#include "display_profile_manager.h"
 #include <rtthread.h>
 #include <lwip/sockets.h>
 #include <lwip/netif.h>
@@ -15,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <stdint.h>
 #define OP_INFO 0xD100
 #define OP_BEGIN 0xD101
 #define OP_DATA 0xD102
@@ -26,6 +28,7 @@
 #define PACKAGE "/sdcard/UPDATE/ota.cpio"
 static struct rt_mutex upload_lock;
 static rt_mq_t clients;
+typedef struct { int fd; int info_only; } tcp_client_job_t;
 static int exact(int fd,void *data,unsigned size,int sending)
 {unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
@@ -41,20 +44,38 @@ void network_manager_status(char *out,unsigned cap)
         ipaddr_ntoa_r(&netif_default->ip_addr, ip, sizeof(ip));
     }
     UNLOCK_TCPIP_CORE();
-    rt_snprintf(out,cap,"默认网络%s | IP：%s | TCP %u",
-                linked?"已连接":"未连接",ip,D133_TCP_PORT);
+    rt_snprintf(out,cap,"默认网络%s | IP：%s | 信息 %u / OTA %u",
+                linked?"已连接":"未连接",ip,D133_INFO_TCP_PORT,D133_TCP_PORT);
 }
-static void session(int fd)
+static void session(int fd,int info_only)
 {
     /* 每个连接独享报文缓冲，避免健康查询覆盖升级数据。 */
     unsigned char payload[16384];
-    int owns_upload=0;
+    int owns_upload=0, info_handshake=0;
     uint32_t h[5],total=0,written=0;unsigned char sha[32],actual[32];char version[32]={0};FILE *file=0;int active=0,tcp_event_sent=0;
     struct timeval timeout={120,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
     while(!exact(fd,h,20,0)){
         if(memcmp(h,"LNET",4)||h[3]>sizeof(payload))break;
         if(exact(fd,payload,h[3],0))break;
         if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
+        /* 工具箱总览使用 0/1 命令及响应高位；只接受空 Key，绝不伪造认证成功。 */
+        if(h[1]==0){
+            if(h[2]||h[3]){reply(fd,0x80000000U,13,0,0);break;}
+            info_handshake=1;
+            if(!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
+            if(reply(fd,0x80000000U,0,0,0))break;
+            continue;
+        }
+        if(h[1]==1){
+            display_profile_info_t display;boot_status_t boot;char info[640];int length;
+            if(!info_handshake||h[2]||h[3]){reply(fd,0x80000001U,13,0,0);break;}
+            memset(&display,0,sizeof(display));display_profile_get_active(&display);boot_manager_get(&boot);
+            length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"board\":\"D133CBV-QFN88-V1-2\",\"device_name\":\"D133-控制终端\",\"version\":\"" HMI_VERSION "\",\"framework\":\"RT-Thread / LVGL\",\"uptime_ms\":%lu,\"screen_resolution\":\"%ux%u\",\"touch_ready\":%u,\"slot\":\"%c\",\"next_slot\":\"%c\",\"health_faults\":%lu,\"ota_port\":%u}",(unsigned long)rt_tick_get_millisecond(),(unsigned)display.width,(unsigned)display.height,(unsigned)display.touch_enabled,boot.current,boot.next,(unsigned long)boot_manager_health_faults(),D133_TCP_PORT);
+            if(length<0||length>=(int)sizeof(info)||reply(fd,0x80000001U,0,info,(uint32_t)length))break;
+            continue;
+        }
+        /* 5000 端口只提供只读信息，不接受 OTA 命令。 */
+        if(info_only){reply(fd,h[1]|0x80000000U,11,0,0);break;}
         if(h[1]==OP_INFO||h[1]==OP_HEALTH){
             char info[768],event_name[32],device_message[192];boot_status_t boot;rt_uint32_t event_id=0;
             if(h[1]==OP_INFO&&!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
@@ -116,15 +137,16 @@ static void session(int fd)
 /* 一个连接等待校验/写入时，另一个连接仍可查询状态。 */
 static void client_worker(void *unused)
 {
-    int fd;
-    while(1){if(rt_mq_recv(clients,&fd,sizeof(fd),RT_WAITING_FOREVER)==RT_EOK){session(fd);closesocket(fd);}}
+    tcp_client_job_t job;
+    while(1){if(rt_mq_recv(clients,&job,sizeof(job),RT_WAITING_FOREVER)==RT_EOK){session(job.fd,job.info_only);closesocket(job.fd);}}
 }
 static void server(void *unused)
 {
+    unsigned port=(unsigned)(uintptr_t)unused;
     int listener=socket(AF_INET,SOCK_STREAM,0);struct sockaddr_in addr;int yes=1;
-    if(listener<0){system_manager_log("TCP 服务套接字创建失败");return;}setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(D133_TCP_PORT);addr.sin_addr.s_addr=INADDR_ANY;
+    if(listener<0){system_manager_log("TCP 服务套接字创建失败");return;}setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(port);addr.sin_addr.s_addr=INADDR_ANY;
     if(bind(listener,(void*)&addr,sizeof(addr))||listen(listener,1)){closesocket(listener);system_manager_log("TCP 服务端口绑定或监听失败");return;}
-    system_manager_log("D133CBS 工具箱 OTA 服务已启动，端口 8899");while(1){int fd=accept(listener,0,0);if(fd<0){rt_thread_mdelay(100);continue;}if(rt_mq_send(clients,&fd,sizeof(fd))!=RT_EOK)closesocket(fd);}
+    system_manager_log(port==D133_TCP_PORT?"D133 OTA TCP 已启动：8899":"D133 信息 TCP 已启动：5000");while(1){tcp_client_job_t job;job.fd=accept(listener,0,0);job.info_only=(port==D133_INFO_TCP_PORT);if(job.fd<0){rt_thread_mdelay(100);continue;}if(rt_mq_send(clients,&job,sizeof(job))!=RT_EOK)closesocket(job.fd);}
 }
 typedef struct {char ip[16],mask[16],gateway[16];int dhcp;} network_config_t;
 static rt_mq_t config_queue;
@@ -147,11 +169,12 @@ int network_manager_init(void)
 {
     unsigned i;
     rt_mutex_init(&upload_lock,"otaupload",RT_IPC_FLAG_PRIO);
-    clients=rt_mq_create("tcpjobs",sizeof(int),2,RT_IPC_FLAG_FIFO);if(!clients)return -1;
+    clients=rt_mq_create("tcpjobs",sizeof(tcp_client_job_t),2,RT_IPC_FLAG_FIFO);if(!clients)return -1;
     for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,24576,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
     rt_thread_t t;config_queue=rt_mq_create("netcfg",sizeof(network_config_t),2,RT_IPC_FLAG_FIFO);if(!config_queue)return -1;
     t=rt_thread_create("hmi_netcfg",configure_worker,0,3072,24,10);if(!t)return -1;rt_thread_startup(t);
-    t=rt_thread_create("hmi_tcp",server,0,8192,23,10);return t?rt_thread_startup(t):-1;
+    t=rt_thread_create("hmi_tcp",server,(void *)(uintptr_t)D133_TCP_PORT,4096,23,10);if(!t||rt_thread_startup(t)!=RT_EOK)return -1;
+    t=rt_thread_create("hmi_info",server,(void *)(uintptr_t)D133_INFO_TCP_PORT,4096,23,10);return t?rt_thread_startup(t):-1;
 }
 
 
