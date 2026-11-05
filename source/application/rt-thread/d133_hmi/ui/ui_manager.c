@@ -55,6 +55,7 @@ static lv_obj_t *image_status_label;
 static lv_obj_t *image_object;
 static lv_timer_t *image_ui_timer;
 static volatile int image_ui_pending;
+static void video_render_complete(void);
 
 void hmi_ui_image_signal(void)
 {
@@ -97,6 +98,9 @@ static lv_timer_t *video_timer;
 static lv_image_dsc_t video_image_dsc;
 static void *video_image_buffer, *video_image_raw;
 static unsigned video_sequence;
+static unsigned video_direct_lease;
+static unsigned video_rendered_count, video_render_fps;
+static rt_uint32_t video_fps_start;
 static int first_render_logged;
 static int first_flush_logged;
 static unsigned page;
@@ -137,6 +141,8 @@ static void boot_display_timing(lv_event_t *event)
         hmi_serial_log("[boot_time] display_flush_return=%u ms\n",
                    app_manager_boot_elapsed_ms());
     }
+    if (code == LV_EVENT_RENDER_READY)
+        video_render_complete();
 }
 
 /* 弹窗创建完成后递归设置字体，保证标题、正文和按钮都能显示中文。 */
@@ -536,10 +542,22 @@ static void close_video(lv_event_t *event)
     if (video_overlay) { lv_obj_delete(video_overlay); video_overlay = NULL; }
     video_image = video_label = NULL;
     lv_image_cache_drop(&video_image_dsc);
+    if (video_direct_lease) { video_player_release_frame(video_direct_lease); video_direct_lease = 0; }
     if (video_image_raw) { aicos_free(MEM_CMA, video_image_raw); video_image_raw = NULL; }
     video_image_buffer = NULL;
     memset(&video_image_dsc, 0, sizeof(video_image_dsc));
     video_player_close();
+}
+
+/* LVGL 完成绘制后先隐藏图像，再允许解码器复用单帧。 */
+static void video_render_complete(void)
+{
+    if (!video_direct_lease || !video_image) return;
+    lv_obj_add_flag(video_image, LV_OBJ_FLAG_HIDDEN);
+    lv_image_cache_drop(&video_image_dsc);
+    video_player_release_frame(video_direct_lease);
+    video_direct_lease = 0;
+    video_rendered_count++;
 }
 
 static void video_ui_refresh(lv_timer_t *timer_obj)
@@ -550,7 +568,35 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
     (void)timer_obj;
     if (!video_overlay) return;
     state = video_player_status(&width, &height, status, sizeof(status));
-    if (!video_image_buffer && width && height) {
+    if (video_player_direct_mode() && width && height) {
+        const uint8_t *data = NULL;
+        unsigned stride = 0, next_sequence = video_sequence;
+        if (!video_direct_lease && video_player_acquire_frame(&data, &stride, &next_sequence) > 0) {
+            unsigned screen_w = (unsigned)lv_obj_get_width(video_overlay);
+            unsigned screen_h = (unsigned)lv_obj_get_height(video_overlay);
+            unsigned scale_w = screen_w * 256U / width, scale_h = screen_h * 256U / height;
+            unsigned scale = scale_w < scale_h ? scale_w : scale_h;
+            if (scale > 256U) scale = 256U;
+            memset(&video_image_dsc, 0, sizeof(video_image_dsc));
+            video_image_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+            video_image_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+            video_image_dsc.header.w = width; video_image_dsc.header.h = height;
+            video_image_dsc.header.stride = stride;
+            video_image_dsc.data_size = stride * height; video_image_dsc.data = data;
+            if (!video_image) {
+                video_image = lv_image_create(video_overlay);
+                if (!video_image) { video_player_release_frame(next_sequence); video_player_close(); return; }
+                lv_obj_move_background(video_image);
+            }
+            lv_image_cache_drop(&video_image_dsc);
+            lv_image_set_src(video_image, &video_image_dsc);
+            lv_image_set_scale(video_image, scale);
+            lv_obj_center(video_image);
+            lv_obj_clear_flag(video_image, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_invalidate(video_image);
+            video_sequence = next_sequence; video_direct_lease = next_sequence;
+        }
+    } else if (!video_image_buffer && width && height) {
         size_t bytes = width * height * 2U;
         video_image_raw = aicos_malloc_try_cma((int)bytes + CACHE_LINE_SIZE - 1);
         if (!video_image_raw) { lv_label_set_text(video_label, "显示缓冲内存不足，请返回"); video_player_close(); return; }
@@ -573,8 +619,19 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
         lv_image_cache_drop(&video_image_dsc);
         lv_obj_invalidate(video_image);
     }
-    if ((state == VIDEO_PLAYING || state == VIDEO_PAUSED) && video_sequence) lv_obj_add_flag(video_label, LV_OBJ_FLAG_HIDDEN);
-    else { lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN); lv_label_set_text(video_label, status); }
+    if (video_player_direct_mode() && state == VIDEO_PLAYING && video_sequence) {
+        rt_uint32_t now = rt_tick_get_millisecond();
+        rt_uint32_t elapsed = now - video_fps_start;
+        if (elapsed >= 1000U) {
+            video_render_fps = (video_rendered_count * 1000U + elapsed / 2U) / elapsed;
+            video_rendered_count = 0; video_fps_start = now;
+        }
+        rt_snprintf(status, sizeof(status), "渲染 %u 帧/秒", video_render_fps);
+        lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN);
+        if (strcmp(lv_label_get_text(video_label), status)) lv_label_set_text(video_label, status);
+    } else if ((state == VIDEO_PLAYING || state == VIDEO_PAUSED) && video_sequence)
+        lv_obj_add_flag(video_label, LV_OBJ_FLAG_HIDDEN);
+    else { lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN); if (strcmp(lv_label_get_text(video_label), status)) lv_label_set_text(video_label, status); }
 }
 
 static void video_pause_action(lv_event_t *event)
@@ -590,6 +647,9 @@ static void show_video(const char *path)
         message("视频服务繁忙或路径不可用，请稍后重试。"); return;
     }
     video_sequence = 0;
+    video_direct_lease = 0;
+    video_rendered_count = video_render_fps = 0;
+    video_fps_start = rt_tick_get_millisecond();
     video_overlay = lv_obj_create(root);
     if (!video_overlay) { video_player_close(); message("无法创建视频窗口。"); return; }
     lv_obj_set_size(video_overlay, lv_obj_get_width(root), lv_obj_get_height(root));
@@ -602,12 +662,15 @@ static void show_video(const char *path)
     lv_obj_clear_flag(video_overlay, LV_OBJ_FLAG_SCROLLABLE);
     video_label = label(video_overlay, "正在打开视频……", 300, 24, lv_obj_get_width(root) - 320);
     lv_obj_set_style_text_color(video_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(video_label, lv_color_hex(0x111827), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(video_label, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(video_label, 8, LV_PART_MAIN);
     back = button(video_overlay, "返回", 16, 16, 112, close_video, NULL);
     lv_obj_set_height(back, 56);
     back = button(video_overlay, "暂停 / 继续", 144, 16, 140, video_pause_action, NULL);
     lv_obj_set_height(back, 56);
     lv_obj_move_foreground(video_overlay);
-    video_timer = lv_timer_create(video_ui_refresh, 33, NULL);
+    video_timer = lv_timer_create(video_ui_refresh, 8, NULL);
     if (!video_timer) close_video(NULL);
 }
 

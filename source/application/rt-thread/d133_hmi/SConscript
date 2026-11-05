@@ -16,6 +16,7 @@ inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/l
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/middle_media/player/include'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/include'))]
+inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/base/include'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
 group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
 Return('group')

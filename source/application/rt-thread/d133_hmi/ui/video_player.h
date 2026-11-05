@@ -15,4 +15,8 @@ void video_player_close(void);
 void video_player_toggle_pause(void);
 video_state_t video_player_status(unsigned *width, unsigned *height, char *text, size_t size);
 int video_player_copy_frame(void *dst, size_t size, unsigned *sequence);
+/* 大画面使用单个官方 MPP 帧，界面渲染结束后归还帧。 */
+int video_player_direct_mode(void);
+int video_player_acquire_frame(const uint8_t **data, unsigned *stride, unsigned *sequence);
+void video_player_release_frame(unsigned sequence);
 #endif

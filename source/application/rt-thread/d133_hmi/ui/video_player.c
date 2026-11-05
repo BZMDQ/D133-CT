@@ -4,13 +4,16 @@
 #include <aic_player.h>
 #include <aic_core.h>
 #include <mpp_dec_type.h>
+#include <mpp_mem.h>
+#include <frame_allocator.h>
 #include <string.h>
 #include <strings.h>
 #include <stdint.h>
 #include <stdio.h>
 
-#define VIDEO_MAX_WIDTH 640U
-#define VIDEO_MAX_HEIGHT 480U
+#define VIDEO_MAX_WIDTH 1280U
+#define VIDEO_MAX_HEIGHT 720U
+#define VIDEO_COPY_LIMIT (640U * 480U)
 #define VIDEO_PATH_SIZE 256
 
 static struct rt_mutex video_lock;
@@ -20,7 +23,39 @@ static volatile int pause_requested;
 static video_state_t state = VIDEO_IDLE;
 static unsigned frame_width, frame_height, frame_sequence;
 static uint8_t *frame_buffer;
+static unsigned direct_stride;
+static int direct_mode;
 static char state_text[128] = "视频播放器未启动";
+
+/* 大分辨率仅分配一帧物理缓存，复用 SDK 现有的外部分配接口。 */
+static int direct_alloc(struct frame_allocator *allocator, struct mpp_frame *frame,
+                        int stride, int height, enum mpp_pixel_format format)
+{
+    (void)allocator;
+    if (!frame || format != MPP_FMT_RGB_565 || stride <= 0 || height <= 0 ||
+        (uint64_t)stride * (unsigned)height > 1280U * 736U * 2U)
+        return -1;
+    frame->buf.buf_type = MPP_PHY_ADDR;
+    frame->buf.format = format;
+    frame->buf.stride[0] = (unsigned)stride;
+    frame->buf.size.height = (unsigned)height;
+    frame->buf.phy_addr[0] = mpp_phy_alloc((size_t)stride * (unsigned)height);
+    return frame->buf.phy_addr[0] ? 0 : -1;
+}
+
+static int direct_free(struct frame_allocator *allocator, struct mpp_frame *frame)
+{
+    (void)allocator;
+    if (frame && frame->buf.phy_addr[0]) {
+        mpp_phy_free(frame->buf.phy_addr[0]);
+        frame->buf.phy_addr[0] = 0;
+    }
+    return 0;
+}
+
+static int direct_close(struct frame_allocator *allocator) { (void)allocator; return 0; }
+static struct alloc_ops direct_alloc_ops = { direct_alloc, direct_free, direct_close };
+static struct frame_allocator direct_allocator = { &direct_alloc_ops };
 
 static void set_state(video_state_t next, const char *text)
 {
@@ -50,12 +85,23 @@ static void video_worker(void *parameter)
             media.video_stream.width <= 0 || media.video_stream.height <= 0 ||
             media.video_stream.width > VIDEO_MAX_WIDTH || media.video_stream.height > VIDEO_MAX_HEIGHT ||
             (media.video_stream.width & 1)) {
-            set_state(VIDEO_ERROR, "视频不支持：请使用不超过 640×480 的无音频 AVI/MJPEG");
+            set_state(VIDEO_ERROR, "视频不支持：请使用不超过 1280×720 的无音频 MJPEG");
             failed = 1;
             goto cleanup;
         }
         width = (unsigned)media.video_stream.width;
         height = (unsigned)media.video_stream.height;
+        rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+        direct_mode = (width * height > VIDEO_COPY_LIMIT);
+        rt_mutex_release(&video_lock);
+        if (direct_mode) {
+            int extra_frames = 0;
+            /* 与官方单帧播放器相同：一帧、外部分配、完成显示后再归还。 */
+            if (aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_NUM, &extra_frames) ||
+                aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_ALLOCATOR, &direct_allocator)) {
+                set_state(VIDEO_ERROR, "无法配置视频帧缓存"); failed = 1; goto cleanup;
+            }
+        }
         if (stop_requested) goto cleanup;
         {
             int start_result = aic_player_start(player);
@@ -65,7 +111,7 @@ static void video_worker(void *parameter)
                 /* 返回码来自 SDK；系统堆与 DMA 内存是不同统计范围。 */
                 rt_memory_info(&total, &used, &peak);
                 rt_snprintf(diagnostic, sizeof(diagnostic),
-                            "解码器启动失败：%d\n系统堆空闲：%lu KiB  视频：%ux%u",
+                            "解码器启动失败：%d（仅支持 MJPEG）\n系统堆空闲：%lu KiB  视频：%ux%u",
                             start_result, (unsigned long)((total >= used ? total - used : 0) / 1024U),
                             width, height);
                 set_state(VIDEO_ERROR, diagnostic);
@@ -91,12 +137,14 @@ static void video_worker(void *parameter)
             if (frame.flags & FRAME_FLAG_EOS) { aic_player_put_frame(player, &frame); break; }
             if (!frame.buf.phy_addr[0] || frame.buf.buf_type != MPP_PHY_ADDR ||
                 frame.buf.format != MPP_FMT_RGB_565 || frame.buf.stride[0] < width * 2U ||
-                frame.buf.size.width < width || frame.buf.size.height < height) {
+                frame.buf.size.width < width || frame.buf.size.height < height ||
+                (frame.buf.crop_en && (frame.buf.crop.x || frame.buf.crop.y ||
+                 frame.buf.crop.width < (int)width || frame.buf.crop.height < (int)height))) {
                 aic_player_put_frame(player, &frame);
                 set_state(VIDEO_ERROR, "视频帧格式不受支持"); failed = 1; break;
             }
-            /* 首帧出现后再申请交换缓存并通知 LVGL，避免显示缓存抢占解码器启动内存。 */
-            if (!pixels) {
+            /* 小画面使用交换缓存；大画面直接租用 MPP 帧，避免多份 720P 缓存。 */
+            if (!direct_mode && !pixels) {
                 pixels = rt_malloc(width * height * 2U);
                 if (!pixels) {
                     aic_player_put_frame(player, &frame);
@@ -114,12 +162,32 @@ static void video_worker(void *parameter)
             aicos_dcache_invalid_range((void *)(uintptr_t)frame.buf.phy_addr[0],
                                        (int64_t)frame.buf.stride[0] * height);
             rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
-            for (unsigned y = 0; y < height; y++)
-                memcpy(pixels + y * width * 2U,
-                       (const uint8_t *)(uintptr_t)frame.buf.phy_addr[0] + y * frame.buf.stride[0], width * 2U);
-            frame_buffer = pixels; frame_width = width; frame_height = height;
+            if (direct_mode) {
+                frame_buffer = (uint8_t *)(uintptr_t)frame.buf.phy_addr[0];
+                direct_stride = frame.buf.stride[0];
+            } else {
+                for (unsigned y = 0; y < height; y++)
+                    memcpy(pixels + y * width * 2U,
+                           (const uint8_t *)(uintptr_t)frame.buf.phy_addr[0] + y * frame.buf.stride[0], width * 2U);
+                frame_buffer = pixels;
+            }
+            frame_width = width; frame_height = height;
             frame_sequence++;
             rt_mutex_release(&video_lock);
+            if (direct_mode) {
+                /* 持有帧直至 LVGL 绘制完成，避免解码器覆盖正在使用的像素。 */
+                while (!stop_requested) {
+                    int leased;
+                    rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+                    leased = frame_buffer != RT_NULL;
+                    rt_mutex_release(&video_lock);
+                    if (!leased) break;
+                    rt_thread_mdelay(2);
+                }
+                rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+                frame_buffer = RT_NULL;
+                rt_mutex_release(&video_lock);
+            }
             aic_player_put_frame(player, &frame);
         }
         if (!stop_requested && !failed) set_state(VIDEO_ENDED, "播放完成，点击返回");
@@ -129,7 +197,8 @@ cleanup:
         /* 保留错误提示和最后一帧，直到用户退出，避免任务交错。 */
         while (!stop_requested) rt_thread_mdelay(50);
         rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
-        frame_buffer = RT_NULL; frame_width = frame_height = frame_sequence = 0;
+        frame_buffer = RT_NULL; frame_width = frame_height = frame_sequence = direct_stride = 0;
+        direct_mode = 0;
         rt_mutex_release(&video_lock);
         if (pixels) rt_free(pixels);
         stop_requested = 0;
@@ -158,7 +227,7 @@ int video_player_init(void)
 int video_player_supported(const char *path)
 {
     const char *ext = path ? strrchr(path, '.') : RT_NULL;
-    return ext && !strcasecmp(ext, ".avi");
+    return ext && (!strcasecmp(ext, ".avi") || !strcasecmp(ext, ".mp4") || !strcasecmp(ext, ".mov"));
 }
 
 int video_player_open(const char *path)
@@ -172,6 +241,11 @@ int video_player_open(const char *path)
     rt_mutex_release(&video_lock);
     if (busy) return -1;
     rt_snprintf(job, sizeof(job), "%s", path);
+    /* FAT 文件名大小写不敏感，SDK 按小写扩展名选择解封装器。 */
+    {
+        char *ext = strrchr(job, '.');
+        if (ext) while (*ext) { if (*ext >= 'A' && *ext <= 'Z') *ext = (char)(*ext + ('a' - 'A')); ext++; }
+    }
     if (rt_mq_send(video_jobs, job, sizeof(job)) != RT_EOK) { set_state(VIDEO_IDLE, "视频任务繁忙"); return -1; }
     return 0;
 }
@@ -197,9 +271,37 @@ int video_player_copy_frame(void *dst, size_t size, unsigned *sequence)
     if (!dst || !sequence) return -1;
     rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
     bytes = frame_width * frame_height * 2U;
-    if (frame_buffer && frame_sequence && *sequence != frame_sequence && bytes <= size) {
+    if (!direct_mode && frame_buffer && frame_sequence && *sequence != frame_sequence && bytes <= size) {
         memcpy(dst, frame_buffer, bytes); *sequence = frame_sequence; copied = 1;
     }
     rt_mutex_release(&video_lock);
     return copied;
+}
+
+int video_player_direct_mode(void)
+{
+    int result;
+    rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+    result = direct_mode;
+    rt_mutex_release(&video_lock);
+    return result;
+}
+
+int video_player_acquire_frame(const uint8_t **data, unsigned *stride, unsigned *sequence)
+{
+    int result = 0;
+    if (!data || !stride || !sequence) return -1;
+    rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+    if (direct_mode && frame_buffer && frame_sequence && *sequence != frame_sequence) {
+        *data = frame_buffer; *stride = direct_stride; *sequence = frame_sequence; result = 1;
+    }
+    rt_mutex_release(&video_lock);
+    return result;
+}
+
+void video_player_release_frame(unsigned sequence)
+{
+    rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
+    if (direct_mode && frame_sequence == sequence) frame_buffer = RT_NULL;
+    rt_mutex_release(&video_lock);
 }
