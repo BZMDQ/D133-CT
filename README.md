@@ -1,3 +1,5 @@
+当前候选版 v1.0.58：[工厂包](downloads/D133-CT_factory_v1.0.58.zip)、[签名 OTA](downloads/D133-CT_OTA_v1.0.58.zip)、[界面说明](docs/界面美化_v1.0.58.md)。首页已移除视频、系统信息及系统日志入口，视频仍可从文件管理打开；实机效果待验证。
+
 当前候选版 v1.0.57：[工厂包](downloads/D133-CT_factory_v1.0.57.zip)、[签名 OTA](downloads/d13x_d133cbv-hmi-nor_ota_v1.0.57.cpio)、[视频播放与转换说明](docs/视频播放_v1.0.57.md)。AVI/MJPEG 播放待开发板验证。
 
 当前候选版 v1.0.56：[工厂包](downloads/D133-CT_factory_v1.0.56.zip)、[签名 OTA](downloads/d13x_d133cbv-hmi-nor_ota_v1.0.56.cpio)、[工具箱补丁](downloads/D133_工具箱兼容补丁_v1.0.56.zip)、[TCP 操作说明](docs/TCP信息与升级_v1.0.56.md)。TCP 实机连接和 OTA 待验证。
