@@ -12,12 +12,14 @@
 #include "wifi_manager.h"
 #include "system_manager.h"
 #include "image_preview.h"
+#include "video_player.h"
 #include "screen_test.h"
 #include "display_profile_manager.h"
 #include "hmi_logo.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <aic_core.h>
 
 #define HMI_FONT_PATH "/rodata/hmi/fonts/NotoSansSC-HMI.ttf"
 
@@ -89,6 +91,11 @@ static lv_obj_t *logo_image;
 static lv_font_t *hmi_font;
 static lv_font_t *hmi_font_small;
 static int image_preview_ready;
+static lv_obj_t *video_overlay, *video_image, *video_label;
+static lv_timer_t *video_timer;
+static lv_image_dsc_t video_image_dsc;
+static void *video_image_buffer, *video_image_raw;
+static unsigned video_sequence;
 static int first_render_logged;
 static int first_flush_logged;
 static unsigned page;
@@ -508,6 +515,89 @@ static void show_image_preview(const char *path)
     }
 }
 
+/* 退出只提交停止请求；播放器资源由后台线程释放。 */
+static void close_video(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (video_timer) { lv_timer_delete(video_timer); video_timer = NULL; }
+    if (video_overlay) { lv_obj_delete(video_overlay); video_overlay = NULL; }
+    video_image = video_label = NULL;
+    lv_image_cache_drop(&video_image_dsc);
+    if (video_image_raw) { aicos_free(MEM_CMA, video_image_raw); video_image_raw = NULL; }
+    video_image_buffer = NULL;
+    memset(&video_image_dsc, 0, sizeof(video_image_dsc));
+    video_player_close();
+}
+
+static void video_ui_refresh(lv_timer_t *timer_obj)
+{
+    unsigned width, height;
+    char status[128];
+    video_state_t state;
+    (void)timer_obj;
+    if (!video_overlay) return;
+    state = video_player_status(&width, &height, status, sizeof(status));
+    if (!video_image_buffer && width && height) {
+        size_t bytes = width * height * 2U;
+        video_image_raw = aicos_malloc_try_cma((int)bytes + CACHE_LINE_SIZE - 1);
+        if (!video_image_raw) { lv_label_set_text(video_label, "显示缓冲内存不足，请返回"); video_player_close(); return; }
+        video_image_buffer = (void *)ALIGN_UP((ulong)video_image_raw, CACHE_LINE_SIZE);
+        memset(video_image_buffer, 0, bytes);
+        memset(&video_image_dsc, 0, sizeof(video_image_dsc));
+        video_image_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+        video_image_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+        video_image_dsc.header.w = width; video_image_dsc.header.h = height;
+        video_image_dsc.header.stride = width * 2U;
+        video_image_dsc.data_size = bytes; video_image_dsc.data = video_image_buffer;
+        video_image = lv_image_create(video_overlay);
+        lv_image_set_src(video_image, &video_image_dsc);
+        lv_obj_center(video_image);
+        lv_obj_move_background(video_image);
+    }
+    if (video_image_buffer && video_image &&
+        video_player_copy_frame(video_image_buffer, video_image_dsc.data_size, &video_sequence) > 0) {
+        aicos_dcache_clean_range((unsigned long *)video_image_buffer, video_image_dsc.data_size);
+        lv_image_cache_drop(&video_image_dsc);
+        lv_obj_invalidate(video_image);
+    }
+    if ((state == VIDEO_PLAYING || state == VIDEO_PAUSED) && video_sequence) lv_obj_add_flag(video_label, LV_OBJ_FLAG_HIDDEN);
+    else { lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN); lv_label_set_text(video_label, status); }
+}
+
+static void video_pause_action(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    video_player_toggle_pause();
+}
+
+static void show_video(const char *path)
+{
+    lv_obj_t *root = lv_screen_active(), *back;
+    if (video_player_init() || video_player_open(path)) {
+        message("视频服务繁忙或路径不可用，请稍后重试。"); return;
+    }
+    video_sequence = 0;
+    video_overlay = lv_obj_create(root);
+    if (!video_overlay) { video_player_close(); message("无法创建视频窗口。"); return; }
+    lv_obj_set_size(video_overlay, lv_obj_get_width(root), lv_obj_get_height(root));
+    lv_obj_set_pos(video_overlay, 0, 0);
+    lv_obj_set_style_bg_color(video_overlay, lv_color_hex(0x111827), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(video_overlay, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(video_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(video_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(video_overlay, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(video_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    video_label = label(video_overlay, "正在打开视频……", 300, 24, lv_obj_get_width(root) - 320);
+    lv_obj_set_style_text_color(video_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    back = button(video_overlay, "返回", 16, 16, 112, close_video, NULL);
+    lv_obj_set_height(back, 56);
+    back = button(video_overlay, "暂停 / 继续", 144, 16, 140, video_pause_action, NULL);
+    lv_obj_set_height(back, 56);
+    lv_obj_move_foreground(video_overlay);
+    video_timer = lv_timer_create(video_ui_refresh, 33, NULL);
+    if (!video_timer) close_video(NULL);
+}
+
 static void table_event(lv_event_t *event)
 {
     uint32_t row;
@@ -579,6 +669,10 @@ static void file_action(lv_event_t *event)
         }
         if (image_preview_supported(request.path)) {
             show_image_preview(request.path);
+            return;
+        }
+        if (video_player_supported(request.path)) {
+            show_video(request.path);
             return;
         }
         request.op = ST_READ;
@@ -736,18 +830,18 @@ static void open_wifi_settings(lv_event_t *event)
 
 static void screen(unsigned number)
 {
-    static const char *app_symbols[7] = {
+    static const char *app_symbols[8] = {
         LV_SYMBOL_HOME, LV_SYMBOL_SD_CARD, LV_SYMBOL_DOWNLOAD,
-        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST, LV_SYMBOL_EYE_OPEN
+        LV_SYMBOL_SETTINGS, LV_SYMBOL_WIFI, LV_SYMBOL_LIST, LV_SYMBOL_EYE_OPEN, LV_SYMBOL_VIDEO
     };
-    static const char *app_titles[7] = {
+    static const char *app_titles[8] = {
         "设备总览", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
-        "屏幕检测"
+        "屏幕检测", "视频播放"
     };
-    static const unsigned app_targets[7] = {6, 1, 2, 3, 4, 5, 7};
-    static const uint32_t app_colors[7] = {
+    static const unsigned app_targets[8] = {6, 1, 2, 3, 4, 5, 7, 1};
+    static const uint32_t app_colors[8] = {
         UI_COLOR_ACCENT, UI_COLOR_BLUE, UI_COLOR_VIOLET,
-        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET, UI_COLOR_ACCENT
+        UI_COLOR_GREEN, UI_COLOR_BLUE, UI_COLOR_VIOLET, UI_COLOR_ACCENT, UI_COLOR_BLUE
     };
     static const char *file_buttons[] = {
         "刷新", "上一级", "打开 / 读取", "新建文件夹", "复制", "重命名", "删除"
@@ -799,7 +893,7 @@ static void screen(unsigned number)
     if (number == 0) {
         /* 首页只显示已实现的应用入口，设备状态在独立总览页查看。 */
         /* 5×3 网格新增屏幕检测入口，其余位置继续留白。 */
-        for (i = 0; i < 7; i++) {
+        for (i = 0; i < 8; i++) {
             unsigned column = i % 5U;
             unsigned row = i / 5U;
             app_tile(content, app_symbols[i], app_titles[i],
@@ -835,7 +929,7 @@ static void screen(unsigned number)
         lv_textarea_set_max_length(editor, 511);
         button(content, "保存文本", 690, 368, 126, file_action, (void *)(uintptr_t)ST_WRITE);
         button(content, "容量查询", 830, 368, 126, file_action, (void *)(uintptr_t)ST_CAPACITY);
-        details = label(content, "选择文件后可读取、复制、重命名或删除。",
+        details = label(content, "选择文件后可打开图片或 AVI 视频，也可管理文件。",
                         204, 440, 752);
         list_folder();
     } else if (number == 2) {
