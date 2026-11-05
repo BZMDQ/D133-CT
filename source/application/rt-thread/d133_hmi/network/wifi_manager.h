@@ -12,6 +12,11 @@ int wifi_manager_stop_ap(void);
 int wifi_manager_get_saved(unsigned index, char *ssid, size_t capacity);
 unsigned wifi_manager_saved_count(void);
 int wifi_manager_saved_options(char *text, size_t capacity);
+/* 扫描请求异步执行；结果按 SSID 去重并由调用者复制。 */
+int wifi_manager_scan(void);
+unsigned wifi_manager_scan_generation(void);
+int wifi_manager_scan_options(char *text, size_t capacity);
+int wifi_manager_scan_ssid(unsigned index, char *ssid, size_t capacity);
 void wifi_manager_status(char *text, size_t capacity);
 
 #endif

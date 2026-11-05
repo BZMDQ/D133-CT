@@ -1,3 +1,5 @@
+当前候选版 v1.0.55：[通用工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.55.img)、[说明](docs/WiFi界面与连接_v1.0.55.md)。修正无线初始化顺序并增加附近网络扫描；实机验证待完成。
+
 当前候选版 v1.0.54：[公开工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.54.img)、[说明](docs/WiFi_SDIO_v1.0.54.md)。针对无线卡死风险调整 SDK SDIO 收包线程；实际板卡稳定性尚待验证。
 
 

@@ -33,6 +33,8 @@
 #define WIFI_JOB_CONNECT_SAVED 2
 #define WIFI_JOB_AP_START 3
 #define WIFI_JOB_AP_STOP 4
+#define WIFI_JOB_SCAN 5
+#define WIFI_SCAN_MAX 20
 
 typedef struct {
     uint32_t magic;
@@ -67,6 +69,8 @@ static char saved_names[5][33];
 static unsigned saved_count;
 static int persistence_ready;
 static volatile int profile_save_error;
+static struct { char ssid[33]; int rssi; } scan_items[WIFI_SCAN_MAX];
+static unsigned scan_count, scan_generation;
 static void refresh_saved_names(void);
 static const struct rt_wlan_cfg_ops wifi_cfg_ops;
 
@@ -105,7 +109,9 @@ static int file_replace(const char *temporary, const char *path,
 
 static int wifi_persistence_init(void)
 {
-    if (!dfs_filesystem_lookup("/data"))
+    struct dfs_filesystem *fs = dfs_filesystem_lookup("/data");
+    /* 根文件系统匹配 /data 不能代表 DATA 已挂载。 */
+    if (!fs || !fs->path || strcmp(fs->path, "/data"))
         return -1;
     rt_wlan_cfg_set_ops(&wifi_cfg_ops);
     /* 空配置文件表示新机；CRC、长度校验由 SDK WLAN 配置层完成。 */
@@ -185,16 +191,15 @@ static void refresh_saved_names(void)
 
 static void update_status(const char *message)
 {
-    struct rt_wlan_device *sta = (struct rt_wlan_device *)rt_device_find(RT_WLAN_DEVICE_STA_NAME);
-    char station_ip[20] = "未连接";
-    char ap_ip[20] = "未启动";
-    if (sta && sta->netdev && netdev_is_up(sta->netdev))
-        ipaddr_ntoa_r(&sta->netdev->ip_addr, station_ip, sizeof(station_ip));
-    if (rt_wlan_ap_is_active())
-        snprintf(ap_ip, sizeof(ap_ip), "192.168.169.1");
+    struct rt_wlan_info info;
+    char connected_ssid[33] = "未连接";
+    if (rt_wlan_is_connected() && rt_wlan_get_info(&info) == RT_EOK && info.ssid.len <= 32) {
+        memcpy(connected_ssid, info.ssid.val, info.ssid.len);
+        connected_ssid[info.ssid.len] = 0;
+    }
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
-    snprintf(state_text, sizeof(state_text), "STA：%s | AP：%s | %s",
-             station_ip, ap_ip, message ? message : "就绪");
+    snprintf(state_text, sizeof(state_text), "当前网络：%s | %s",
+             connected_ssid, message ? message : "就绪");
     rt_mutex_release(&state_lock);
 }
 
@@ -230,11 +235,7 @@ static int init_radio(void)
     result = rt_wlan_set_mode(RT_WLAN_DEVICE_STA_NAME, RT_WLAN_STATION);
     if (result != RT_EOK)
         return result;
-    /* 等待 SDIO 固件完成上电初始化，避免 STA/AP 命令早于芯片就绪。 */
-    for (unsigned wait = 0; wait < 100 && !rt_wlan_is_ready(); wait++)
-        rt_thread_mdelay(100);
-    if (!rt_wlan_is_ready())
-        return -RT_ETIMEOUT;
+    /* READY 表示联网协议已就绪，不能在首次连接之前等待它。 */
     result = rt_wlan_set_mode(RT_WLAN_DEVICE_AP_NAME, RT_WLAN_AP);
     if (result != RT_EOK)
         return result;
@@ -246,6 +247,44 @@ static int init_radio(void)
     /* SDIO 函数固件加载后给 STA/AP VIF 留出启动时间。 */
     rt_thread_mdelay(1000);
     return 0;
+}
+
+static void wifi_scan_event(int event, struct rt_wlan_buff *buff, void *parameter)
+{
+    struct rt_wlan_info *info;
+    unsigned i, len;
+    (void)event; (void)parameter;
+    if (!buff || !buff->data || buff->len < (int)sizeof(*info)) return;
+    info = (struct rt_wlan_info *)buff->data;
+    len = info->ssid.len;
+    if (!len || len > 32) return;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    for (i = 0; i < scan_count; i++)
+        if (strlen(scan_items[i].ssid) == len &&
+            !memcmp(scan_items[i].ssid, info->ssid.val, len)) break;
+    if (i < WIFI_SCAN_MAX) {
+        if (i == scan_count) scan_count++;
+        if (!scan_items[i].ssid[0] || info->rssi > scan_items[i].rssi) {
+            memcpy(scan_items[i].ssid, info->ssid.val, len);
+            scan_items[i].ssid[len] = 0;
+            scan_items[i].rssi = info->rssi;
+            scan_generation++;
+        }
+    }
+    rt_mutex_release(&state_lock);
+}
+
+static void wifi_do_scan(void)
+{
+    rt_err_t result;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    memset(scan_items, 0, sizeof(scan_items));
+    scan_count = 0;
+    scan_generation++;
+    rt_mutex_release(&state_lock);
+    update_status("正在扫描附近网络");
+    result = rt_wlan_scan_with_info(RT_NULL);
+    update_status(result == RT_EOK ? "扫描完成" : "扫描失败，请检查无线模块");
 }
 
 static int start_ap(const char *ssid, const char *password)
@@ -328,6 +367,8 @@ static void wifi_worker(void *parameter)
         while (1)
             rt_thread_mdelay(10000);
     }
+    rt_wlan_register_event_handler(RT_WLAN_EVT_SCAN_REPORT, wifi_scan_event, RT_NULL);
+    wifi_do_scan();
     while (1) {
         /* DATA 若稍晚挂载，Wi-Fi 仍已启动；后续重试配置恢复与持久化。 */
         if (!persistence_ready_local && wifi_persistence_init() == 0) {
@@ -357,7 +398,9 @@ static void wifi_worker(void *parameter)
         }
         if (rt_mq_recv(jobs, &job, sizeof(job), rt_tick_from_millisecond(2000)) == RT_EOK) {
             int result = -1;
-            if (job.command == WIFI_JOB_CONNECT) {
+            if (job.command == WIFI_JOB_SCAN) {
+                wifi_do_scan();
+            } else if (job.command == WIFI_JOB_CONNECT) {
                 update_status("正在连接路由器");
                 result = rt_wlan_connect(job.ssid, job.key);
                 rt_memset(job.key, 0, sizeof(job.key));
@@ -408,6 +451,50 @@ static void wifi_worker(void *parameter)
             }
         }
     }
+}
+
+int wifi_manager_scan(void)
+{
+    wifi_job_t job = {0};
+    job.command = WIFI_JOB_SCAN;
+    return jobs ? rt_mq_send(jobs, &job, sizeof(job)) : -1;
+}
+
+unsigned wifi_manager_scan_generation(void)
+{
+    unsigned value;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    value = scan_generation;
+    rt_mutex_release(&state_lock);
+    return value;
+}
+
+int wifi_manager_scan_options(char *text, size_t capacity)
+{
+    unsigned i; size_t used = 0;
+    if (!text || !capacity) return -1;
+    text[0] = 0;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    for (i = 0; i < scan_count; i++) {
+        int n = rt_snprintf(text + used, capacity - used, "%s%s  (%d dBm)",
+                            i ? "\n" : "", scan_items[i].ssid, scan_items[i].rssi);
+        if (n < 0 || (size_t)n >= capacity - used) break;
+        used += (size_t)n;
+    }
+    i = scan_count;
+    rt_mutex_release(&state_lock);
+    if (!used) rt_snprintf(text, capacity, "暂无附近网络");
+    return (int)i;
+}
+
+int wifi_manager_scan_ssid(unsigned index, char *ssid, size_t capacity)
+{
+    if (!ssid || !capacity) return -1;
+    rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    if (index >= scan_count) { rt_mutex_release(&state_lock); return -1; }
+    rt_snprintf(ssid, capacity, "%s", scan_items[index].ssid);
+    rt_mutex_release(&state_lock);
+    return 0;
 }
 
 int wifi_manager_init(void)
