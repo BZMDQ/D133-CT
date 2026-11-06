@@ -1,0 +1,53 @@
+scons: Reading SConscript files ...
+Newlib version:3.2.0
+scons: done reading SConscript files.
+scons: Building targets ...
+
+scons: warning: you do not seem to have the pywin32 extensions installed;
+	parallel (-j) builds may not work reliably with open Python files.
+File "<string>", line 1, in <module>
+scons: building associated VariantDir targets: output\d13x_d133cbv-hmi-nor_rt-thread_d133_hmi
+  CC application\rt-thread\d133_hmi\app\app_manager.c
+  CC application\rt-thread\d133_hmi\boot_manager\boot_manager.c
+  CC application\rt-thread\d133_hmi\network\network_manager.c
+  CC application\rt-thread\d133_hmi\ota\ota_manager.c
+  CC application\rt-thread\d133_hmi\system\display_profile_manager.c
+  CC application\rt-thread\d133_hmi\system\reboot_manager.c
+  CC application\rt-thread\d133_hmi\ui\bmp_reader.c
+  CC application\rt-thread\d133_hmi\ui\image_preview.c
+  CC application\rt-thread\d133_hmi\ui\screen_test.c
+  CC application\rt-thread\d133_hmi\ui\ui_manager.c
+  CC application\rt-thread\d133_hmi\ui\video_player.c
+  CC bsp\artinchip\drv\display\drv_de_core.c
+  CC bsp\artinchip\drv\display\drv_de_ui_layer.c
+  CC bsp\artinchip\drv\display\drv_de_vi_layer.c
+  CC bsp\artinchip\drv\display\drv_dsi.c
+  CC bsp\artinchip\drv\display\drv_fb.c
+  CC bsp\artinchip\drv\display\drv_fb_helper.c
+  CC bsp\artinchip\drv\display\drv_lvds.c
+  CC bsp\artinchip\drv\display\panel\panel_com.c
+  CC bsp\artinchip\drv\display\panel\panel_dsi.c
+  CC bsp\artinchip\drv\display\panel\panel_dsi_ili9881c.c
+  CC bsp\artinchip\drv\display\panel\panel_simple.c
+  CC bsp\artinchip\drv\spinor\spinor_fal.c
+  CC bsp\peripheral\touch\gt911\src\gt911.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\layer_abstract\src\sdio_al.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\layer_abstract\src\wifi_al.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\layer_common\src\hal_co.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\layer_common\src\sdio_co.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\macif\aicwf_compat_8800dc.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\macif\rwnx_cmds.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\macif\rwnx_main.c
+  CC bsp\peripheral\wireless\aic8800\fdrv\macif\rwnx_utils.c
+  CC bsp\peripheral\wireless\aic8800\platform\hal\sdio_port.c
+  CC bsp\peripheral\wireless\aic8800\platform\wifi\wifi_if_drv.c
+  CC bsp\peripheral\wireless\aic8800\platform\wifi\wifi_port.c
+  CC packages\artinchip\lvgl-ui\aic_drivers\lv_tpc_run.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_bmp.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_aic_img_dsc.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_mpp_dec\lv_mpp_dec.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_disp.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lv_drivers\lv_port_indev.c
+  CC target\d13x\d133cbv-hmi-nor\pinmux.c
+  CC packages\artinchip\lvgl-ui\lvgl_v9\lvgl\env_support\rt-thread\lv_rt_thread_port.c
+scons: done building targets.

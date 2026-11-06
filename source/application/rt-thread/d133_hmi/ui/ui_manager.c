@@ -78,9 +78,6 @@ void hmi_ui_image_dispatch(void)
         screen_test_image_ready();
     }
 }
-static lv_obj_t *ip_input;
-static lv_obj_t *mask_input;
-static lv_obj_t *gw_input;
 static lv_obj_t *wifi_ssid_input;
 static lv_obj_t *wifi_password_input;
 static lv_obj_t *wifi_status_label;
@@ -803,16 +800,6 @@ static void remote_answer(lv_event_t *event)
     }
 }
 
-static void apply_network(lv_event_t *event)
-{
-    int dhcp = (int)(uintptr_t)lv_event_get_user_data(event);
-
-    if (network_manager_configure(lv_textarea_get_text(ip_input),
-                                  lv_textarea_get_text(mask_input),
-                                  lv_textarea_get_text(gw_input), dhcp))
-        message("网络配置繁忙，或 IPv4 参数格式无效。");
-}
-
 enum {
     WIFI_CONNECT_TYPED = 1,
     WIFI_CONNECT_SELECTED,
@@ -938,7 +925,6 @@ static void screen(unsigned number)
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clean(content);
     details = table = pathbox = targetbox = editor = progress = NULL;
-    ip_input = mask_input = gw_input = NULL;
     wifi_ssid_input = wifi_password_input = NULL;
     wifi_saved_dropdown = NULL;
     wifi_scan_dropdown = NULL;
@@ -1025,56 +1011,48 @@ static void screen(unsigned number)
         button(content, ui_reduce_motion ? "减少动画：开" : "减少动画：关",
                32, 334, 240, toggle_reduce_motion, NULL);
     } else if (number == 4) {
-        /* 网络设置按连接状态、Wi-Fi、IP 配置三段纵向滚动排列。 */
-        lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_scroll_dir(content, LV_DIR_VER);
-        lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
-        panel(content, 16, 8, 960, 104, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        label(content, "连接状态", 32, 18, 300);
-        details = label(content, "正在检查网络和 TCP 服务……", 32, 48, 920);
-        wifi_status_label = label(content, "Wi-Fi 正在启动……", 32, 77, 920);
-        panel(content, 16, 124, 960, 250, UI_COLOR_SURFACE, UI_COLOR_BLUE);
-        label(content, "Wi-Fi", 32, 137, 300);
-        label(content, "附近网络", 32, 169, 130);
+        /* 单页只保留 Wi-Fi STA、已保存网络和 TCP 服务状态。 */
+        panel(content, 16, 8, 960, 124, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        label(content, "网络状态", 32, 18, 300);
+        details = label(content, "正在启动 TCP 5000 服务", 32, 48, 920);
+        lv_obj_set_height(details, 32);
+        lv_label_set_long_mode(details, LV_LABEL_LONG_DOT);
+        wifi_status_label = label(content, "正在检查 Wi-Fi……", 32, 84, 920);
+        lv_obj_set_height(wifi_status_label, 32);
+        lv_label_set_long_mode(wifi_status_label, LV_LABEL_LONG_DOT);
+        panel(content, 16, 142, 960, 336, UI_COLOR_SURFACE, UI_COLOR_BLUE);
+        label(content, "Wi-Fi 网络", 32, 154, 300);
+        label(content, "附近网络", 32, 188, 130);
         wifi_scan_dropdown = lv_dropdown_create(content);
         lv_obj_set_style_text_font(wifi_scan_dropdown, small_font(), LV_PART_MAIN);
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_scan_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_scan_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_scan_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_pos(wifi_scan_dropdown, 32, 194);
-        lv_obj_set_size(wifi_scan_dropdown, 370, 44);
+        lv_obj_set_pos(wifi_scan_dropdown, 32, 213);
+        lv_obj_set_size(wifi_scan_dropdown, 370, 42);
         lv_dropdown_set_options(wifi_scan_dropdown, "正在扫描……");
-        button(content, "刷新", 418, 194, 108, wifi_action, (void *)(uintptr_t)WIFI_SCAN);
-        button(content, "使用所选", 540, 194, 150, wifi_action, (void *)(uintptr_t)WIFI_USE_SCAN);
-        label(content, "网络名称", 32, 249, 200);
-        label(content, "密码", 352, 249, 210);
-        wifi_ssid_input = input(content, "", 32, 274, 300, 42);
+        button(content, "刷新", 418, 213, 108, wifi_action, (void *)(uintptr_t)WIFI_SCAN);
+        button(content, "使用所选", 540, 213, 150, wifi_action, (void *)(uintptr_t)WIFI_USE_SCAN);
+        label(content, "网络名称", 32, 261, 200);
+        label(content, "密码", 352, 261, 210);
+        wifi_ssid_input = input(content, "", 32, 286, 300, 42);
         lv_textarea_set_max_length(wifi_ssid_input, 32);
-        wifi_password_input = input(content, "", 352, 274, 300, 42);
+        wifi_password_input = input(content, "", 352, 286, 300, 42);
         lv_textarea_set_max_length(wifi_password_input, 63);
         lv_textarea_set_password_mode(wifi_password_input, true);
-        primary_button(content, "连接并保存", 672, 274, 270,
+        primary_button(content, "连接并保存", 672, 286, 270,
                wifi_action, (void *)(uintptr_t)WIFI_CONNECT_TYPED);
-        label(content, "已保存网络", 32, 324, 180);
+        label(content, "已保存网络", 32, 339, 180);
         wifi_saved_dropdown = lv_dropdown_create(content);
         lv_obj_set_style_text_font(wifi_saved_dropdown, small_font(), LV_PART_MAIN);
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_saved_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_saved_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_saved_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_pos(wifi_saved_dropdown, 210, 319);
+        lv_obj_set_pos(wifi_saved_dropdown, 210, 364);
         lv_obj_set_size(wifi_saved_dropdown, 450, 42);
         wifi_refresh_saved();
-        button(content, "连接已保存", 672, 319, 270,
+        button(content, "连接已保存", 672, 364, 270,
                wifi_action, (void *)(uintptr_t)WIFI_CONNECT_SELECTED);
-        panel(content, 16, 386, 960, 224, UI_COLOR_SURFACE, 0);
-        label(content, "IP 地址", 32, 400, 200);
-        label(content, "子网掩码", 342, 400, 220);
-        label(content, "默认网关", 652, 400, 220);
-        ip_input = input(content, "192.168.1.200", 32, 425, 280, 42);
-        mask_input = input(content, "255.255.255.0", 342, 425, 280, 42);
-        gw_input = input(content, "192.168.1.1", 652, 425, 280, 42);
-        button(content, "应用静态地址", 32, 484, 210, apply_network, NULL);
-        primary_button(content, "启用 DHCP", 254, 484, 210, apply_network, (void *)(uintptr_t)1);
         wifi_manager_scan();
     } else if (number == 5) {
         lv_obj_t *log_card = panel(content, 16, 8, 960, 480,

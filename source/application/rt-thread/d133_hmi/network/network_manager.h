@@ -3,7 +3,6 @@
 #define D133_TCP_PORT 5000
 #define D133_INFO_TCP_PORT D133_TCP_PORT
 int network_manager_init(void);
-int network_manager_configure(const char *ip,const char *mask,const char *gateway,int dhcp);
 void network_manager_status(char *out,unsigned capacity);
 #endif
 

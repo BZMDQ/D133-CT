@@ -9,9 +9,6 @@
 #include "display_profile_manager.h"
 #include <rtthread.h>
 #include <lwip/sockets.h>
-#include <lwip/netif.h>
-#include <lwip/tcpip.h>
-#include <netdev.h>
 #include <aic_crc32.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,20 +34,14 @@ static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t le
 {uint32_t h[5];memcpy(h,"LNET",4);h[1]=op;h[2]=status;h[3]=length;h[4]=crc32(crc32(0,(void*)h,16),body,length);return exact(fd,h,20,1)||exact(fd,(void*)body,length,1);}
 void network_manager_status(char *out,unsigned cap)
 {
-    char ip[IPADDR_STRLEN_MAX] = "0.0.0.0";
     const char *tcp_state;
-    int linked = 0;
-    /* netif_default 会由以太网/WiFi 注册线程更新，读取需持有 lwIP 核心锁。 */
-    LOCK_TCPIP_CORE();
-    if (netif_default) {
-        linked = netif_is_link_up(netif_default);
-        ipaddr_ntoa_r(&netif_default->ip_addr, ip, sizeof(ip));
-    }
-    UNLOCK_TCPIP_CORE();
+
+    if (!out || !cap)
+        return;
     tcp_state = tcp_listener_state[0] > 0 ? "监听中" :
                 (tcp_listener_state[0] < 0 ? "启动失败，重试中" : "正在启动");
-    rt_snprintf(out,cap,"网络%s  IP %s\nTCP %u：信息与 D133 OTA，%s",
-                linked?"已连接":"未连接",ip,D133_TCP_PORT,tcp_state);
+    /* IP 状态由 Wi-Fi 专属行显示，TCP 行只报告统一服务端口。 */
+    rt_snprintf(out,cap,"TCP 服务  %s  端口 %u",tcp_state,D133_TCP_PORT);
 }
 static void session(int fd)
 {
@@ -182,31 +173,13 @@ static void server(void *unused)
         rt_thread_mdelay(1000);
     }
 }
-typedef struct {char ip[16],mask[16],gateway[16];int dhcp;} network_config_t;
-static rt_mq_t config_queue;
-static void configure_worker(void *unused)
-{
-    network_config_t c;ip_addr_t ip,mask,gw;
-    while(1){rt_mq_recv(config_queue,&c,sizeof(c),RT_WAITING_FOREVER);
-        if(!netdev_default){system_manager_log("网络设备尚未就绪");continue;}
-        if(c.dhcp){netdev_dhcp_enabled(netdev_default,RT_TRUE);system_manager_log("已启用 DHCP，等待获取地址");continue;}
-        if(!ipaddr_aton(c.ip,&ip)||!ipaddr_aton(c.mask,&mask)||!ipaddr_aton(c.gateway,&gw)){system_manager_log("IPv4 参数无效");continue;}
-        netdev_dhcp_enabled(netdev_default,RT_FALSE);netdev_set_ipaddr(netdev_default,&ip);netdev_set_netmask(netdev_default,&mask);netdev_set_gw(netdev_default,&gw);system_manager_log("静态 IPv4 参数已应用（仅本次运行有效）");
-    }
-}
-int network_manager_configure(const char *ip,const char *mask,const char *gw,int dhcp)
-{
-    network_config_t c;memset(&c,0,sizeof(c));if(!ip||!mask||!gw||strlen(ip)>15||strlen(mask)>15||strlen(gw)>15)return -1;
-    snprintf(c.ip,16,"%s",ip);snprintf(c.mask,16,"%s",mask);snprintf(c.gateway,16,"%s",gw);c.dhcp=dhcp;return config_queue?rt_mq_send(config_queue,&c,sizeof(c)):-1;
-}
 int network_manager_init(void)
 {
     unsigned i;
     rt_mutex_init(&upload_lock,"otaupload",RT_IPC_FLAG_PRIO);
     clients=rt_mq_create("tcpjobs",sizeof(tcp_client_job_t),2,RT_IPC_FLAG_FIFO);if(!clients)return -1;
     for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,24576,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
-    rt_thread_t t;config_queue=rt_mq_create("netcfg",sizeof(network_config_t),2,RT_IPC_FLAG_FIFO);if(!config_queue)return -1;
-    t=rt_thread_create("hmi_netcfg",configure_worker,0,3072,24,10);if(!t)return -1;rt_thread_startup(t);
+    rt_thread_t t;
     t=rt_thread_create("hmi_tcp",server,RT_NULL,4096,23,10);return t?rt_thread_startup(t):-1;
 }
 
