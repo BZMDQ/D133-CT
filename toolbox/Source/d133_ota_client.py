@@ -77,6 +77,8 @@ def upload(host,port,path,progress,cancel):
     signature=Path(str(path)+'.sig').read_bytes()
     if not 1<=len(signature)<=512:raise ValueError('需要有效的 RSA 签名文件 ota.cpio.sig')
     with socket.create_connection((host,int(port)),timeout=10) as sock:
+        # 每块等待设备确认；关闭 Nagle 可减少小包交互延时。
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.settimeout(180);info=json.loads(_request(sock,INFO).decode('utf-8'))
         _device_message(json.dumps(info,ensure_ascii=False).encode('utf-8'),progress)
         if info.get('product')!=PRODUCT or info.get('hardware')!=HARDWARE or info.get('protocol')!=1:raise ValueError('目标不是兼容的 D133CBS OTA 服务')

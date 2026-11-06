@@ -10,6 +10,7 @@
 #include "wifi_manager.h"
 #include <rtthread.h>
 #include <lwip/sockets.h>
+#include <lwip/tcp.h>
 #include <aic_crc32.h>
 #include <stdio.h>
 #include <string.h>
@@ -204,6 +205,7 @@ static void session(int fd)
             ota_manager_get(&state);
             if(state.state!=OTA_IDLE&&state.state!=OTA_FAILED){reply(fd,h[1],3,0,0);break;}
             memcpy(sha,payload+4,32);memcpy(version,payload+100,32);mkdir("/sdcard/UPDATE",0777);file=fopen(STAGING,"wb");if(!file){reply(fd,h[1],5,0,0);continue;}
+            if(ota_manager_receive_begin(version)){fclose(file);file=0;reply(fd,h[1],3,0,0);break;}
             written=0;active=1;
             if(!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
             device_event_manager_notify(DEVICE_EVENT_TOOLBOX_OTA_STARTED);
@@ -217,7 +219,7 @@ static void session(int fd)
         }
         if(h[1]==OP_DATA){
             if(!active||h[2]!=written||!h[3]||h[3]>total-written){reply(fd,h[1],6,0,0);break;}
-            if(fwrite(payload,1,h[3],file)!=h[3]){reply(fd,h[1],5,0,0);break;}written+=h[3];if(reply(fd,h[1],0,&written,4))break;continue;
+            if(fwrite(payload,1,h[3],file)!=h[3]){reply(fd,h[1],5,0,0);break;}written+=h[3];ota_manager_receive_progress(written,total);if(reply(fd,h[1],0,&written,4))break;continue;
         }
                 if(h[1]==OP_SIGNATURE){
             if(!active||!h[3]||h[3]>512||file_manager_write(STAGING ".sig",payload,h[3])){reply(fd,h[1],9,0,0);break;}
@@ -237,6 +239,8 @@ static void session(int fd)
         reply(fd,h[1],11,0,0);break;
     }
     if(file)fclose(file);
+    /* 连接中断或接收校验失败时解除占用，已进入官方升级阶段则不改变状态。 */
+    if(owns_upload)ota_manager_receive_abort(-30);
     if(owns_upload)rt_mutex_release(&upload_lock);
     /* 断线只保留未激活的暂存文件，绝不提交 ENV。 */
 }
@@ -277,6 +281,8 @@ static void server(void *unused)
             tcp_client_job_t job;
             job.fd=accept(listener,0,0);
             if(job.fd<0) break;
+            /* 小响应包立即发送，避免逐块确认被 Nagle 延迟。 */
+            setsockopt(job.fd,IPPROTO_TCP,TCP_NODELAY,&yes,sizeof(yes));
             if(rt_mq_send(clients,&job,sizeof(job))!=RT_EOK) closesocket(job.fd);
         }
         closesocket(listener);

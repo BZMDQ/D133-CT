@@ -23,6 +23,15 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#if defined(__has_include)
+#if __has_include("hmi_wifi_private.h")
+#include "hmi_wifi_private.h"
+#endif
+#endif
+#ifndef HMI_DEFAULT_WIFI_SSID
+#define HMI_DEFAULT_WIFI_SSID ""
+#define HMI_DEFAULT_WIFI_PASSWORD ""
+#endif
 
 #define WIFI_PROFILE_PATH "/data/wifi_profiles.bin"
 #define WIFI_PROFILE_TEMP "/data/wifi_profiles.tmp"
@@ -391,8 +400,13 @@ static int bootstrap_load(char *ssid, char *password)
     FILE *file = fopen(WIFI_BOOTSTRAP_PATH, "rb");
     char *line;
     size_t len;
-    if (!file)
-        return -1;
+    if (!file) {
+        /* 本机定制版本可内置默认网络；公开版本使用空配置。 */
+        if (!HMI_DEFAULT_WIFI_SSID[0]) return -1;
+        rt_snprintf(ssid, 34, "%s", HMI_DEFAULT_WIFI_SSID);
+        rt_snprintf(password, 66, "%s", HMI_DEFAULT_WIFI_PASSWORD);
+        return 0;
+    }
     line = fgets(ssid, 34, file);
     if (!line) {
         fclose(file);
@@ -447,6 +461,7 @@ static void wifi_worker(void *parameter)
                 update_status("连接默认路由器");
                 if (rt_wlan_connect(bootstrap_ssid, bootstrap_key) != RT_EOK)
                     update_status("默认路由器连接失败，可在 WiFi 页面重试");
+                else { rt_thread_mdelay(300); refresh_saved_names(); }
                 rt_memset(bootstrap_key, 0, sizeof(bootstrap_key));
                 rt_memset(bootstrap_ssid, 0, sizeof(bootstrap_ssid));
             }
@@ -482,6 +497,8 @@ static void wifi_worker(void *parameter)
                 }
             }
         }
+        /* SDK 的连接事件异步保存，可能晚于连接返回；定期同步已保存列表。 */
+        if (persistence_ready_local) refresh_saved_names();
     }
 }
 

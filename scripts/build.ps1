@@ -1,4 +1,4 @@
-param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'),[string]$FirmwareVersion='', [string]$ToolboxKeyFile='')
+param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'),[string]$FirmwareVersion='', [string]$ToolboxKeyFile='', [string]$WifiBootstrapFile='')
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sdk=(Resolve-Path $SdkRoot).Path
@@ -31,6 +31,8 @@ function Set-D133ImageVersion([string]$Path,[string]$Version){
 $previousPath=$env:PATH;$previousPythonPath=$env:PYTHONPATH
 $privateKeyHeader=Join-Path $sdk 'application\rt-thread\d133_hmi\network\hmi_toolbox_key_private.h'
 $privateKeyHeaderCreated=$false
+$privateWifiHeader=Join-Path $sdk 'application\rt-thread\d133_hmi\network\hmi_wifi_private.h'
+$privateWifiHeaderCreated=$false
 try {
     $env:PATH=(Split-Path $python)+';'+(Join-Path $sdk 'toolchain\bin')+';'+(Join-Path $sdk 'tools\env\tools\bin')+';'+$previousPath
     $env:PYTHONPATH=Join-Path $sdk 'tools\env\tools\Python27\Lib\site-packages\scons'
@@ -53,6 +55,16 @@ try {
         $privateKeyHeaderCreated=$true
         $keyText=$null
         $headerText=$null
+    }
+    # 仅本机定制固件读取两行凭据，公开构建和仓库不包含密码。
+    if(Test-Path -LiteralPath $privateWifiHeader){throw 'SDK 中存在 WiFi 私有头文件，请先检查，构建脚本不会覆盖。'}
+    if($WifiBootstrapFile){
+        $lines=[IO.File]::ReadAllLines((Resolve-Path -LiteralPath $WifiBootstrapFile).Path)
+        if($lines.Count -lt 2 -or $lines[0].Length -lt 1 -or $lines[0].Length -gt 32 -or $lines[1].Length -gt 63){throw 'WiFi 配置需要两行合法的 SSID 和密码。'}
+        if(($lines[0]+$lines[1]) -match '[^\x20-\x7e]'){throw '当前私有构建仅支持 ASCII WiFi 凭据。'}
+        $ssid=($lines[0] | ConvertTo-Json -Compress);$password=($lines[1] | ConvertTo-Json -Compress)
+        [IO.File]::WriteAllText($privateWifiHeader,"#define HMI_DEFAULT_WIFI_SSID $ssid`n#define HMI_DEFAULT_WIFI_PASSWORD $password`n",[Text.UTF8Encoding]::new($false))
+        $privateWifiHeaderCreated=$true;$ssid=$null;$password=$null;$lines=$null
     }
 $isOtaTarget=$Target -eq 'OtaCandidate' -or $Target -eq 'OtaProfile'
 $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaProfile'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
@@ -114,6 +126,7 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
         if($buildExit){throw "编译失败，见 docs\$LogName"}
     } finally {Pop-Location}
 } finally {
+    if($privateWifiHeaderCreated -and (Test-Path -LiteralPath $privateWifiHeader)){Remove-Item -LiteralPath $privateWifiHeader -Force}
     if($privateKeyHeaderCreated -and (Test-Path -LiteralPath $privateKeyHeader)){Remove-Item -LiteralPath $privateKeyHeader -Force}
     $env:PATH=$previousPath;$env:PYTHONPATH=$previousPythonPath
 }

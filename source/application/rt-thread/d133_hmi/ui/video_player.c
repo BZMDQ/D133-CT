@@ -26,6 +26,8 @@ static unsigned frame_width, frame_height, frame_sequence;
 static uint8_t *frame_buffer;
 static unsigned direct_stride;
 static int direct_mode;
+/* 留下 SDK 帧分配诊断，串口关闭时仍可在播放器界面查看。 */
+static volatile int alloc_error, alloc_format, alloc_stride, alloc_height;
 static char state_text[128] = "视频播放器未启动";
 
 /* 大分辨率仅分配一帧物理缓存，复用 SDK 现有的外部分配接口。 */
@@ -33,14 +35,18 @@ static int direct_alloc(struct frame_allocator *allocator, struct mpp_frame *fra
                         int stride, int height, enum mpp_pixel_format format)
 {
     (void)allocator;
+    alloc_format=(int)format;alloc_stride=stride;alloc_height=height;
     if (!frame || format != MPP_FMT_RGB_565 || stride <= 0 || height <= 0 ||
-        (uint64_t)stride * (unsigned)height > 1280U * 736U * 2U)
+        (uint64_t)stride * (unsigned)height > 1280U * 736U * 2U) {
+        alloc_error=1;
         return -1;
+    }
     frame->buf.buf_type = MPP_PHY_ADDR;
     frame->buf.format = format;
     frame->buf.stride[0] = (unsigned)stride;
     frame->buf.size.height = (unsigned)height;
     frame->buf.phy_addr[0] = mpp_phy_alloc((size_t)stride * (unsigned)height);
+    if (!frame->buf.phy_addr[0]) alloc_error=2;
     return frame->buf.phy_addr[0] ? 0 : -1;
 }
 
@@ -81,6 +87,7 @@ static void video_worker(void *parameter)
         rt_uint32_t start_ms = 0;
         rt_uint32_t last_frame_ms = 0;
         int first_frame_received = 0;
+        alloc_error=alloc_format=alloc_stride=alloc_height=0;
         set_state(VIDEO_LOADING, "正在打开视频……");
         player = aic_player_create(RT_NULL);
         if (!player || aic_player_set_uri(player, path) || aic_player_prepare_sync(player) ||
@@ -98,8 +105,9 @@ static void video_worker(void *parameter)
         direct_mode = (width * height > VIDEO_COPY_LIMIT);
         rt_mutex_release(&video_lock);
         if (direct_mode) {
-            int extra_frames = 1;
-            /* 采用 SDK 官方播放器测试的外部帧数，避免 720P 解码器没有可输出帧。 */
+            int extra_frames = 0;
+            /* SDK 的 MJPEG 帧数为 1 + extra_frames。界面归还后再解码下一帧，
+             * 因此只保留一帧，减少 720P 时约 1.76 MiB 的连续 PSRAM 需求。 */
             if (aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_NUM, &extra_frames) ||
                 aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_ALLOCATOR, &direct_allocator)) {
                 set_state(VIDEO_ERROR, "无法配置视频帧缓存"); failed = 1; goto cleanup;
@@ -140,9 +148,12 @@ static void video_worker(void *parameter)
             if (result < 0) { set_state(VIDEO_ERROR, "视频解码失败或 SD 卡已移除"); failed = 1; break; }
             if (result > 0) {
                 if (rt_tick_get_millisecond() - last_frame_ms > VIDEO_NO_FRAME_TIMEOUT_MS) {
-                    set_state(VIDEO_ERROR, first_frame_received ?
-                        "视频帧中断超过 3 秒：请检查 SD 读取和 MJPEG 码率" :
-                        "解码器启动后 3 秒未输出首帧：请检查 MPP 帧缓存和视频编码");
+                    char diagnostic[128];
+                    rt_snprintf(diagnostic,sizeof(diagnostic),
+                        first_frame_received ? "视频帧中断超过 3 秒（帧缓存错误 %d，格式 %d，步幅 %d，高 %d）" :
+                        "3 秒未收到首帧（帧缓存错误 %d，格式 %d，步幅 %d，高 %d）",
+                        alloc_error,alloc_format,alloc_stride,alloc_height);
+                    set_state(VIDEO_ERROR, diagnostic);
                     failed = 1; break;
                 }
                 rt_thread_mdelay(5); continue;
