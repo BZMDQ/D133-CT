@@ -99,8 +99,6 @@ static lv_image_dsc_t video_image_dsc;
 static void *video_image_buffer, *video_image_raw;
 static unsigned video_sequence;
 static unsigned video_direct_lease;
-static unsigned video_rendered_count, video_render_fps;
-static rt_uint32_t video_fps_start;
 static int first_render_logged;
 static int first_flush_logged;
 static unsigned page;
@@ -549,15 +547,12 @@ static void close_video(lv_event_t *event)
     video_player_close();
 }
 
-/* LVGL 完成绘制后先隐藏图像，再允许解码器复用单帧。 */
+/* LVGL 已把当前帧画入显示缓冲；保留画面，避免 SD/解码稍慢时闪黑。 */
 static void video_render_complete(void)
 {
     if (!video_direct_lease || !video_image) return;
-    lv_obj_add_flag(video_image, LV_OBJ_FLAG_HIDDEN);
-    lv_image_cache_drop(&video_image_dsc);
     video_player_release_frame(video_direct_lease);
     video_direct_lease = 0;
-    video_rendered_count++;
 }
 
 static void video_ui_refresh(lv_timer_t *timer_obj)
@@ -619,17 +614,7 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
         lv_image_cache_drop(&video_image_dsc);
         lv_obj_invalidate(video_image);
     }
-    if (video_player_direct_mode() && state == VIDEO_PLAYING && video_sequence) {
-        rt_uint32_t now = rt_tick_get_millisecond();
-        rt_uint32_t elapsed = now - video_fps_start;
-        if (elapsed >= 1000U) {
-            video_render_fps = (video_rendered_count * 1000U + elapsed / 2U) / elapsed;
-            video_rendered_count = 0; video_fps_start = now;
-        }
-        rt_snprintf(status, sizeof(status), "渲染 %u 帧/秒", video_render_fps);
-        lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN);
-        if (strcmp(lv_label_get_text(video_label), status)) lv_label_set_text(video_label, status);
-    } else if ((state == VIDEO_PLAYING || state == VIDEO_PAUSED) && video_sequence)
+    if ((state == VIDEO_PLAYING || state == VIDEO_PAUSED) && video_sequence)
         lv_obj_add_flag(video_label, LV_OBJ_FLAG_HIDDEN);
     else { lv_obj_clear_flag(video_label, LV_OBJ_FLAG_HIDDEN); if (strcmp(lv_label_get_text(video_label), status)) lv_label_set_text(video_label, status); }
 }
@@ -648,8 +633,6 @@ static void show_video(const char *path)
     }
     video_sequence = 0;
     video_direct_lease = 0;
-    video_rendered_count = video_render_fps = 0;
-    video_fps_start = rt_tick_get_millisecond();
     video_overlay = lv_obj_create(root);
     if (!video_overlay) { video_player_close(); message("无法创建视频窗口。"); return; }
     lv_obj_set_size(video_overlay, lv_obj_get_width(root), lv_obj_get_height(root));
@@ -1222,7 +1205,7 @@ static void timer(lv_timer_t *timer_obj)
         }
     }
 
-    if (page != 0) {
+    if (page != 0 && !image_overlay && !video_overlay) {
         snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
                  boot.current, boot.next, boot.resource,
                  sd_manager_ready() ? "已就绪" : "未插入");
@@ -1261,7 +1244,7 @@ static void timer(lv_timer_t *timer_obj)
         remote_dialog = NULL;
     }
 
-    while (storage_manager_poll(&result) == 0) {
+    while (!image_overlay && !video_overlay && storage_manager_poll(&result) == 0) {
         if (result.error) {
             snprintf(text, sizeof(text), "文件操作失败，错误码：%d", result.error);
             message(text);
@@ -1298,7 +1281,7 @@ static void timer(lv_timer_t *timer_obj)
         }
     }
 
-    if (details) {
+    if (details && !image_overlay && !video_overlay) {
         if (page == 6) {
             snprintf(text, sizeof(text),
                      "当前系统槽 %c  下次启动 %c  资源槽 %c  OTA 健康状态 %s\n"

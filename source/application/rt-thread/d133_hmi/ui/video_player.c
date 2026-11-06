@@ -78,6 +78,7 @@ static void video_worker(void *parameter)
         int started = 0, failed = 0, paused = 0;
         int64_t first_pts = -1;
         rt_uint32_t start_ms = 0;
+        rt_uint32_t last_frame_ms = rt_tick_get_millisecond();
         set_state(VIDEO_LOADING, "正在打开视频……");
         player = aic_player_create(RT_NULL);
         if (!player || aic_player_set_uri(player, path) || aic_player_prepare_sync(player) ||
@@ -133,7 +134,13 @@ static void video_worker(void *parameter)
             if (paused) { rt_thread_mdelay(20); continue; }
             int result = aic_player_get_frame(player, &frame);
             if (result < 0) { set_state(VIDEO_ERROR, "视频解码失败或 SD 卡已移除"); failed = 1; break; }
-            if (result > 0) { rt_thread_mdelay(5); continue; }
+            if (result > 0) {
+                if (rt_tick_get_millisecond() - last_frame_ms > 3000U) {
+                    set_state(VIDEO_ERROR, "3 秒没有收到视频帧：请检查 SD 卡读取速度和 MP4/MJPEG 编码");
+                    failed = 1; break;
+                }
+                rt_thread_mdelay(5); continue;
+            }
             if (frame.flags & FRAME_FLAG_EOS) { aic_player_put_frame(player, &frame); break; }
             if (!frame.buf.phy_addr[0] || frame.buf.buf_type != MPP_PHY_ADDR ||
                 frame.buf.format != MPP_FMT_RGB_565 || frame.buf.stride[0] < width * 2U ||
@@ -176,12 +183,17 @@ static void video_worker(void *parameter)
             rt_mutex_release(&video_lock);
             if (direct_mode) {
                 /* 持有帧直至 LVGL 绘制完成，避免解码器覆盖正在使用的像素。 */
+                rt_uint32_t lease_start_ms = rt_tick_get_millisecond();
                 while (!stop_requested) {
                     int leased;
                     rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
                     leased = frame_buffer != RT_NULL;
                     rt_mutex_release(&video_lock);
                     if (!leased) break;
+                    if (rt_tick_get_millisecond() - lease_start_ms > 1000U) {
+                        set_state(VIDEO_ERROR, "显示帧等待 LVGL 超时：视频缓冲未交还");
+                        failed = 1; break;
+                    }
                     rt_thread_mdelay(2);
                 }
                 rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
@@ -189,6 +201,8 @@ static void video_worker(void *parameter)
                 rt_mutex_release(&video_lock);
             }
             aic_player_put_frame(player, &frame);
+            if (failed) break;
+            last_frame_ms = rt_tick_get_millisecond();
         }
         if (!stop_requested && !failed) set_state(VIDEO_ENDED, "播放完成，点击返回");
 cleanup:

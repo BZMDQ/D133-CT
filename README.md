@@ -1,3 +1,9 @@
+当前候选版 v1.0.61：[签名 OTA](downloads/D133-CT_OTA_v1.0.61.zip)、[工厂包](downloads/D133-CT_factory_v1.0.61.zip)、[低码率测试视频](downloads/D133_720P60_MJPEG_5s.mp4)、[黑屏修正说明](docs/视频黑屏修正_v1.0.61.md)。同一开发板播放尚待复测。
+
+当前候选版 v1.0.61：[签名 OTA](downloads/D133-CT_OTA_v1.0.61.zip)、[工厂包](downloads/D133-CT_factory_v1.0.61.zip)、[黑屏修正说明](docs/视频黑屏修正_v1.0.61.md)、[低码率 720P60 测试视频](downloads/D133_720P60_MJPEG_5s.mp4)。保留上一帧的修正需要实机确认。
+
+当前候选版 v1.0.61：[签名 OTA](downloads/D133-CT_OTA_v1.0.61.zip)、[工厂包](downloads/D133-CT_factory_v1.0.61.zip)、[测试视频](downloads/D133_720P60_MJPEG_5s.mp4)、[故障说明](docs/视频黑屏修正_v1.0.61.md)。保留上一帧的修正待上板确认。
+
 当前候选版 v1.0.60：[签名 OTA](downloads/D133-CT_OTA_v1.0.60.zip)、[工厂包](downloads/D133-CT_factory_v1.0.60.zip)、[720P 视频说明](docs/720P视频_v1.0.60.md)、[低码率测试视频](downloads/D133_720P60_MJPEG_5s.mp4)。720P 软硬件组合及帧率待实机验证。
 
 当前候选版 v1.0.59：[工厂包](downloads/D133-CT_factory_v1.0.59.zip)、[签名 OTA](downloads/D133-CT_OTA_v1.0.59.zip)、[视频启动说明](docs/视频启动诊断_v1.0.59.md)。调整视频缓存申请顺序并增加错误诊断，板上结果待验证。
