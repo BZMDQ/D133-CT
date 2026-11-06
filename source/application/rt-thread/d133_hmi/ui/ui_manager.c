@@ -83,8 +83,7 @@ static lv_obj_t *mask_input;
 static lv_obj_t *gw_input;
 static lv_obj_t *wifi_ssid_input;
 static lv_obj_t *wifi_password_input;
-static lv_obj_t *wifi_ap_ssid_input;
-static lv_obj_t *wifi_ap_password_input;
+static lv_obj_t *wifi_status_label;
 static lv_obj_t *wifi_saved_dropdown;
 static lv_obj_t *wifi_scan_dropdown;
 static unsigned wifi_scan_display_generation = UINT32_MAX;
@@ -112,7 +111,7 @@ static const lv_style_prop_t ui_transition_props[] = { LV_STYLE_BG_COLOR, LV_STY
 
 static const char *titles[] = {
     "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
-    "设备总览", "屏幕检测", "WiFi 设置"
+    "设备总览", "屏幕检测"
 };
 
 static const lv_font_t *body_font(void)
@@ -817,8 +816,6 @@ static void apply_network(lv_event_t *event)
 enum {
     WIFI_CONNECT_TYPED = 1,
     WIFI_CONNECT_SELECTED,
-    WIFI_AP_START,
-    WIFI_AP_STOP,
     WIFI_SCAN,
     WIFI_USE_SCAN
 };
@@ -835,12 +832,6 @@ static void wifi_action(lv_event_t *event)
         lv_textarea_set_text(wifi_password_input, "");
     } else if (action == WIFI_CONNECT_SELECTED && wifi_saved_dropdown) {
         result = wifi_manager_connect_saved(lv_dropdown_get_selected(wifi_saved_dropdown));
-    } else if (action == WIFI_AP_START && wifi_ap_ssid_input && wifi_ap_password_input) {
-        result = wifi_manager_start_ap(lv_textarea_get_text(wifi_ap_ssid_input),
-                                      lv_textarea_get_text(wifi_ap_password_input));
-        lv_textarea_set_text(wifi_ap_password_input, "");
-    } else if (action == WIFI_AP_STOP) {
-        result = wifi_manager_stop_ap();
     } else if (action == WIFI_SCAN) {
         result = wifi_manager_scan();
     } else if (action == WIFI_USE_SCAN && wifi_scan_dropdown && wifi_ssid_input) {
@@ -879,12 +870,6 @@ static void start_screen_test(lv_event_t *event)
     if (screen_test_start(lv_screen_active(), body_font(),
                           screen_test_return_to_menu, NULL) != 0)
         message("屏幕检测启动失败，请确认显示器已初始化。");
-}
-
-static void open_wifi_settings(lv_event_t *event)
-{
-    LV_UNUSED(event);
-    screen(8);
 }
 
 static void toggle_reduce_motion(lv_event_t *event)
@@ -927,7 +912,9 @@ static void screen(unsigned number)
         snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
     }
 
-    if (number >= 9)
+    if (number == 8)
+        number = 4;
+    if (number >= 8)
         return;
     page = number;
     lv_label_set_text(page_title, number == 0 ? "D133-控制终端" : titles[number]);
@@ -953,10 +940,11 @@ static void screen(unsigned number)
     details = table = pathbox = targetbox = editor = progress = NULL;
     ip_input = mask_input = gw_input = NULL;
     wifi_ssid_input = wifi_password_input = NULL;
-    wifi_ap_ssid_input = wifi_ap_password_input = NULL;
     wifi_saved_dropdown = NULL;
     wifi_scan_dropdown = NULL;
     wifi_scan_display_generation = UINT32_MAX;
+    wifi_status_label = NULL;
+    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     if (number == 0) {
         /* 首页只显示已实现的应用入口，设备状态在独立总览页查看。 */
@@ -1037,70 +1025,56 @@ static void screen(unsigned number)
         button(content, ui_reduce_motion ? "减少动画：开" : "减少动画：关",
                32, 334, 240, toggle_reduce_motion, NULL);
     } else if (number == 4) {
-        panel(content, 16, 8, 960, 478, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        label(content, "连接与 TCP 服务", 32, 20, 920);
-        details = label(content, "正在检查网络和监听端口……", 32, 54, 920);
-        panel(content, 32, 112, 912, 190, UI_COLOR_SURFACE_ALT, 0);
-        label(content, "IPv4 地址", 48, 128, 270);
-        label(content, "子网掩码", 356, 128, 270);
-        label(content, "默认网关", 664, 128, 264);
-        ip_input = input(content, "192.168.1.200", 48, 160, 270, 48);
-        mask_input = input(content, "255.255.255.0", 356, 160, 270, 48);
-        gw_input = input(content, "192.168.1.1", 664, 160, 264, 48);
-        button(content, "应用静态地址", 48, 224, 200, apply_network, NULL);
-        primary_button(content, "启用 DHCP", 260, 224, 200, apply_network, (void *)(uintptr_t)1);
-        label(content, "无线网络", 32, 330, 280);
-        label(content, "WiFi 设置可查看 STA 地址、附近网络与保存的连接。", 32, 366, 640);
-        primary_button(content, "WiFi 设置", 724, 352, 220,
-                       open_wifi_settings, NULL);
-    } else if (number == 8) {
-        /* 左侧附近网络，右侧保存的连接和热点。 */
-        panel(content, 16, 8, 466, 468, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        panel(content, 496, 8, 480, 468, UI_COLOR_SURFACE, UI_COLOR_BLUE);
-        details = label(content, "正在初始化无线网络……", 32, 18, 920);
-        label(content, "附近的无线网络", 32, 65, 300);
+        /* 网络设置按连接状态、Wi-Fi、IP 配置三段纵向滚动排列。 */
+        lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(content, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+        panel(content, 16, 8, 960, 104, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+        label(content, "连接状态", 32, 18, 300);
+        details = label(content, "正在检查网络和 TCP 服务……", 32, 48, 920);
+        wifi_status_label = label(content, "Wi-Fi 正在启动……", 32, 77, 920);
+        panel(content, 16, 124, 960, 250, UI_COLOR_SURFACE, UI_COLOR_BLUE);
+        label(content, "Wi-Fi", 32, 137, 300);
+        label(content, "附近网络", 32, 169, 130);
         wifi_scan_dropdown = lv_dropdown_create(content);
         lv_obj_set_style_text_font(wifi_scan_dropdown, small_font(), LV_PART_MAIN);
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_scan_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_scan_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_scan_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_pos(wifi_scan_dropdown, 32, 96);
-        lv_obj_set_size(wifi_scan_dropdown, 320, 48);
+        lv_obj_set_pos(wifi_scan_dropdown, 32, 194);
+        lv_obj_set_size(wifi_scan_dropdown, 370, 44);
         lv_dropdown_set_options(wifi_scan_dropdown, "正在扫描……");
-        button(content, "刷新", 360, 96, 105, wifi_action, (void *)(uintptr_t)WIFI_SCAN);
-        button(content, "选择网络", 32, 155, 200, wifi_action, (void *)(uintptr_t)WIFI_USE_SCAN);
-        label(content, "网络名称（可手动输入）", 32, 218, 380);
-        wifi_ssid_input = input(content, "", 32, 247, 430, 44);
+        button(content, "刷新", 418, 194, 108, wifi_action, (void *)(uintptr_t)WIFI_SCAN);
+        button(content, "使用所选", 540, 194, 150, wifi_action, (void *)(uintptr_t)WIFI_USE_SCAN);
+        label(content, "网络名称", 32, 249, 200);
+        label(content, "密码", 352, 249, 210);
+        wifi_ssid_input = input(content, "", 32, 274, 300, 42);
         lv_textarea_set_max_length(wifi_ssid_input, 32);
-        label(content, "密码（开放网络可留空）", 32, 300, 380);
-        wifi_password_input = input(content, "", 32, 329, 430, 44);
+        wifi_password_input = input(content, "", 352, 274, 300, 42);
         lv_textarea_set_max_length(wifi_password_input, 63);
         lv_textarea_set_password_mode(wifi_password_input, true);
-        primary_button(content, "连接并保存", 32, 394, 250,
+        primary_button(content, "连接并保存", 672, 274, 270,
                wifi_action, (void *)(uintptr_t)WIFI_CONNECT_TYPED);
-        label(content, "已保存的网络（最多 5 组）", 512, 65, 420);
+        label(content, "已保存网络", 32, 324, 180);
         wifi_saved_dropdown = lv_dropdown_create(content);
         lv_obj_set_style_text_font(wifi_saved_dropdown, small_font(), LV_PART_MAIN);
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_saved_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_saved_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_saved_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_pos(wifi_saved_dropdown, 512, 96);
-        lv_obj_set_size(wifi_saved_dropdown, 430, 48);
+        lv_obj_set_pos(wifi_saved_dropdown, 210, 319);
+        lv_obj_set_size(wifi_saved_dropdown, 450, 42);
         wifi_refresh_saved();
-        button(content, "连接已保存网络", 512, 155, 250,
+        button(content, "连接已保存", 672, 319, 270,
                wifi_action, (void *)(uintptr_t)WIFI_CONNECT_SELECTED);
-        label(content, "设备热点", 512, 218, 260);
-        wifi_ap_ssid_input = input(content, "", 512, 247, 210, 44);
-        lv_textarea_set_max_length(wifi_ap_ssid_input, 32);
-        wifi_ap_password_input = input(content, "", 732, 247, 210, 44);
-        lv_textarea_set_max_length(wifi_ap_password_input, 63);
-        lv_textarea_set_password_mode(wifi_ap_password_input, true);
-        label(content, "热点名称", 512, 300, 210);
-        label(content, "密码（至少 8 位）", 732, 300, 210);
-        button(content, "启动热点", 512, 350, 205,
-               wifi_action, (void *)(uintptr_t)WIFI_AP_START);
-        button(content, "关闭热点", 732, 350, 205,
-               wifi_action, (void *)(uintptr_t)WIFI_AP_STOP);
+        panel(content, 16, 386, 960, 224, UI_COLOR_SURFACE, 0);
+        label(content, "IP 地址", 32, 400, 200);
+        label(content, "子网掩码", 342, 400, 220);
+        label(content, "默认网关", 652, 400, 220);
+        ip_input = input(content, "192.168.1.200", 32, 425, 280, 42);
+        mask_input = input(content, "255.255.255.0", 342, 425, 280, 42);
+        gw_input = input(content, "192.168.1.1", 652, 425, 280, 42);
+        button(content, "应用静态地址", 32, 484, 210, apply_network, NULL);
+        primary_button(content, "启用 DHCP", 254, 484, 210, apply_network, (void *)(uintptr_t)1);
         wifi_manager_scan();
     } else if (number == 5) {
         lv_obj_t *log_card = panel(content, 16, 8, 960, 480,
@@ -1169,7 +1143,7 @@ static void timer(lv_timer_t *timer_obj)
     static hmi_ota_state_t previous_state = OTA_IDLE;
     static unsigned ready_ticks;
     char text[2048];
-    char network[160];
+    char network[160], wifi_network[160];
     boot_status_t boot;
     hmi_ota_status_t ota;
 
@@ -1193,9 +1167,10 @@ static void timer(lv_timer_t *timer_obj)
     if (page == 4 || page == 6)
         network_manager_status(network, sizeof(network));
 
-    if (page == 8 && details) {
-        wifi_manager_status(network, sizeof(network));
-        lv_label_set_text(details, network);
+    if (page == 4) {
+        wifi_manager_status(wifi_network, sizeof(wifi_network));
+        if (wifi_status_label)
+            lv_label_set_text(wifi_status_label, wifi_network);
         if (wifi_saved_dropdown && wifi_manager_saved_count() != wifi_saved_dropdown_count)
             wifi_refresh_saved();
         if (wifi_scan_dropdown && wifi_scan_display_generation != wifi_manager_scan_generation()) {

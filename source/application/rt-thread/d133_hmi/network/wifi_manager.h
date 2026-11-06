@@ -7,8 +7,6 @@
 int wifi_manager_init(void);
 int wifi_manager_connect(const char *ssid, const char *password);
 int wifi_manager_connect_saved(unsigned index);
-int wifi_manager_start_ap(const char *ssid, const char *password);
-int wifi_manager_stop_ap(void);
 int wifi_manager_get_saved(unsigned index, char *ssid, size_t capacity);
 unsigned wifi_manager_saved_count(void);
 int wifi_manager_saved_options(char *text, size_t capacity);

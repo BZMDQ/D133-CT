@@ -24,16 +24,11 @@
 
 #define WIFI_PROFILE_PATH "/data/wifi_profiles.bin"
 #define WIFI_PROFILE_TEMP "/data/wifi_profiles.tmp"
-#define WIFI_AP_PATH "/data/wifi_ap.bin"
-#define WIFI_AP_TEMP "/data/wifi_ap.tmp"
 #define WIFI_BOOTSTRAP_PATH "/data/wifi_bootstrap"
 #define WIFI_PROFILE_MAGIC 0x57465031U
-#define WIFI_AP_MAGIC 0x57464131U
 #define WIFI_JOB_CONNECT 1
 #define WIFI_JOB_CONNECT_SAVED 2
-#define WIFI_JOB_AP_START 3
-#define WIFI_JOB_AP_STOP 4
-#define WIFI_JOB_SCAN 5
+#define WIFI_JOB_SCAN 3
 #define WIFI_SCAN_MAX 20
 
 typedef struct {
@@ -45,19 +40,8 @@ typedef struct {
 } wifi_profile_file_t;
 
 typedef struct {
-    uint32_t magic;
-    uint8_t ssid_len;
-    uint8_t key_len;
-    char ssid[33];
-    char key[65];
-    uint32_t crc;
-} wifi_ap_file_t;
-
-typedef struct {
     uint8_t command;
     uint8_t index;
-    uint8_t ssid_len;
-    uint8_t key_len;
     char ssid[33];
     char key[65];
 } wifi_job_t;
@@ -236,13 +220,7 @@ static int init_radio(void)
     if (result != RT_EOK)
         return result;
     /* READY 表示联网协议已就绪，不能在首次连接之前等待它。 */
-    result = rt_wlan_set_mode(RT_WLAN_DEVICE_AP_NAME, RT_WLAN_AP);
-    if (result != RT_EOK)
-        return result;
-    /* RT WLAN 默认只挂接一个 lwIP 协议；把 STA 的 netif 再挂回来，
-     * 保留 AP 的 netif，使 TCP/OTA 可从两张无线接口进入。 */
-    if (rt_wlan_prot_attach(RT_WLAN_DEVICE_STA_NAME, "lwip") != RT_EOK)
-        return -1;
+    /* 当前产品仅启用路由器客户端 STA，不启动开发板热点。 */
     rt_wlan_config_autoreconnect(RT_TRUE);
     /* SDIO 函数固件加载后给 STA/AP VIF 留出启动时间。 */
     rt_thread_mdelay(1000);
@@ -287,49 +265,6 @@ static void wifi_do_scan(void)
     update_status(result == RT_EOK ? "扫描完成" : "扫描失败，请检查无线模块");
 }
 
-static int start_ap(const char *ssid, const char *password)
-{
-    struct rt_wlan_info info;
-    struct rt_wlan_info station;
-    int channel = 6;
-    memset(&info, 0, sizeof(info));
-    info.ssid.len = (uint8_t)strlen(ssid);
-    memcpy(info.ssid.val, ssid, info.ssid.len);
-    info.security = SECURITY_WPA2_AES_PSK;
-    if (rt_wlan_is_connected() && rt_wlan_get_info(&station) == RT_EOK &&
-        station.channel > 0) {
-        channel = station.channel;
-    }
-    info.channel = channel;
-    info.band = channel >= 36 ? RT_802_11_BAND_5GHZ : RT_802_11_BAND_2_4GHZ;
-    return rt_wlan_start_ap_adv(&info, password);
-}
-
-static int ap_load(wifi_ap_file_t *record)
-{
-    int fd = open(WIFI_AP_PATH, O_RDONLY);
-    size_t done = 0;
-    if (fd < 0)
-        return -1;
-    while (done < sizeof(*record)) {
-        ssize_t n = read(fd, (uint8_t *)record + done, sizeof(*record) - done);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            close(fd);
-            return -1;
-        }
-        done += (size_t)n;
-    }
-    close(fd);
-    if (record->magic != WIFI_AP_MAGIC || !record->ssid_len || record->ssid_len > 32 ||
-        record->key_len < 8 || record->key_len > 63 || record->ssid[record->ssid_len] ||
-        record->key[record->key_len] || record->crc != crc32(0, (uint8_t *)record,
-            offsetof(wifi_ap_file_t, crc)))
-        return -1;
-    return 0;
-}
-
 static int bootstrap_load(char *ssid, char *password)
 {
     FILE *file = fopen(WIFI_BOOTSTRAP_PATH, "rb");
@@ -356,9 +291,8 @@ static int bootstrap_load(char *ssid, char *password)
 static void wifi_worker(void *parameter)
 {
     wifi_job_t job;
-    wifi_ap_file_t ap;
     char bootstrap_ssid[34] = {0}, bootstrap_key[66] = {0};
-    int persistence_ready_local = 0, bootstrap_attempted = 0, ap_attempted = 0;
+    int persistence_ready_local = 0, bootstrap_attempted = 0;
     (void)parameter;
     update_status("初始化 SDIO 无线模块");
     if (init_radio()) {
@@ -385,15 +319,6 @@ static void wifi_worker(void *parameter)
                     update_status("默认路由器连接失败，可在 WiFi 页面重试");
                 rt_memset(bootstrap_key, 0, sizeof(bootstrap_key));
                 rt_memset(bootstrap_ssid, 0, sizeof(bootstrap_ssid));
-            }
-        }
-        if (persistence_ready_local && !ap_attempted) {
-            ap_attempted = 1;
-            if (ap_load(&ap) == 0) {
-                update_status("启动已保存的设备热点");
-                if (start_ap(ap.ssid, ap.key) != RT_EOK)
-                    update_status("设备热点启动失败");
-                rt_memset(&ap, 0, sizeof(ap));
             }
         }
         if (rt_mq_recv(jobs, &job, sizeof(job), rt_tick_from_millisecond(2000)) == RT_EOK) {
@@ -427,27 +352,6 @@ static void wifi_worker(void *parameter)
                     rt_memset(key, 0, sizeof(key));
                     update_status(result == RT_EOK ? "已保存网络连接成功" : "已保存网络连接失败");
                 }
-            } else if (job.command == WIFI_JOB_AP_START) {
-                update_status("正在启动设备热点");
-                result = start_ap(job.ssid, job.key);
-                if (result == RT_EOK) {
-                    wifi_ap_file_t record;
-                    memset(&record, 0, sizeof(record));
-                    record.magic = WIFI_AP_MAGIC;
-                    record.ssid_len = job.ssid_len;
-                    record.key_len = job.key_len;
-                    memcpy(record.ssid, job.ssid, job.ssid_len);
-                    memcpy(record.key, job.key, job.key_len);
-                    record.crc = crc32(0, (uint8_t *)&record, offsetof(wifi_ap_file_t, crc));
-                    result = persistence_ready ? file_replace(WIFI_AP_TEMP, WIFI_AP_PATH,
-                        &record, sizeof(record)) : -1;
-                    rt_memset(&record, 0, sizeof(record));
-                    update_status(result == 0 ? "热点已启动并保存" : "热点已启动，但无法持久保存设置");
-                } else update_status("热点启动失败");
-                rt_memset(job.key, 0, sizeof(job.key));
-            } else if (job.command == WIFI_JOB_AP_STOP) {
-                result = rt_wlan_ap_stop();
-                update_status(result == RT_EOK ? "设备热点已关闭" : "热点关闭失败");
             }
         }
     }
@@ -516,8 +420,6 @@ int wifi_manager_connect(const char *ssid, const char *password)
         (key_len = strlen(password)) > 63)
         return -1;
     job.command = WIFI_JOB_CONNECT;
-    job.ssid_len = (uint8_t)ssid_len;
-    job.key_len = (uint8_t)key_len;
     memcpy(job.ssid, ssid, ssid_len);
     memcpy(job.key, password, key_len);
     return rt_mq_send(jobs, &job, sizeof(job));
@@ -530,28 +432,6 @@ int wifi_manager_connect_saved(unsigned index)
         return -1;
     job.command = WIFI_JOB_CONNECT_SAVED;
     job.index = (uint8_t)index;
-    return rt_mq_send(jobs, &job, sizeof(job));
-}
-
-int wifi_manager_start_ap(const char *ssid, const char *password)
-{
-    wifi_job_t job = {0};
-    size_t ssid_len, key_len;
-    if (!ssid || !password || (ssid_len = strlen(ssid)) == 0 || ssid_len > 32 ||
-        (key_len = strlen(password)) < 8 || key_len > 63)
-        return -1;
-    job.command = WIFI_JOB_AP_START;
-    job.ssid_len = (uint8_t)ssid_len;
-    job.key_len = (uint8_t)key_len;
-    memcpy(job.ssid, ssid, ssid_len);
-    memcpy(job.key, password, key_len);
-    return rt_mq_send(jobs, &job, sizeof(job));
-}
-
-int wifi_manager_stop_ap(void)
-{
-    wifi_job_t job = {0};
-    job.command = WIFI_JOB_AP_STOP;
     return rt_mq_send(jobs, &job, sizeof(job));
 }
 
@@ -608,17 +488,14 @@ int wifi_manager_saved_options(char *text, size_t capacity)
 
 void wifi_manager_status(char *text, size_t capacity)
 {
-    struct rt_wlan_device *sta, *ap;
-    char sta_ip[20] = "未连接", ap_ip[20] = "未启动";
+    struct rt_wlan_device *sta;
+    char sta_ip[20] = "未连接";
     if (!text || !capacity)
         return;
     sta = (struct rt_wlan_device *)rt_device_find(RT_WLAN_DEVICE_STA_NAME);
-    ap = (struct rt_wlan_device *)rt_device_find(RT_WLAN_DEVICE_AP_NAME);
     if (sta && sta->netdev && netdev_is_up(sta->netdev))
         ipaddr_ntoa_r(&sta->netdev->ip_addr, sta_ip, sizeof(sta_ip));
-    if (ap && ap->netdev && netdev_is_up(ap->netdev))
-        ipaddr_ntoa_r(&ap->netdev->ip_addr, ap_ip, sizeof(ap_ip));
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
-    snprintf(text, capacity, "STA %s | AP %s | %s", sta_ip, ap_ip, state_text);
+    snprintf(text, capacity, "WiFi IP %s  %s", sta_ip, state_text);
     rt_mutex_release(&state_lock);
 }

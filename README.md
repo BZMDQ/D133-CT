@@ -1,4 +1,4 @@
-当前候选版 v1.0.63：[签名 OTA](downloads/D133-CT_OTA_v1.0.63.zip)、[工厂包](downloads/D133-CT_factory_v1.0.63.zip)、[工具箱补丁](downloads/D133_工具箱统一端口5000_v1.0.63.zip)、[说明](docs/TCP统一端口5000_v1.0.63.md)。D133 信息和 OTA 统一走 TCP 5000；板端及网络实测待完成。
+当前候选版 v1.0.64：[统一端口 5000 OTA](downloads/D133-CT_OTA_v1.0.64.zip)、[工厂包](downloads/D133-CT_factory_v1.0.64.zip)、[工具箱 5000 补丁](downloads/D133_工具箱统一端口5000_v1.0.63.zip)、[STA 网络说明](docs/STA网络页面_v1.0.64.md)。设备热点已关闭，实机 STA/TCP 待验证。
 
 当前候选版 v1.0.62：[签名 OTA](downloads/D133-CT_OTA_v1.0.62.zip)、[工厂包](downloads/D133-CT_factory_v1.0.62.zip)、[TCP 监听与网络页面说明](docs/TCP监听与网络页面_v1.0.62.md)。服务监听状态和跨网段连接待实机验证。
 
