@@ -277,9 +277,12 @@ def probe(ip, port, request, interfaces=(), known=False, confirm=False,
                     stage = '读取设备信息'
                     body = request(sock, 1)
                 value = parse_device_info(body)
-                if isinstance(value, dict) and str(value.get('board', '')).upper().startswith('STM32') and value.get('uid'):
+                board = str(value.get('board', '')).upper() if isinstance(value, dict) else ''
+                supported_board = board.startswith('STM32') and value.get('uid') if isinstance(value, dict) else False
+                supported_board = supported_board or board.startswith('D133')
+                if isinstance(value, dict) and supported_board:
                     return 'found', (ip, value)
-                return 'failed', (ip, '识别设备', '响应未包含STM32型号和设备UID', protocol)
+                return 'failed', (ip, '识别设备', '响应未包含受支持的板级型号和设备UID', protocol)
         except (OSError, ValueError, RuntimeError) as exc:
             error = str(exc) or type(exc).__name__
             return 'failed', (ip, stage, error, protocol)
@@ -790,6 +793,8 @@ def install(gui):
         if 'device_name' not in info:
             return
         uid = str(info.get('uid') or '').strip()
+        if uid.upper() == 'D133CBS-UNKNOWN':
+            uid = ''
         name = truncate_name(info.get('device_name') or '')
         if uid:
             for previous, old_uid in list(app.device_uids.items()):

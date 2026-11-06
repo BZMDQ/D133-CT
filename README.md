@@ -1,3 +1,5 @@
+当前候选版 v1.0.67：[通用 OTA 包](downloads/D133-CT_OTA_v1.0.67.zip)、[工厂 IMG 包](downloads/D133-CT_factory_v1.0.67.zip)、[内存、视频、TCP 与 HMI 说明](docs/内存视频TCP与HMI_v1.0.67.md)。公开包不含通用 TCP Key，空 Key 模式仍可读取信息并经屏幕确认 OTA。需使用 `YFGY.key` 时，在本机分别以 `-Target OS`、`-Target OtaCandidate` 运行 `scripts/build.ps1`，并传入 `-ToolboxKeyFile <Key路径> -FirmwareVersion 1.0.68`；本次私有 v1.0.68 OTA/IMG 包仅保存在本机 `资料整理\D133-控制终端\内部部署`。
+
 当前候选版 v1.0.66：[统一端口 5000 OTA](downloads/D133-CT_OTA_v1.0.66.zip)、[工厂包](downloads/D133-CT_factory_v1.0.66.zip)、[网络设置说明](docs/网络设置与无以太网_v1.0.66.md)。网络页状态行调整，关闭 DHCP 服务端和 GMAC 以太网配置，保留 Wi-Fi STA、DHCP 客户端及 TCP 5000。实机连接和显示效果待验证。
 
 当前候选版 v1.0.64：[统一端口 5000 OTA](downloads/D133-CT_OTA_v1.0.64.zip)、[工厂包](downloads/D133-CT_factory_v1.0.64.zip)、[工具箱 5000 补丁](downloads/D133_工具箱统一端口5000_v1.0.63.zip)、[STA 网络说明](docs/STA网络页面_v1.0.64.md)。设备热点已关闭，实机 STA/TCP 待验证。

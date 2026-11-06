@@ -20,6 +20,7 @@
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
 #define IMAGE_BMP_BATCH_ROWS 128U
 #define IMAGE_BMP_BATCH_MAX_BYTES (512U * 1024U)
+#define IMAGE_PSRAM_ALIGNMENT 4096U
 
 typedef struct {
     char path[FM_PATH_MAX];
@@ -126,6 +127,20 @@ static void release_decode_resources(void)
     memset(&preview_image, 0, sizeof(preview_image));
 }
 
+/* BMP 文件扇区缓冲使用 PSRAM CMA，避免 512 KiB 预读缓存挤占 1 MiB SRAM。 */
+static uint8_t *image_cma_aligned_alloc(size_t size, void **owner)
+{
+    void *raw;
+
+    if (!size || !owner || size > (size_t)INT_MAX - IMAGE_PSRAM_ALIGNMENT)
+        return NULL;
+    raw = aicos_malloc_try_cma((int)(size + IMAGE_PSRAM_ALIGNMENT - 1U));
+    if (!raw)
+        return NULL;
+    *owner = raw;
+    return (uint8_t *)ALIGN_UP((uintptr_t)raw, IMAGE_PSRAM_ALIGNMENT);
+}
+
 static int dimensions_supported(const lv_image_header_t *header)
 {
     /* LVGL 的图像描述符使用 16 位宽高；不再人为限制为 1024×768。 */
@@ -228,6 +243,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint8_t *source_row = NULL;
     uint8_t *source_buffer = NULL;
     uint8_t *source_buffer2 = NULL;
+    void *source_buffer_owner = NULL;
+    void *source_buffer2_owner = NULL;
     uint8_t *batch_buffer = NULL;
     bmp_reader_t reader = {0};
     uint8_t *raw = NULL;
@@ -364,18 +381,21 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             row_batch = output_height;
     }
     preview_phase("BMP：分配批读与显示缓存");
-    source_buffer = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
+    source_buffer = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
+                                            &source_buffer_owner);
     if (!source_buffer && row_batch > 1U) {
         /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
         while (!source_buffer && row_batch > 1U) {
             row_batch /= 2U;
-            source_buffer = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
+            source_buffer = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
+                                                    &source_buffer_owner);
         }
     }
     if (!source_buffer) {
         row_batch = 1U;
         batch_stride = (size_t)source_bytes;
-        source_buffer = (uint8_t *)rt_malloc_align((size_t)source_bytes + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
+        source_buffer = image_cma_aligned_alloc((size_t)source_bytes + BMP_READ_PADDING,
+                                                &source_buffer_owner);
     }
     raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
     if (!source_buffer || !raw) {
@@ -386,9 +406,11 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
 
     /* 双缓冲失败时退回原有单线程读取，不影响低内存场景。 */
     if (row_batch > 1U && output_height > row_batch) {
-        source_buffer2 = (uint8_t *)rt_malloc_align(batch_stride * row_batch + BMP_READ_PADDING, BMP_READ_ALIGNMENT);
+        source_buffer2 = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
+                                                 &source_buffer2_owner);
         if (source_buffer2 && bmp_reader_start(&reader, file, file_size) != 0) {
-            rt_free_align(source_buffer2);
+            aicos_free(MEM_CMA, source_buffer2_owner);
+            source_buffer2_owner = NULL;
             source_buffer2 = NULL;
         }
     }
@@ -561,10 +583,10 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
 done:
     /* 先等待读取线程退出，才能释放缓冲区和关闭文件。 */
     bmp_reader_stop(&reader);
-    if (source_buffer2)
-        rt_free_align(source_buffer2);
-    if (source_buffer)
-        rt_free_align(source_buffer);
+    if (source_buffer2_owner)
+        aicos_free(MEM_CMA, source_buffer2_owner);
+    if (source_buffer_owner)
+        aicos_free(MEM_CMA, source_buffer_owner);
     if (raw)
         aicos_free(MEM_CMA, raw);
     if (file)

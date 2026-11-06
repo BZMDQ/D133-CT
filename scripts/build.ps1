@@ -1,4 +1,4 @@
-param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'))
+param([ValidateSet('OS','Bootloader','OtaCandidate','OtaProfile')][string]$Target='OS',[int]$Jobs=8,[string]$LogName='final_build.log',[string]$SdkRoot=(Join-Path $PSScriptRoot '..\..\..\D133CES\luban-lite-master'),[string]$FirmwareVersion='', [string]$ToolboxKeyFile='')
 $ErrorActionPreference='Stop'
 $project=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $sdk=(Resolve-Path $SdkRoot).Path
@@ -29,23 +29,57 @@ function Set-D133ImageVersion([string]$Path,[string]$Version){
     [IO.File]::WriteAllText($Path,$text,[Text.UTF8Encoding]::new($false))
 }
 $previousPath=$env:PATH;$previousPythonPath=$env:PYTHONPATH
+$privateKeyHeader=Join-Path $sdk 'application\rt-thread\d133_hmi\network\hmi_toolbox_key_private.h'
+$privateKeyHeaderCreated=$false
 try {
     $env:PATH=(Split-Path $python)+';'+(Join-Path $sdk 'toolchain\bin')+';'+(Join-Path $sdk 'tools\env\tools\bin')+';'+$previousPath
     $env:PYTHONPATH=Join-Path $sdk 'tools\env\tools\Python27\Lib\site-packages\scons'
+    if($FirmwareVersion -and $FirmwareVersion -notmatch '^\d+\.\d+\.\d+$'){throw 'FirmwareVersion must use semantic x.y.z format.'}
+    if($FirmwareVersion -and $Target -eq 'Bootloader'){throw 'FirmwareVersion applies to OS and OTA targets, not Bootloader.'}
+    if(Test-Path -LiteralPath $privateKeyHeader){
+        $oldHeader=Get-Content -LiteralPath $privateKeyHeader -Raw -Encoding UTF8
+        if($oldHeader.Contains('HMI_TOOLBOX_KEY_HEADER_GENERATED')){
+            Remove-Item -LiteralPath $privateKeyHeader -Force
+        }else{
+            throw 'Private toolbox key header already exists in SDK; refusing to overwrite it.'
+        }
+    }
+    if($ToolboxKeyFile){
+        $keyPath=(Resolve-Path -LiteralPath $ToolboxKeyFile).Path
+        $keyText=[IO.File]::ReadAllText($keyPath,[Text.Encoding]::ASCII).Trim()
+        if($keyText -cnotmatch '^[0-9a-fA-F]{32}$'){throw 'Toolbox Key file must contain exactly 32 hexadecimal characters.'}
+        $headerText="/* HMI_TOOLBOX_KEY_HEADER_GENERATED: local-only build input */`r`n#ifndef HMI_TOOLBOX_KEY_PRIVATE_H`r`n#define HMI_TOOLBOX_KEY_PRIVATE_H`r`n#define HMI_TOOLBOX_KEY_HEX `"$($keyText.ToLowerInvariant())`"`r`n#endif`r`n"
+        [IO.File]::WriteAllText($privateKeyHeader,$headerText,[Text.UTF8Encoding]::new($false))
+        $privateKeyHeaderCreated=$true
+        $keyText=$null
+        $headerText=$null
+    }
 $isOtaTarget=$Target -eq 'OtaCandidate' -or $Target -eq 'OtaProfile'
 $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_defconfig'}elseif($Target -eq 'OtaProfile'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_profile_defconfig'}elseif($Target -eq 'OtaCandidate'){'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_ota_defconfig'}else{'d13x_d133cbv-hmi-nor_rt-thread_d133_hmi_defconfig'}
     $sourceImageCfg=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\image_cfg.json'
+    $versionConfig=Join-Path $sdk (Join-Path 'target\configs' $def)
+    if($FirmwareVersion){
+        $configText=Get-Content -LiteralPath $versionConfig -Raw -Encoding UTF8
+        # 只替换版本文本本身，保留 CRLF 行结束，避免无 BOM 配置被覆盖成混合行尾。
+        $versionPattern='(?m)^CONFIG_HMI_FW_VERSION="[0-9]+\.[0-9]+\.[0-9]+"'
+        if($configText -notmatch $versionPattern){throw 'Selected defconfig has no HMI firmware version.'}
+        $configText=[regex]::Replace($configText,$versionPattern,'CONFIG_HMI_FW_VERSION="'+$FirmwareVersion+'"')
+        [IO.File]::WriteAllText($versionConfig,$configText,[Text.UTF8Encoding]::new($false))
+        $version=$FirmwareVersion
+    }
     if($isOtaTarget){
-        $versionLine=Select-String -Path (Join-Path $sdk (Join-Path 'target\configs' $def)) -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
+        $versionLine=Select-String -Path $versionConfig -Pattern '^CONFIG_HMI_FW_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$' | Select-Object -First 1
         if(!$versionLine){throw 'OTA candidate defconfig has no semantic firmware version'}
-        $version=$versionLine.Matches[0].Groups[1].Value
-    }else{
+        if(!$FirmwareVersion){$version=$versionLine.Matches[0].Groups[1].Value}
+    }elseif(!$FirmwareVersion){
         $imageText=Get-Content $sourceImageCfg -Raw
         $versionMatch=[regex]::Match($imageText,'("version"\s*:\s*")[^"]+(")')
         if(!$versionMatch.Success){throw 'Factory image_cfg has no product version'}
         $version=$versionMatch.Groups[0].Value -replace '^.*"([^\"]+)"$','$1'
     }
     Set-D133ImageVersion (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\image_cfg.json') $version
+    $versionAsset=Join-Path $sdk 'application\rt-thread\d133_hmi\assets\version.txt'
+    if(Test-Path -LiteralPath $versionAsset){[IO.File]::WriteAllText($versionAsset,"D133-控制终端 $version`r`n",[Text.UTF8Encoding]::new($false))}
     # 隐藏的 SDK 临时镜像配置也需采用工程分区表，避免镜像打包静默沿用旧槽位大小。
     $overlayImageCfgTmp=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp'
     if(Test-Path -LiteralPath $overlayImageCfgTmp){
@@ -79,7 +113,10 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
         }
         if($buildExit){throw "编译失败，见 docs\$LogName"}
     } finally {Pop-Location}
-} finally {$env:PATH=$previousPath;$env:PYTHONPATH=$previousPythonPath}
+} finally {
+    if($privateKeyHeaderCreated -and (Test-Path -LiteralPath $privateKeyHeader)){Remove-Item -LiteralPath $privateKeyHeader -Force}
+    $env:PATH=$previousPath;$env:PYTHONPATH=$previousPythonPath
+}
 
 
 

@@ -18,6 +18,7 @@
 #include "hmi_logo.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdint.h>
 #include <aic_core.h>
 
@@ -42,7 +43,9 @@ static lv_obj_t *top;
 static lv_obj_t *page_title;
 static lv_obj_t *back_button;
 static lv_obj_t *details;
-static lv_obj_t *table;
+static lv_obj_t *file_grid;
+static lv_obj_t *file_grid_cards[FM_LIST_MAX];
+static int file_selected_index = -1;
 static lv_obj_t *pathbox;
 static lv_obj_t *targetbox;
 static lv_obj_t *editor;
@@ -83,8 +86,14 @@ static lv_obj_t *wifi_password_input;
 static lv_obj_t *wifi_status_label;
 static lv_obj_t *wifi_saved_dropdown;
 static lv_obj_t *wifi_scan_dropdown;
+static lv_obj_t *wifi_saved_connect_button;
+static lv_obj_t *wifi_indicator_dot;
+static lv_obj_t *wifi_indicator_label;
+static lv_obj_t *device_name_label;
+static lv_obj_t *device_name_input;
+static lv_obj_t *device_name_status_label;
 static unsigned wifi_scan_display_generation = UINT32_MAX;
-static unsigned wifi_saved_dropdown_count = UINT32_MAX;
+static unsigned wifi_saved_display_generation = UINT32_MAX;
 static lv_obj_t *logo_image;
 static lv_font_t *hmi_font;
 static lv_font_t *hmi_font_small;
@@ -653,28 +662,154 @@ static void show_video(const char *path)
     if (!video_timer) close_video(NULL);
 }
 
-static void table_event(lv_event_t *event)
+static const char *file_icon_symbol(const fm_entry_t *entry)
 {
-    uint32_t row;
-    uint32_t column;
+    const char *extension;
 
-    LV_UNUSED(event);
-    lv_table_get_selected_cell(table, &row, &column);
-    LV_UNUSED(column);
-    if (row && row <= files.count) {
-        char path[FM_PATH_MAX];
-        size_t folder_len = strlen(folder);
-        size_t name_len = strlen(files.entries[row - 1].name);
+    if (!entry || entry->directory)
+        return LV_SYMBOL_DIRECTORY;
+    extension = strrchr(entry->name, '.');
+    if (!extension)
+        return LV_SYMBOL_FILE;
+    if (!strcasecmp(extension, ".bmp") || !strcasecmp(extension, ".jpg") ||
+        !strcasecmp(extension, ".jpeg") || !strcasecmp(extension, ".png"))
+        return LV_SYMBOL_IMAGE;
+    if (!strcasecmp(extension, ".avi") || !strcasecmp(extension, ".mp4") ||
+        !strcasecmp(extension, ".mov"))
+        return LV_SYMBOL_VIDEO;
+    return LV_SYMBOL_FILE;
+}
 
-        if (folder_len + name_len + 2 > sizeof(path)) {
-            message("文件路径过长。");
-            return;
-        }
-        memcpy(path, folder, folder_len);
-        path[folder_len] = '/';
-        memcpy(path + folder_len + 1, files.entries[row - 1].name, name_len + 1);
-        lv_textarea_set_text(pathbox, path);
+static uint32_t file_icon_color(const fm_entry_t *entry)
+{
+    const char *extension = entry ? strrchr(entry->name, '.') : NULL;
+    if (!entry || entry->directory)
+        return UI_COLOR_ACCENT;
+    if (extension && (!strcasecmp(extension, ".bmp") || !strcasecmp(extension, ".jpg") ||
+                      !strcasecmp(extension, ".jpeg") || !strcasecmp(extension, ".png")))
+        return UI_COLOR_GREEN;
+    if (extension && (!strcasecmp(extension, ".avi") || !strcasecmp(extension, ".mp4") ||
+                      !strcasecmp(extension, ".mov")))
+        return UI_COLOR_VIOLET;
+    return UI_COLOR_MUTED;
+}
+
+static void file_card_event(lv_event_t *event)
+{
+    uintptr_t encoded = (uintptr_t)lv_event_get_user_data(event);
+    unsigned index;
+    char path[FM_PATH_MAX];
+    size_t folder_len, name_len;
+    unsigned i;
+
+    if (!encoded)
+        return;
+    index = (unsigned)(encoded - 1U);
+    if (index >= files.count)
+        return;
+    folder_len = strlen(folder);
+    name_len = strlen(files.entries[index].name);
+    if (folder_len + name_len + 2U > sizeof(path)) {
+        message("文件路径过长。");
+        return;
     }
+    memcpy(path, folder, folder_len);
+    path[folder_len] = '/';
+    memcpy(path + folder_len + 1U, files.entries[index].name, name_len + 1U);
+    lv_textarea_set_text(pathbox, path);
+    file_selected_index = (int)index;
+    for (i = 0; i < files.count && i < FM_LIST_MAX; i++) {
+        if (!file_grid_cards[i])
+            continue;
+        lv_obj_set_style_border_color(file_grid_cards[i],
+            lv_color_hex(i == index ? UI_COLOR_ACCENT : UI_COLOR_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(file_grid_cards[i], i == index ? 2 : 1, LV_PART_MAIN);
+    }
+}
+
+/* 文件列表只在 LVGL 线程创建，三列图标卡片支持纵向滚动和单击选中。 */
+static void file_grid_render(void)
+{
+    unsigned i;
+
+    if (!file_grid)
+        return;
+    lv_obj_clean(file_grid);
+    memset(file_grid_cards, 0, sizeof(file_grid_cards));
+    file_selected_index = -1;
+    for (i = 0; i < files.count && i < FM_LIST_MAX; i++) {
+        lv_obj_t *card = lv_button_create(file_grid);
+        lv_obj_t *icon;
+        lv_obj_t *name;
+        lv_obj_t *size;
+        char size_text[24];
+        int column = (int)(i % 3U);
+        int row = (int)(i / 3U);
+        uint32_t icon_color = file_icon_color(&files.entries[i]);
+
+        if (!card)
+            continue;
+        file_grid_cards[i] = card;
+        lv_obj_set_pos(card, column * 154, row * 104);
+        lv_obj_set_size(card, 146, 96);
+        lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(card, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(card, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(card, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+        icon = lv_label_create(card);
+        lv_label_set_text(icon, file_icon_symbol(&files.entries[i]));
+        lv_obj_set_pos(icon, 0, 8);
+        lv_obj_set_size(icon, 146, 30);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_16, LV_PART_MAIN);
+        lv_obj_set_style_text_color(icon, lv_color_hex(icon_color), LV_PART_MAIN);
+        lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        name = lv_label_create(card);
+        lv_label_set_text(name, files.entries[i].name);
+        lv_obj_set_pos(name, 5, 40);
+        lv_obj_set_size(name, 136, 30);
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(name, small_font(), LV_PART_MAIN);
+        lv_obj_set_style_text_color(name, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
+        lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_clear_flag(name, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        size = lv_label_create(card);
+        if (files.entries[i].directory)
+            lv_label_set_text(size, "文件夹");
+        else if (files.entries[i].size >= 1024U * 1024U) {
+            unsigned long bytes = (unsigned long)files.entries[i].size;
+            rt_snprintf(size_text, sizeof(size_text), "%lu.%lu MiB",
+                        bytes / (1024UL * 1024UL),
+                        (bytes % (1024UL * 1024UL)) * 10UL / (1024UL * 1024UL));
+            lv_label_set_text(size, size_text);
+        } else if (files.entries[i].size >= 1024U) {
+            unsigned long bytes = (unsigned long)files.entries[i].size;
+            rt_snprintf(size_text, sizeof(size_text), "%lu.%lu KiB",
+                        bytes / 1024UL, (bytes % 1024UL) * 10UL / 1024UL);
+            lv_label_set_text(size, size_text);
+        }
+        else {
+            rt_snprintf(size_text, sizeof(size_text), "%lu B", (unsigned long)files.entries[i].size);
+            lv_label_set_text(size, size_text);
+        }
+        lv_obj_set_pos(size, 5, 72);
+        lv_obj_set_size(size, 136, 18);
+        lv_obj_set_style_text_font(size, &lv_font_montserrat_16, LV_PART_MAIN);
+        lv_obj_set_style_text_color(size, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
+        lv_obj_set_style_text_align(size, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_clear_flag(size, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(card, file_card_event, LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)(i + 1U));
+    }
+    if (!files.count)
+        label(file_grid, "此文件夹为空", 12, 12, 430);
 }
 
 static void confirmed_file(lv_event_t *event)
@@ -820,16 +955,23 @@ static void wifi_action(lv_event_t *event)
     } else if (action == WIFI_CONNECT_SELECTED && wifi_saved_dropdown) {
         result = wifi_manager_connect_saved(lv_dropdown_get_selected(wifi_saved_dropdown));
     } else if (action == WIFI_SCAN) {
+        if (wifi_scan_dropdown)
+            lv_dropdown_set_options(wifi_scan_dropdown, "正在刷新周围网络…");
         result = wifi_manager_scan();
     } else if (action == WIFI_USE_SCAN && wifi_scan_dropdown && wifi_ssid_input) {
         char ssid[33];
         result = wifi_manager_scan_ssid(lv_dropdown_get_selected(wifi_scan_dropdown), ssid, sizeof(ssid));
         if (!result) lv_textarea_set_text(wifi_ssid_input, ssid);
     }
-    if (result)
+    if (result) {
+        if (wifi_status_label)
+            lv_label_set_text(wifi_status_label, "Wi-Fi 操作未提交，请稍后重试");
         message("WiFi 请求失败：请检查输入、密码长度或稍后重试。");
-    else if (details)
-        lv_label_set_text(details, "已提交到无线工作线程，状态将自动刷新。");
+    } else if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, action == WIFI_SCAN ?
+                          "正在刷新周围 Wi-Fi 网络…" :
+                          "Wi-Fi 请求已提交，连接状态正在更新…");
+    }
 }
 
 static void wifi_refresh_saved(void)
@@ -839,8 +981,30 @@ static void wifi_refresh_saved(void)
         return;
     if (wifi_manager_saved_options(options, sizeof(options)) >= 0) {
         lv_dropdown_set_options(wifi_saved_dropdown, options);
-        wifi_saved_dropdown_count = wifi_manager_saved_count();
+        wifi_saved_display_generation = wifi_manager_saved_generation();
+        if (wifi_saved_connect_button) {
+            if (wifi_manager_saved_count())
+                lv_obj_clear_state(wifi_saved_connect_button, LV_STATE_DISABLED);
+            else
+                lv_obj_add_state(wifi_saved_connect_button, LV_STATE_DISABLED);
+        }
     }
+}
+
+static void save_device_name_action(lv_event_t *event)
+{
+    const char *name;
+
+    LV_UNUSED(event);
+    if (!device_name_input)
+        return;
+    name = lv_textarea_get_text(device_name_input);
+    if (system_manager_request_device_name(name, strlen(name)) != 0) {
+        message("设备名称无效或保存任务繁忙，请检查名称长度。 ");
+        return;
+    }
+    if (device_name_status_label)
+        lv_label_set_text(device_name_status_label, "正在保存到冗余 ENV…");
 }
 
 /* 测试画面退出后回到屏幕检测说明页。 */
@@ -909,12 +1073,16 @@ static void screen(unsigned number)
         lv_obj_add_flag(back_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(top, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(logo_image, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_indicator_dot) lv_obj_clear_flag(wifi_indicator_dot, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_indicator_label) lv_obj_clear_flag(wifi_indicator_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(page_title, 160, 30);
         lv_obj_set_width(page_title, 400);
     } else {
         lv_obj_clear_flag(back_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(top, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(logo_image, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_indicator_dot) lv_obj_add_flag(wifi_indicator_dot, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_indicator_label) lv_obj_add_flag(wifi_indicator_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(page_title, 124, 30);
         lv_obj_set_width(page_title, 400);
         lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -924,12 +1092,17 @@ static void screen(unsigned number)
     if (keyboard)
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clean(content);
-    details = table = pathbox = targetbox = editor = progress = NULL;
+    details = file_grid = pathbox = targetbox = editor = progress = NULL;
+    memset(file_grid_cards, 0, sizeof(file_grid_cards));
+    file_selected_index = -1;
     wifi_ssid_input = wifi_password_input = NULL;
     wifi_saved_dropdown = NULL;
     wifi_scan_dropdown = NULL;
+    wifi_saved_connect_button = NULL;
     wifi_scan_display_generation = UINT32_MAX;
+    wifi_saved_display_generation = UINT32_MAX;
     wifi_status_label = NULL;
+    device_name_label = device_name_input = device_name_status_label = NULL;
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     if (number == 0) {
@@ -954,21 +1127,18 @@ static void screen(unsigned number)
         for (i = 0; i < 7; i++)
             button(content, file_buttons[i], 204 + (int)i * 107, 132, 100,
                    file_action, (void *)(uintptr_t)file_operations[i]);
-        table = lv_table_create(content);
-        lv_obj_set_pos(table, 204, 194);
-        lv_obj_set_size(table, 470, 222);
-        lv_table_set_column_count(table, 2);
-        lv_table_set_column_width(table, 0, 330);
-        lv_table_set_column_width(table, 1, 120);
-        lv_obj_set_style_bg_color(table, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(table, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_color(table, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_style_border_width(table, 1, LV_PART_MAIN);
-        lv_obj_set_style_radius(table, 10, LV_PART_MAIN);
-        lv_obj_set_style_text_color(table, lv_color_hex(UI_COLOR_TEXT), LV_PART_ITEMS);
-        lv_obj_set_style_text_font(table, small_font(), LV_PART_ITEMS);
-        lv_obj_set_style_bg_color(table, lv_color_hex(0xE6F4FE), LV_PART_ITEMS | LV_STATE_PRESSED);
-        lv_obj_add_event_cb(table, table_event, LV_EVENT_VALUE_CHANGED, NULL);
+        file_grid = lv_obj_create(content);
+        lv_obj_set_pos(file_grid, 204, 194);
+        lv_obj_set_size(file_grid, 470, 222);
+        lv_obj_set_style_bg_color(file_grid, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(file_grid, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(file_grid, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
+        lv_obj_set_style_border_width(file_grid, 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(file_grid, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(file_grid, 6, LV_PART_MAIN);
+        lv_obj_set_scroll_dir(file_grid, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(file_grid, LV_SCROLLBAR_MODE_AUTO);
+        lv_obj_set_style_bg_color(file_grid, lv_color_hex(UI_COLOR_ACCENT), LV_PART_SCROLLBAR);
         editor = input(content, "", 690, 194, 266, 160);
         lv_textarea_set_max_length(editor, 511);
         button(content, "保存文本", 690, 368, 126, file_action, (void *)(uintptr_t)ST_WRITE);
@@ -995,21 +1165,23 @@ static void screen(unsigned number)
         primary_button(content, "从 SD 卡安装", 32, 310, 270, ota_action, (void *)(uintptr_t)1);
         button(content, "重启设备", 322, 310, 250, ota_action, (void *)(uintptr_t)2);
     } else if (number == 3) {
-        panel(content, 16, 8, 960, 244, UI_COLOR_SURFACE, UI_COLOR_BLUE);
-        label(content,
-              "产品型号：" HMI_PRODUCT "\n"
-              "硬件版本：" HMI_HARDWARE "\n"
-              "固件版本：" HMI_VERSION "\n"
-              "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
-              "图形库：LVGL 9.1\n",
-              32, 28, 920);
-        label(content, display_info, 32, 158, 920);
-        label(content, "启动存储：16 MiB SPI NOR | DATA：单分区",
-              32, 190, 920);
-        panel(content, 16, 270, 960, 180, UI_COLOR_SURFACE, 0);
-        label(content, "辅助功能", 32, 292, 300);
+        char device_name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+        char information[768];
+        system_manager_get_device_name(device_name, sizeof(device_name));
+        panel(content, 16, 8, 960, 300, UI_COLOR_SURFACE, UI_COLOR_BLUE);
+        rt_snprintf(information, sizeof(information),
+                    "设备名称：%s\n产品型号：%s\n硬件版本：%s\n"
+                    "固件版本：%s\n操作系统：RT-Thread / ArtInChip Luban-Lite\n"
+                    "图形库：LVGL 9.1\n内存：SRAM 1 MiB + PSRAM 8 MiB",
+                    device_name, HMI_PRODUCT, HMI_HARDWARE, HMI_VERSION);
+        label(content, information, 32, 28, 920);
+        label(content, display_info, 32, 204, 920);
+        label(content, "视频帧及图片缓冲使用 PSRAM CMA；RT-Thread 系统堆使用片内 SRAM。\n启动存储：16 MiB SPI NOR | DATA：单分区",
+              32, 236, 920);
+        panel(content, 16, 320, 960, 158, UI_COLOR_SURFACE, 0);
+        label(content, "辅助功能", 32, 342, 300);
         button(content, ui_reduce_motion ? "减少动画：开" : "减少动画：关",
-               32, 334, 240, toggle_reduce_motion, NULL);
+               32, 382, 240, toggle_reduce_motion, NULL);
     } else if (number == 4) {
         /* 单页只保留 Wi-Fi STA、已保存网络和 TCP 服务状态。 */
         panel(content, 16, 8, 960, 124, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
@@ -1028,6 +1200,8 @@ static void screen(unsigned number)
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_scan_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_scan_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_scan_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
+        lv_dropdown_set_symbol(wifi_scan_dropdown, LV_SYMBOL_DOWN);
+        lv_obj_set_style_text_color(wifi_scan_dropdown, lv_color_hex(UI_COLOR_ACCENT), LV_PART_INDICATOR);
         lv_obj_set_pos(wifi_scan_dropdown, 32, 213);
         lv_obj_set_size(wifi_scan_dropdown, 370, 42);
         lv_dropdown_set_options(wifi_scan_dropdown, "正在扫描……");
@@ -1048,11 +1222,15 @@ static void screen(unsigned number)
         lv_obj_set_style_text_font(lv_dropdown_get_list(wifi_saved_dropdown), small_font(), LV_PART_MAIN);
         lv_obj_set_style_radius(wifi_saved_dropdown, 10, LV_PART_MAIN);
         lv_obj_set_style_border_color(wifi_saved_dropdown, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
-        lv_obj_set_pos(wifi_saved_dropdown, 210, 364);
-        lv_obj_set_size(wifi_saved_dropdown, 450, 42);
+        lv_dropdown_set_symbol(wifi_saved_dropdown, LV_SYMBOL_DOWN);
+        lv_obj_set_style_text_color(wifi_saved_dropdown, lv_color_hex(UI_COLOR_ACCENT), LV_PART_INDICATOR);
+        lv_obj_set_pos(wifi_saved_dropdown, 32, 364);
+        lv_obj_set_size(wifi_saved_dropdown, 620, 42);
         wifi_refresh_saved();
-        button(content, "连接已保存", 672, 364, 270,
-               wifi_action, (void *)(uintptr_t)WIFI_CONNECT_SELECTED);
+        wifi_saved_connect_button = button(content, "连接已保存", 672, 364, 270,
+                                           wifi_action, (void *)(uintptr_t)WIFI_CONNECT_SELECTED);
+        if (!wifi_manager_saved_count())
+            lv_obj_add_state(wifi_saved_connect_button, LV_STATE_DISABLED);
         wifi_manager_scan();
     } else if (number == 5) {
         lv_obj_t *log_card = panel(content, 16, 8, 960, 480,
@@ -1065,24 +1243,34 @@ static void screen(unsigned number)
                                   LV_PART_SCROLLBAR);
         details = label(log_card, "暂无系统日志。", 8, 8, 920);
     } else if (number == 6) {
+        char device_name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+        char info[480];
+        system_manager_get_device_name(device_name, sizeof(device_name));
         panel(content, 16, 8, 460, 468, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
         panel(content, 516, 8, 460, 468, UI_COLOR_SURFACE, UI_COLOR_BLUE);
         label(content, "系统状态", 40, 28, 410);
         details = label(content, "系统状态正在读取……", 40, 68, 410);
         label(content, "设备信息", 540, 28, 410);
-        label(content,
-              "产品型号：" HMI_PRODUCT "\n"
-              "硬件版本：" HMI_HARDWARE "\n"
-              "固件版本：" HMI_VERSION "\n"
-              "操作系统：RT-Thread / ArtInChip Luban-Lite\n"
-              "图形界面：LVGL 9.1\n"
-              "屏幕配置：",
-              540, 68, 410);
-        label(content, display_info, 540, 222, 410);
-        label(content,
-              "启动存储：16 MiB SPI NOR\n"
-              "DATA：单分区",
-              540, 254, 410);
+        device_name_label = label(content, "设备名称：", 540, 62, 410);
+        lv_obj_set_height(device_name_label, 26);
+        lv_label_set_long_mode(device_name_label, LV_LABEL_LONG_DOT);
+        rt_snprintf(info, sizeof(info),
+                    "产品型号：%s\n硬件版本：%s\n固件版本：%s\n"
+                    "操作系统：RT-Thread / ArtInChip Luban-Lite\n图形界面：LVGL 9.1",
+                    HMI_PRODUCT, HMI_HARDWARE, HMI_VERSION);
+        label(content, info, 540, 92, 410);
+        label(content, display_info, 540, 206, 410);
+        label(content, "内存：SRAM 1 MiB + PSRAM 8 MiB\n视频帧及图片缓冲走 PSRAM CMA",
+              540, 238, 410);
+        label(content, "修改设备名称", 540, 302, 240);
+        device_name_input = input(content, device_name, 540, 328, 270, 44);
+        lv_textarea_set_max_length(device_name_input, HMI_DEVICE_NAME_MAX_BYTES);
+        primary_button(content, "保存名称", 820, 328, 136,
+                       save_device_name_action, NULL);
+        device_name_status_label = label(content, "名称修改会同步到 TCP 5000 工具箱信息。",
+                                          540, 384, 410);
+        lv_obj_set_height(device_name_status_label, 48);
+        lv_label_set_long_mode(device_name_status_label, LV_LABEL_LONG_DOT);
         button(content, ui_reduce_motion ? "减少动画：开" : "减少动画：关",
                40, 392, 240, toggle_reduce_motion, NULL);
     } else if (number == 7) {
@@ -1122,6 +1310,7 @@ static void timer(lv_timer_t *timer_obj)
     static unsigned ready_ticks;
     char text[2048];
     char network[160], wifi_network[160];
+    rt_size_t heap_total = 0, heap_used = 0, heap_peak = 0;
     boot_status_t boot;
     hmi_ota_status_t ota;
 
@@ -1149,7 +1338,7 @@ static void timer(lv_timer_t *timer_obj)
         wifi_manager_status(wifi_network, sizeof(wifi_network));
         if (wifi_status_label)
             lv_label_set_text(wifi_status_label, wifi_network);
-        if (wifi_saved_dropdown && wifi_manager_saved_count() != wifi_saved_dropdown_count)
+        if (wifi_saved_dropdown && wifi_manager_saved_generation() != wifi_saved_display_generation)
             wifi_refresh_saved();
         if (wifi_scan_dropdown && wifi_scan_display_generation != wifi_manager_scan_generation()) {
             char options[1024];
@@ -1158,7 +1347,44 @@ static void timer(lv_timer_t *timer_obj)
                 lv_dropdown_set_options(wifi_scan_dropdown, options);
         }
     }
-
+    if (page == 6) {
+        char current_name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+        const char *save_text;
+        int save_state = system_manager_device_name_save_state();
+        system_manager_get_device_name(current_name, sizeof(current_name));
+        if (device_name_label) {
+            snprintf(text, sizeof(text), "设备名称：%s", current_name);
+            if (strcmp(lv_label_get_text(device_name_label), text))
+                lv_label_set_text(device_name_label, text);
+        }
+        if (device_name_input && !lv_obj_has_state(device_name_input, LV_STATE_FOCUSED) &&
+            strcmp(lv_textarea_get_text(device_name_input), current_name))
+            lv_textarea_set_text(device_name_input, current_name);
+        if (save_state == HMI_DEVICE_NAME_SAVE_PENDING)
+            save_text = "正在保存到冗余 ENV…";
+        else if (save_state == HMI_DEVICE_NAME_SAVE_OK)
+            save_text = "设备名称已保存并同步到工具箱。";
+        else if (save_state == HMI_DEVICE_NAME_SAVE_ERROR)
+            save_text = "保存失败，请检查 ENV 或名称长度。";
+        else
+            save_text = "名称会同步到 TCP 5000 工具箱信息。";
+        if (device_name_status_label && strcmp(lv_label_get_text(device_name_status_label), save_text))
+            lv_label_set_text(device_name_status_label, save_text);
+    }
+    if (wifi_indicator_label && page == 0) {
+        wifi_manager_indicator_t wifi_state = wifi_manager_indicator_state();
+        uint32_t color = wifi_state == WIFI_INDICATOR_CONNECTED ? UI_COLOR_GREEN :
+                         wifi_state == WIFI_INDICATOR_CONNECTING ? 0xEAA000U :
+                         wifi_state == WIFI_INDICATOR_FAILED ? 0xE5484DU : UI_COLOR_MUTED;
+        const char *status = wifi_state == WIFI_INDICATOR_CONNECTED ? LV_SYMBOL_WIFI " Wi-Fi 已连接" :
+                             wifi_state == WIFI_INDICATOR_CONNECTING ? LV_SYMBOL_WIFI " Wi-Fi 连接中" :
+                             wifi_state == WIFI_INDICATOR_FAILED ? LV_SYMBOL_WIFI " Wi-Fi 连接失败" :
+                             LV_SYMBOL_WIFI " Wi-Fi 未开启";
+        lv_obj_set_style_bg_color(wifi_indicator_dot, lv_color_hex(color), LV_PART_MAIN);
+        lv_obj_set_style_text_color(wifi_indicator_label, lv_color_hex(color), LV_PART_MAIN);
+        if (strcmp(lv_label_get_text(wifi_indicator_label), status))
+            lv_label_set_text(wifi_indicator_label, status);
+    }
     if (page != 0 && !image_overlay && !video_overlay) {
         snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
                  boot.current, boot.next, boot.resource,
@@ -1206,18 +1432,7 @@ static void timer(lv_timer_t *timer_obj)
         }
         if (page == 1 && result.op == ST_LIST) {
             files = result.list;
-            lv_table_set_row_count(table, files.count + 1);
-            lv_table_set_cell_value(table, 0, 0, folder);
-            lv_table_set_cell_value(table, 0, 1, "大小");
-            for (unsigned i = 0; i < files.count; i++) {
-                lv_table_set_cell_value(table, i + 1, 0, files.entries[i].name);
-                if (files.entries[i].directory)
-                    snprintf(text, sizeof(text), "文件夹");
-                else
-                    snprintf(text, sizeof(text), "%lu",
-                             (unsigned long)files.entries[i].size);
-                lv_table_set_cell_value(table, i + 1, 1, text);
-            }
+            file_grid_render();
             if (details) {
                 snprintf(text, sizeof(text), "当前目录：%s，共 %u 项%s",
                          folder, files.count, files.truncated ? "（列表已截断）" : "");
@@ -1237,15 +1452,19 @@ static void timer(lv_timer_t *timer_obj)
 
     if (details && !image_overlay && !video_overlay) {
         if (page == 6) {
+            rt_memory_info(&heap_total, &heap_used, &heap_peak);
             snprintf(text, sizeof(text),
                      "当前系统槽 %c  下次启动 %c  资源槽 %c  OTA 健康状态 %s\n"
                      "健康检查故障位 0x%02lx（1看门狗/2触摸/4槽位/8界面心跳/16资源挂载）\n"
-                     "网络：%s  SD 卡：%s  运行时间：%lu 秒",
+                     "网络：%s  SD 卡：%s  运行时间：%lu 秒\n"
+                     "片内 SRAM 系统堆：已用 %lu / %lu KiB；PSRAM CMA：8 MiB",
                      boot.current, boot.next, boot.resource,
                      boot.confirmed ? "已确认" : "健康检查中",
                      (unsigned long)boot_manager_health_faults(), network,
                      sd_manager_ready() ? "已就绪" : "未插入",
-                     (unsigned long)(rt_tick_get() / RT_TICK_PER_SECOND));
+                     (unsigned long)(rt_tick_get() / RT_TICK_PER_SECOND),
+                     (unsigned long)(heap_used / 1024U),
+                     (unsigned long)(heap_total / 1024U));
             lv_label_set_text(details, text);
         } else if (page == 2) {
             snprintf(text, sizeof(text), "状态：%s | 进度：%u%% | 错误码：%d | 版本：%s",
@@ -1328,6 +1547,21 @@ void hmi_ui_init(void)
     lv_obj_set_style_radius(top, 14, LV_PART_MAIN);
     lv_obj_set_style_border_width(top, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(top, 0, LV_PART_MAIN);
+
+    /* 首页 Wi-Fi 状态胶囊由 LVGL 定时器更新；灰色表示无线未启动。 */
+    wifi_indicator_dot = lv_obj_create(root);
+    lv_obj_set_pos(wifi_indicator_dot, 884, 31);
+    lv_obj_set_size(wifi_indicator_dot, 14, 14);
+    lv_obj_set_style_radius(wifi_indicator_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(wifi_indicator_dot, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(wifi_indicator_dot, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(wifi_indicator_dot, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(wifi_indicator_dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    wifi_indicator_label = label(root, LV_SYMBOL_WIFI " Wi-Fi", 906, 22, 100);
+    lv_obj_set_height(wifi_indicator_label, 36);
+    lv_obj_set_style_text_font(wifi_indicator_label, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(wifi_indicator_label, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
+    lv_obj_clear_flag(wifi_indicator_label, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     back_button = button(root, "返回", 16, 21, 88, navigation, (void *)(uintptr_t)0);
     lv_obj_set_style_bg_color(back_button, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
     lv_obj_set_style_text_color(back_button, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);

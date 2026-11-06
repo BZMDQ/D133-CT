@@ -3,10 +3,10 @@
 #include "system_manager.h"
 #include "ota_package.h"
 #include "display_profile_manager.h"
+#include "env_manager.h"
 #include <stdio.h>
 #include <rtthread.h>
 #include <rtdevice.h>
-#include <env.h>
 #include <absystem_os.h>
 #include <dfs_fs.h>
 #include <string.h>
@@ -66,10 +66,24 @@ static void monitor(void *arg)
 }
 int boot_manager_refresh(void)
 {
-    char *v;if(fw_env_open())return -1;rt_mutex_take(&lock,RT_WAITING_FOREVER);
-    v=fw_getenv("osAB_now");state.current=v?v[0]:'?';v=fw_getenv("osAB_next");state.next=v?v[0]:'?';
-    v=fw_getenv("rodataAB_now");state.resource=v?v[0]:'?';v=fw_getenv("upgrade_available");state.pending=v&&v[0]=='1';
-    rt_mutex_release(&lock);fw_env_close();return 0;
+    static const char *names[] = {
+        "osAB_now", "osAB_next", "rodataAB_now", "upgrade_available"
+    };
+    char values_storage[4][16] = {{0}};
+    char *values[] = {values_storage[0], values_storage[1],
+                      values_storage[2], values_storage[3]};
+    size_t capacities[] = {sizeof(values_storage[0]), sizeof(values_storage[1]),
+                            sizeof(values_storage[2]), sizeof(values_storage[3])};
+
+    if (env_manager_get_many(names, values, capacities, 4U) != 0)
+        return -1;
+    rt_mutex_take(&lock, RT_WAITING_FOREVER);
+    state.current = values[0][0] ? values[0][0] : '?';
+    state.next = values[1][0] ? values[1][0] : '?';
+    state.resource = values[2][0] ? values[2][0] : '?';
+    state.pending = values[3][0] == '1';
+    rt_mutex_release(&lock);
+    return 0;
 }
 int boot_manager_init(void)
 {

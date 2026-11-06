@@ -15,6 +15,7 @@
 #define VIDEO_MAX_HEIGHT 720U
 #define VIDEO_COPY_LIMIT (640U * 480U)
 #define VIDEO_PATH_SIZE 256
+#define VIDEO_NO_FRAME_TIMEOUT_MS 3000U
 
 static struct rt_mutex video_lock;
 static rt_mq_t video_jobs;
@@ -78,7 +79,8 @@ static void video_worker(void *parameter)
         int started = 0, failed = 0, paused = 0;
         int64_t first_pts = -1;
         rt_uint32_t start_ms = 0;
-        rt_uint32_t last_frame_ms = rt_tick_get_millisecond();
+        rt_uint32_t last_frame_ms = 0;
+        int first_frame_received = 0;
         set_state(VIDEO_LOADING, "正在打开视频……");
         player = aic_player_create(RT_NULL);
         if (!player || aic_player_set_uri(player, path) || aic_player_prepare_sync(player) ||
@@ -96,8 +98,8 @@ static void video_worker(void *parameter)
         direct_mode = (width * height > VIDEO_COPY_LIMIT);
         rt_mutex_release(&video_lock);
         if (direct_mode) {
-            int extra_frames = 0;
-            /* 与官方单帧播放器相同：一帧、外部分配、完成显示后再归还。 */
+            int extra_frames = 1;
+            /* 采用 SDK 官方播放器测试的外部帧数，避免 720P 解码器没有可输出帧。 */
             if (aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_NUM, &extra_frames) ||
                 aic_player_control(player, AIC_PLAYER_CMD_SET_VDEC_EXT_FRAME_ALLOCATOR, &direct_allocator)) {
                 set_state(VIDEO_ERROR, "无法配置视频帧缓存"); failed = 1; goto cleanup;
@@ -120,7 +122,9 @@ static void video_worker(void *parameter)
             }
         }
         started = 1;
-        set_state(VIDEO_PLAYING, "正在播放");
+        /* 首帧等待从解码器真正启动后计时，不把 SD 打开和索引准备算进去。 */
+        last_frame_ms = rt_tick_get_millisecond();
+        set_state(VIDEO_PLAYING, "解码器已启动，正在等待首帧…");
         while (!stop_requested) {
             struct mpp_frame frame = {0};
             if (pause_requested) {
@@ -135,8 +139,10 @@ static void video_worker(void *parameter)
             int result = aic_player_get_frame(player, &frame);
             if (result < 0) { set_state(VIDEO_ERROR, "视频解码失败或 SD 卡已移除"); failed = 1; break; }
             if (result > 0) {
-                if (rt_tick_get_millisecond() - last_frame_ms > 3000U) {
-                    set_state(VIDEO_ERROR, "3 秒没有收到视频帧：请检查 SD 卡读取速度和 MP4/MJPEG 编码");
+                if (rt_tick_get_millisecond() - last_frame_ms > VIDEO_NO_FRAME_TIMEOUT_MS) {
+                    set_state(VIDEO_ERROR, first_frame_received ?
+                        "视频帧中断超过 3 秒：请检查 SD 读取和 MJPEG 码率" :
+                        "解码器启动后 3 秒未输出首帧：请检查 MPP 帧缓存和视频编码");
                     failed = 1; break;
                 }
                 rt_thread_mdelay(5); continue;
@@ -152,7 +158,8 @@ static void video_worker(void *parameter)
             }
             /* 小画面使用交换缓存；大画面直接租用 MPP 帧，避免多份 720P 缓存。 */
             if (!direct_mode && !pixels) {
-                pixels = rt_malloc(width * height * 2U);
+                /* 普通视频交换帧也放入 PSRAM CMA，避免 1 MiB SRAM 堆被大画面占满。 */
+                pixels = (uint8_t *)(uintptr_t)mpp_phy_alloc(width * height * 2U);
                 if (!pixels) {
                     aic_player_put_frame(player, &frame);
                     set_state(VIDEO_ERROR, "首帧已解码，但视频交换缓冲内存不足");
@@ -181,6 +188,7 @@ static void video_worker(void *parameter)
             frame_width = width; frame_height = height;
             frame_sequence++;
             rt_mutex_release(&video_lock);
+            first_frame_received = 1;
             if (direct_mode) {
                 /* 持有帧直至 LVGL 绘制完成，避免解码器覆盖正在使用的像素。 */
                 rt_uint32_t lease_start_ms = rt_tick_get_millisecond();
@@ -214,7 +222,7 @@ cleanup:
         frame_buffer = RT_NULL; frame_width = frame_height = frame_sequence = direct_stride = 0;
         direct_mode = 0;
         rt_mutex_release(&video_lock);
-        if (pixels) rt_free(pixels);
+        if (pixels) mpp_phy_free((unsigned int)(uintptr_t)pixels);
         stop_requested = 0;
         pause_requested = 0;
         set_state(VIDEO_IDLE, "视频已关闭");

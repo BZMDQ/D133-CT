@@ -1,11 +1,11 @@
 #include "display_profile_manager.h"
+#include "env_manager.h"
 #include "system_manager.h"
 #include "reboot_manager.h"
 
 #include <rtthread.h>
 #include <rtdevice.h>
 #include <rthw.h>
-#include <env.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -55,15 +55,13 @@ static int profile_info_from_code(const char *code, display_profile_info_t *prof
 
 static void profile_load_from_env(void)
 {
-    char *code;
+    char code[DISPLAY_PROFILE_CODE_LENGTH] = {0};
     display_profile_info_t profile;
 
-    if (fw_env_open() != 0)
+    if (env_manager_get("hmi_screen", code, sizeof(code)) != 0)
         return;
-    code = fw_getenv("hmi_screen");
-    if (code && profile_info_from_code(code, &profile) == 0)
+    if (code[0] && profile_info_from_code(code, &profile) == 0)
         active_profile = profile;
-    fw_env_close();
 }
 
 static void profile_uart_send(const char *text)
@@ -214,20 +212,8 @@ display_profile_result_t display_profile_apply(const char *code)
     if (profile_info_from_code(code, &target) != 0)
         return DISPLAY_PROFILE_ERR_NOT_CONFIGURED;
 
-    if (fw_env_open() != 0)
+    if (env_manager_set("hmi_screen", code) != 0)
         return DISPLAY_PROFILE_ERR_ENV;
-    {
-        char env_value[DISPLAY_PROFILE_CODE_LENGTH];
-        int ret;
-
-        rt_snprintf(env_value, sizeof(env_value), "%s", code);
-        ret = fw_env_write("hmi_screen", env_value);
-        if (!ret)
-            ret = fw_env_flush();
-        fw_env_close();
-        if (ret)
-            return DISPLAY_PROFILE_ERR_ENV;
-    }
     return DISPLAY_PROFILE_REBOOT_REQUIRED;
 }
 

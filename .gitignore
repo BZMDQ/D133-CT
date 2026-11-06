@@ -11,11 +11,21 @@ __pycache__/
 # OTA 私钥只保存在开发机
 keys/*.pem
 !keys/README.md
+# ResearchToolbox 的固件配套 Key 只用于本机私有构建
+source/application/rt-thread/d133_hmi/network/hmi_toolbox_key_private.h
 # 工厂镜像和已发布 OTA 包使用显式白名单；其它本地历史下载包继续忽略
 downloads/*
 !downloads/d13x_d133cbv-hmi-nor_v1.0.45.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.45.img.sha256
 !downloads/D133-CT_factory_v1.0.45.zip
+!downloads/d13x_d133cbv-hmi-nor_v1.0.67.img
+!downloads/d13x_d133cbv-hmi-nor_v1.0.67.img.sha256
+!downloads/D133-CT_factory_v1.0.67.zip
+!downloads/D133-CT_OTA_v1.0.67.zip
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.67.cpio
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.67.cpio.sig
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.67.cpio.sha256
+!downloads/d13x_d133cbv-hmi-nor_ota_v1.0.67.json
 !downloads/d13x_d133cbv-hmi-nor_v1.0.42.img
 !downloads/d13x_d133cbv-hmi-nor_v1.0.42.img.sha256
 !downloads/D133-CT_factory_v1.0.42.zip

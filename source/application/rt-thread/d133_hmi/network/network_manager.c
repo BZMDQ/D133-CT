@@ -7,6 +7,7 @@
 #include "device_event_manager.h"
 #include "boot_manager.h"
 #include "display_profile_manager.h"
+#include "wifi_manager.h"
 #include <rtthread.h>
 #include <lwip/sockets.h>
 #include <aic_crc32.h>
@@ -14,6 +15,14 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <stdint.h>
+#if defined(__has_include)
+#if __has_include("hmi_toolbox_key_private.h")
+#include "hmi_toolbox_key_private.h"
+#endif
+#endif
+#ifndef HMI_TOOLBOX_KEY_HEX
+#define HMI_TOOLBOX_KEY_HEX ""
+#endif
 #define OP_INFO 0xD100
 #define OP_BEGIN 0xD101
 #define OP_DATA 0xD102
@@ -32,6 +41,89 @@ static int exact(int fd,void *data,unsigned size,int sending)
 {unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
 {uint32_t h[5];memcpy(h,"LNET",4);h[1]=op;h[2]=status;h[3]=length;h[4]=crc32(crc32(0,(void*)h,16),body,length);return exact(fd,h,20,1)||exact(fd,(void*)body,length,1);}
+
+/* 工具箱发送 32 位小写十六进制 ASCII Key；比较过程不提前退出。 */
+static int toolbox_key_matches(const unsigned char *provided, size_t length)
+{
+    static const char expected[] = HMI_TOOLBOX_KEY_HEX;
+    size_t expected_length = sizeof(expected) - 1U;
+    size_t i, compare_length = length < expected_length ? length : expected_length;
+    unsigned difference = (unsigned)(length ^ expected_length);
+
+    for (i = 0; i < compare_length; i++)
+        difference |= (unsigned)(provided[i] ^ (unsigned char)expected[i]);
+    return difference == 0;
+}
+
+/* 设备名只参与 JSON 字符串内容，防止引号和反斜线破坏工具箱响应。 */
+static int json_escape(char *out, size_t capacity, const char *value)
+{
+    size_t used = 0;
+
+    if (!out || !capacity || !value)
+        return -1;
+    while (*value) {
+        unsigned char c = (unsigned char)*value++;
+        if (c == '"' || c == '\\') {
+            if (used + 2U >= capacity)
+                return -1;
+            out[used++] = '\\';
+            out[used++] = (char)c;
+        } else if (c < 0x20U) {
+            if (used + 6U >= capacity)
+                return -1;
+            rt_snprintf(out + used, capacity - used, "\\u%04x", c);
+            used += 6U;
+        } else {
+            if (used + 1U >= capacity)
+                return -1;
+            out[used++] = (char)c;
+        }
+    }
+    out[used] = '\0';
+    return (int)used;
+}
+
+static int make_toolbox_info(char *info, size_t capacity, int include_runtime)
+{
+    display_profile_info_t display;
+    boot_status_t boot;
+    char name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+    char escaped_name[HMI_DEVICE_NAME_MAX_BYTES * 2U + 8U];
+    char uid[32] = {0};
+    int length;
+
+    memset(&display, 0, sizeof(display));
+    display_profile_get_active(&display);
+    boot_manager_get(&boot);
+    system_manager_get_device_name(name, sizeof(name));
+    if (wifi_manager_get_uid(uid, sizeof(uid)) < 0)
+        rt_snprintf(uid, sizeof(uid), "D133CBS-UNKNOWN");
+    if (json_escape(escaped_name, sizeof(escaped_name), name) < 0)
+        return -1;
+    if (include_runtime) {
+        length = snprintf(info, capacity,
+            "{\"product\":\"D133CBS\",\"board\":\"D133CBV-QFN88-V1-2\","
+            "\"device_name\":\"%s\",\"uid\":\"%s\",\"version\":\"%s\","
+            "\"framework\":\"RT-Thread / LVGL\",\"uptime_ms\":%lu,"
+            "\"screen_resolution\":\"%ux%u\",\"touch_ready\":%u,"
+            "\"slot\":\"%c\",\"next_slot\":\"%c\","
+            "\"health_faults\":%lu,\"ota_port\":%u,"
+            "\"sram_mb\":1,\"psram_mb\":8}",
+            escaped_name, uid, HMI_VERSION, (unsigned long)rt_tick_get_millisecond(),
+            (unsigned)display.width, (unsigned)display.height,
+            (unsigned)display.touch_enabled, boot.current, boot.next,
+            (unsigned long)boot_manager_health_faults(), D133_TCP_PORT);
+    } else {
+        length = snprintf(info, capacity,
+            "{\"product\":\"D133CBS\",\"board\":\"D133CBS\","
+            "\"device_name\":\"%s\",\"version\":\"%s\","
+            "\"uid\":\"%s\",\"port\":%u}",
+            escaped_name, HMI_VERSION, uid, D133_TCP_PORT);
+    }
+    return length >= 0 && (size_t)length < capacity ? length : -1;
+}
+
 void network_manager_status(char *out,unsigned cap)
 {
     const char *tcp_state;
@@ -54,20 +146,36 @@ static void session(int fd)
         if(memcmp(h,"LNET",4)||h[3]>sizeof(payload))break;
         if(exact(fd,payload,h[3],0))break;
         if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
-        /* 工具箱总览使用 0/1 命令及响应高位；只接受空 Key，绝不伪造认证成功。 */
+        /* 0/1 为 ResearchToolbox 认证与设备信息；27 为无写权限的快速发现。 */
         if(h[1]==0){
-            if(h[2]||h[3]){reply(fd,0x80000000U,13,0,0);break;}
+            if(h[2]||!toolbox_key_matches(payload,h[3])){reply(fd,0x80000000U,13,0,0);break;}
             info_handshake=1;
             if(!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
             if(reply(fd,0x80000000U,0,0,0))break;
             continue;
         }
         if(h[1]==1){
-            display_profile_info_t display;boot_status_t boot;char info[640];int length;
             if(!info_handshake||h[2]||h[3]){reply(fd,0x80000001U,13,0,0);break;}
-            memset(&display,0,sizeof(display));display_profile_get_active(&display);boot_manager_get(&boot);
-            length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"board\":\"D133CBV-QFN88-V1-2\",\"device_name\":\"D133-控制终端\",\"version\":\"" HMI_VERSION "\",\"framework\":\"RT-Thread / LVGL\",\"uptime_ms\":%lu,\"screen_resolution\":\"%ux%u\",\"touch_ready\":%u,\"slot\":\"%c\",\"next_slot\":\"%c\",\"health_faults\":%lu,\"ota_port\":%u}",(unsigned long)rt_tick_get_millisecond(),(unsigned)display.width,(unsigned)display.height,(unsigned)display.touch_enabled,boot.current,boot.next,(unsigned long)boot_manager_health_faults(),D133_TCP_PORT);
+            char info[1024];
+            int length = make_toolbox_info(info, sizeof(info), 1);
             if(length<0||length>=(int)sizeof(info)||reply(fd,0x80000001U,0,info,(uint32_t)length))break;
+            continue;
+        }
+        if(h[1]==26){
+            if(!info_handshake||h[2]||h[3]>HMI_DEVICE_NAME_MAX_BYTES||
+               memchr(payload,0,h[3])){reply(fd,0x8000001AU,4,0,0);break;}
+            if(system_manager_set_device_name((const char *)payload,h[3])!=0){
+                reply(fd,0x8000001AU,5,0,0);break;
+            }
+            if(reply(fd,0x8000001AU,0,0,0))break;
+            continue;
+        }
+        if(h[1]==27){
+            char info[320];
+            int length;
+            if(h[2]||h[3]){reply(fd,0x8000001BU,4,0,0);break;}
+            length=make_toolbox_info(info,sizeof(info),0);
+            if(length<0||reply(fd,0x8000001BU,0,info,(uint32_t)length))break;
             continue;
         }
         if(h[1]==OP_INFO||h[1]==OP_HEALTH){
@@ -76,7 +184,11 @@ static void session(int fd)
             boot_manager_get(&boot);
             device_event_manager_snapshot(event_name,sizeof(event_name),device_message,sizeof(device_message),&event_id);
             hmi_ota_status_t ota;ota_manager_get(&ota);
-            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"health_faults\":%lu,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d}",boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)boot_manager_health_faults(),(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
+            char device_name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+            char escaped_name[HMI_DEVICE_NAME_MAX_BYTES * 2U + 8U];
+            system_manager_get_device_name(device_name, sizeof(device_name));
+            if (json_escape(escaped_name, sizeof(escaped_name), device_name) < 0) break;
+            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"device_name\":\"%s\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"health_faults\":%lu,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d,\"sram_mb\":1,\"psram_mb\":8}",escaped_name,boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)boot_manager_health_faults(),(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
             if(length<0||length>=(int)sizeof(info))break;
             if(reply(fd,h[1],0,info,length))break;
             continue;
