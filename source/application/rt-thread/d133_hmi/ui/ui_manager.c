@@ -1038,20 +1038,21 @@ static void screen(unsigned number)
                32, 334, 240, toggle_reduce_motion, NULL);
     } else if (number == 4) {
         panel(content, 16, 8, 960, 478, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
-        label(content, "TCP 信息端口：5000（无需 Key） | D133 OTA 端口：8899", 32, 24, 920);
-        details = label(content, "正在等待以太网连接……", 32, 60, 920);
-        label(content, "IPv4 地址", 32, 120, 280);
-        label(content, "子网掩码", 346, 120, 280);
-        label(content, "默认网关", 660, 120, 280);
-        ip_input = input(content, "192.168.1.200", 32, 150, 280, 52);
-        mask_input = input(content, "255.255.255.0", 346, 150, 280, 52);
-        gw_input = input(content, "192.168.1.1", 660, 150, 280, 52);
-        button(content, "应用静态地址", 32, 226, 260, apply_network, NULL);
-        button(content, "启用 DHCP", 310, 226, 240, apply_network, (void *)(uintptr_t)1);
-        label(content, "网络参数仅在本次运行期间生效，重启后恢复编译配置。",
-              32, 300, 920);
-        primary_button(content, "WiFi 设置", 32, 365, 330,
-               open_wifi_settings, NULL);
+        label(content, "连接与 TCP 服务", 32, 20, 920);
+        details = label(content, "正在检查网络和监听端口……", 32, 54, 920);
+        panel(content, 32, 112, 912, 190, UI_COLOR_SURFACE_ALT, 0);
+        label(content, "IPv4 地址", 48, 128, 270);
+        label(content, "子网掩码", 356, 128, 270);
+        label(content, "默认网关", 664, 128, 264);
+        ip_input = input(content, "192.168.1.200", 48, 160, 270, 48);
+        mask_input = input(content, "255.255.255.0", 356, 160, 270, 48);
+        gw_input = input(content, "192.168.1.1", 664, 160, 264, 48);
+        button(content, "应用静态地址", 48, 224, 200, apply_network, NULL);
+        primary_button(content, "启用 DHCP", 260, 224, 200, apply_network, (void *)(uintptr_t)1);
+        label(content, "无线网络", 32, 330, 280);
+        label(content, "WiFi 设置可查看 STA 地址、附近网络与保存的连接。", 32, 366, 640);
+        primary_button(content, "WiFi 设置", 724, 352, 220,
+                       open_wifi_settings, NULL);
     } else if (number == 8) {
         /* 左侧附近网络，右侧保存的连接和热点。 */
         panel(content, 16, 8, 466, 468, UI_COLOR_SURFACE, UI_COLOR_ACCENT);

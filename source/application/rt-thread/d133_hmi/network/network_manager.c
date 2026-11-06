@@ -28,7 +28,9 @@
 #define PACKAGE "/sdcard/UPDATE/ota.cpio"
 static struct rt_mutex upload_lock;
 static rt_mq_t clients;
-typedef struct { int fd; int info_only; } tcp_client_job_t;
+/* 0 正在启动，1 正在监听，-1 最近一次监听尝试失败。 */
+static volatile int tcp_listener_state[1];
+typedef struct { int fd; } tcp_client_job_t;
 static int exact(int fd,void *data,unsigned size,int sending)
 {unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
@@ -36,6 +38,7 @@ static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t le
 void network_manager_status(char *out,unsigned cap)
 {
     char ip[IPADDR_STRLEN_MAX] = "0.0.0.0";
+    const char *tcp_state;
     int linked = 0;
     /* netif_default 会由以太网/WiFi 注册线程更新，读取需持有 lwIP 核心锁。 */
     LOCK_TCPIP_CORE();
@@ -44,10 +47,12 @@ void network_manager_status(char *out,unsigned cap)
         ipaddr_ntoa_r(&netif_default->ip_addr, ip, sizeof(ip));
     }
     UNLOCK_TCPIP_CORE();
-    rt_snprintf(out,cap,"默认网络%s | IP：%s | 信息 %u / OTA %u",
-                linked?"已连接":"未连接",ip,D133_INFO_TCP_PORT,D133_TCP_PORT);
+    tcp_state = tcp_listener_state[0] > 0 ? "监听中" :
+                (tcp_listener_state[0] < 0 ? "启动失败，重试中" : "正在启动");
+    rt_snprintf(out,cap,"网络%s  IP %s\nTCP %u：信息与 D133 OTA，%s",
+                linked?"已连接":"未连接",ip,D133_TCP_PORT,tcp_state);
 }
-static void session(int fd,int info_only)
+static void session(int fd)
 {
     /* 每个连接独享报文缓冲，避免健康查询覆盖升级数据。 */
     unsigned char payload[16384];
@@ -74,8 +79,6 @@ static void session(int fd,int info_only)
             if(length<0||length>=(int)sizeof(info)||reply(fd,0x80000001U,0,info,(uint32_t)length))break;
             continue;
         }
-        /* 5000 端口只提供只读信息，不接受 OTA 命令。 */
-        if(info_only){reply(fd,h[1]|0x80000000U,11,0,0);break;}
         if(h[1]==OP_INFO||h[1]==OP_HEALTH){
             char info[768],event_name[32],device_message[192];boot_status_t boot;rt_uint32_t event_id=0;
             if(h[1]==OP_INFO&&!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
@@ -138,15 +141,46 @@ static void session(int fd,int info_only)
 static void client_worker(void *unused)
 {
     tcp_client_job_t job;
-    while(1){if(rt_mq_recv(clients,&job,sizeof(job),RT_WAITING_FOREVER)==RT_EOK){session(job.fd,job.info_only);closesocket(job.fd);}}
+    while(1){if(rt_mq_recv(clients,&job,sizeof(job),RT_WAITING_FOREVER)==RT_EOK){session(job.fd);closesocket(job.fd);}}
 }
 static void server(void *unused)
 {
-    unsigned port=(unsigned)(uintptr_t)unused;
-    int listener=socket(AF_INET,SOCK_STREAM,0);struct sockaddr_in addr;int yes=1;
-    if(listener<0){system_manager_log("TCP 服务套接字创建失败");return;}setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(port);addr.sin_addr.s_addr=INADDR_ANY;
-    if(bind(listener,(void*)&addr,sizeof(addr))||listen(listener,1)){closesocket(listener);system_manager_log("TCP 服务端口绑定或监听失败");return;}
-    system_manager_log(port==D133_TCP_PORT?"D133 OTA TCP 已启动：8899":"D133 信息 TCP 已启动：5000");while(1){tcp_client_job_t job;job.fd=accept(listener,0,0);job.info_only=(port==D133_INFO_TCP_PORT);if(job.fd<0){rt_thread_mdelay(100);continue;}if(rt_mq_send(clients,&job,sizeof(job))!=RT_EOK)closesocket(job.fd);}
+    const unsigned port=D133_TCP_PORT;
+    const unsigned index = 0;
+    while(1) {
+        int listener = socket(AF_INET,SOCK_STREAM,0);
+        struct sockaddr_in addr;
+        int yes=1;
+        if(listener < 0) {
+            if(tcp_listener_state[index] != -1)
+                system_manager_log("D133 TCP 创建失败，稍后重试");
+            tcp_listener_state[index] = -1;
+            rt_thread_mdelay(1000);
+            continue;
+        }
+        setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
+        memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons(port);addr.sin_addr.s_addr=INADDR_ANY;
+        if(bind(listener,(void*)&addr,sizeof(addr)) || listen(listener,2)) {
+            closesocket(listener);
+            if(tcp_listener_state[index] != -1)
+                system_manager_log("D133 TCP 5000 绑定失败，稍后重试");
+            tcp_listener_state[index] = -1;
+            rt_thread_mdelay(1000);
+            continue;
+        }
+        tcp_listener_state[index] = 1;
+        system_manager_log("D133 TCP 正在监听 5000（系统信息与 OTA）");
+        while(1) {
+            tcp_client_job_t job;
+            job.fd=accept(listener,0,0);
+            if(job.fd<0) break;
+            if(rt_mq_send(clients,&job,sizeof(job))!=RT_EOK) closesocket(job.fd);
+        }
+        closesocket(listener);
+        tcp_listener_state[index] = -1;
+        system_manager_log("D133 TCP 监听关闭，正在重启");
+        rt_thread_mdelay(1000);
+    }
 }
 typedef struct {char ip[16],mask[16],gateway[16];int dhcp;} network_config_t;
 static rt_mq_t config_queue;
@@ -173,8 +207,7 @@ int network_manager_init(void)
     for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,24576,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
     rt_thread_t t;config_queue=rt_mq_create("netcfg",sizeof(network_config_t),2,RT_IPC_FLAG_FIFO);if(!config_queue)return -1;
     t=rt_thread_create("hmi_netcfg",configure_worker,0,3072,24,10);if(!t)return -1;rt_thread_startup(t);
-    t=rt_thread_create("hmi_tcp",server,(void *)(uintptr_t)D133_TCP_PORT,4096,23,10);if(!t||rt_thread_startup(t)!=RT_EOK)return -1;
-    t=rt_thread_create("hmi_info",server,(void *)(uintptr_t)D133_INFO_TCP_PORT,4096,23,10);return t?rt_thread_startup(t):-1;
+    t=rt_thread_create("hmi_tcp",server,RT_NULL,4096,23,10);return t?rt_thread_startup(t):-1;
 }
 
 

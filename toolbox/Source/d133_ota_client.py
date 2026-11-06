@@ -10,7 +10,7 @@ from local_tcp_client import frame, receive, DeviceError
 
 PRODUCT = 'D133CBS'
 HARDWARE = 'D133CBV-QFN88-V1-2'
-PORT = 8899
+PORT = 5000
 INFO, BEGIN, DATA, COMMIT, SIGNATURE = range(0xD100, 0xD105)
 HEALTH = 0xD105
 LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 3392*1024, 'rodata.fatfs': 5*1024*1024}
