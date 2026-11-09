@@ -1,4 +1,4 @@
-公开候选 v1.0.121：AiBurn工厂镜像已修正双OS槽/单RODATA映射，并将ENV/ENV_R设为必烧，以修复旧布局全片擦除后U-Boot缺启动槽变量。[工厂IMG](downloads/D133-CT_factory_v1.0.121.zip)、[OS-only OTA](downloads/D133-CT_OTA_v1.0.121.zip)、[工具箱TCP直写补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)、[AiBurn修正和迁移说明](docs/AiBurn启动变量修正_v1.0.121.md)。首次迁移需备份DATA并全片擦除。私有定制版v1.0.122仅存本机。尚未实机重烧验证。
+公开候选 v1.0.124：修复单RODATA布局缺少 `rodataAB_next` 导致SPL空指针崩溃，OS A/B回滚保持固定资源A。[工厂IMG](downloads/D133-CT_factory_v1.0.124.zip)、[OS-only OTA](downloads/D133-CT_OTA_v1.0.124.zip)、[工具箱TCP直写补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)、[SPL修复及迁移说明](docs/SPL单资源启动修复_v1.0.124.md)。本机私有v1.0.123仅保存在内部部署，尚未实机启动验收。
 
 基于 ArtInChip Luban-Lite 1.3.2、RT-Thread 和 LVGL 9.1，目标板 D133CBV-QFN88-V1-2 / D133CBS，16 MiB SPI NOR、1 MiB SRAM 与 8 MiB PSRAM。
 

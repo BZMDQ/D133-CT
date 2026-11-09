@@ -47,9 +47,8 @@ int aic_ota_version_fallback(void)
     }
 
 #ifdef AIC_HMI_HEALTH_CONFIRM
-    /* HMI 的 OS 与只读资源属于同一版本，回滚时必须成对切换。DATA 保持单分区。 */
-    next = fw_getenv("osAB_next");
-    ret = fw_env_write("rodataAB_next", next);
+    /* 固定资源只有一个分区，OS 回滚时资源选择必须始终保持 A。 */
+    ret = fw_env_write("rodataAB_next", "A");
     if (ret) return ret;
 #endif
     ret = fw_env_write("bootcount", "0");
@@ -153,6 +152,8 @@ int aic_get_os_to_startup(char *target_os)
 
     next = fw_getenv("osAB_next");
     now = fw_getenv("osAB_now");
+    /* 防止异常或缺失的 ENV 在 SPL 中被当作字符串解引用。 */
+    if (!next || !now) { pr_err("Missing osAB slot ENV\n"); ret=-1; goto err_write_next_os; }
 #ifdef AIC_ENV_DEBUG
     printf("osAB_next = %s\n", next);
     printf("osAB_now = %s\n", now);
@@ -178,6 +179,7 @@ int aic_get_os_to_startup(char *target_os)
 
     next = fw_getenv("rodataAB_next");
     now = fw_getenv("rodataAB_now");
+    if (!next || !now) { pr_err("Missing rodata ENV\n"); ret=-1; goto err_write_next_os; }
 #ifdef AIC_ENV_DEBUG
     printf("rodataAB_next = %s\n", next);
     printf("rodataAB_now = %s\n", now);
@@ -200,6 +202,7 @@ int aic_get_os_to_startup(char *target_os)
 
     next = fw_getenv("dataAB_next");
     now = fw_getenv("dataAB_now");
+    if (!next || !now) { pr_err("Missing data ENV\n"); ret=-1; goto err_write_next_os; }
 #ifdef AIC_ENV_DEBUG
     printf("dataAB_next = %s\n", next);
     printf("dataAB_now = %s\n", now);
