@@ -1,4 +1,4 @@
-公开候选 v1.0.120：AiBurn元数据将OS映射到os;os_r、RODATA仅映射rodata。[工厂IMG](downloads/D133-CT_factory_v1.0.120.zip)、[OS-only直写OTA](downloads/D133-CT_OTA_v1.0.120.zip)、[TCP直写工具箱补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)、[AiBurn映射及迁移说明](docs/AiBurn单资源映射_v1.0.120.md)。首次旧布局迁移需备份DATA并AiBurn全片擦除。本机私有工厂版为v1.0.119，含Key/WiFi，仅存内部部署。未执行真实烧录。
+公开候选 v1.0.121：AiBurn工厂镜像已修正双OS槽/单RODATA映射，并将ENV/ENV_R设为必烧，以修复旧布局全片擦除后U-Boot缺启动槽变量。[工厂IMG](downloads/D133-CT_factory_v1.0.121.zip)、[OS-only OTA](downloads/D133-CT_OTA_v1.0.121.zip)、[工具箱TCP直写补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)、[AiBurn修正和迁移说明](docs/AiBurn启动变量修正_v1.0.121.md)。首次迁移需备份DATA并全片擦除。私有定制版v1.0.122仅存本机。尚未实机重烧验证。
 
 基于 ArtInChip Luban-Lite 1.3.2、RT-Thread 和 LVGL 9.1，目标板 D133CBV-QFN88-V1-2 / D133CBS，16 MiB SPI NOR、1 MiB SRAM 与 8 MiB PSRAM。
 

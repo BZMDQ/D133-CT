@@ -106,12 +106,26 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
            ($canonicalParts.Groups[1].Value -replace '\s','') -ne ($hiddenParts.Groups[1].Value -replace '\s','')){
             throw 'image_cfg.json 与隐藏 .image_cfg.json.tmp 的 SPI NOR 分区表不一致；已停止打包，避免生成错误烧录映射。'
         }
+        $targetsOnly=$hiddenCfg.Substring($hiddenCfg.IndexOf('"target": {'))
+        foreach($partition in @('env','env_r')){
+            $entryPattern='(?s)"'+$partition+'"\s*:\s*\{(.*?)\}'
+            $entry=[regex]::Match($targetsOnly,$entryPattern)
+            if(!$entry.Success -or $entry.Groups[1].Value -notmatch '"attr"\s*:\s*\["mtd"\s*,\s*"required"\]'){
+                throw "Factory IMG must burn $partition ENV on the first partition-layout migration."
+            }
+        }
         if($hiddenCfg.Contains('"part": ["rodata", "rodata_r"]')){
             throw '隐藏烧录配置仍将 RODATA 写入双槽；已停止打包。'
         }
         Copy-Item -LiteralPath $overlayImageCfgTmp -Destination (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') -Force
     }
     Set-D133ImageVersion (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') $version
+    $otaSubimgs=Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\ota-subimgs.cfg'
+    $otaText=Get-Content -LiteralPath $otaSubimgs -Raw -Encoding UTF8
+    $otaVersionPattern='(?m)^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+";'
+    if($otaText -notmatch $otaVersionPattern){throw 'ota-subimgs.cfg has no version field'}
+    $otaText=[regex]::Replace($otaText,$otaVersionPattern,'version = "'+$version+'";')
+    [IO.File]::WriteAllText($otaSubimgs,$otaText,[Text.UTF8Encoding]::new($false))
     Push-Location $sdk
     try {
         & $python -c 'import SCons.Script; SCons.Script.main()' "--apply-def=$def"
