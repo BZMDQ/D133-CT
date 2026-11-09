@@ -64,14 +64,13 @@ static int validate_bytes(const unsigned char *data,unsigned length)
         char *name=(char*)stream.header+110;
         if(name[names-1]||memchr(name,0,names-1))return -1;
         if(!strcmp(name,"TRAILER!!!")){
-            if(stream.size||stream.expected||stream.seen!=7||!stream.metadata_ok)return -1;
+            if(stream.size||stream.expected||stream.seen!=3||!stream.metadata_ok)return -1;
             stream.trailer=1;stream.phase=3;continue;
         }
         if((mode&0170000)!=0100000)return -1;
         stream.member=0;
         if(!strcmp(name,"ota_info.bin")&&stream.size==512&&!stream.seen)stream.member=1;
-        else if(!strcmp(name,"d13x_os.itb")&&stream.size&&stream.size<=3392U*1024U)stream.member=2;
-        else if(!strcmp(name,"rodata.fatfs")&&stream.size&&stream.size<=3904U*1024U)stream.member=4;
+        else if(!strcmp(name,"d13x_os.itb")&&stream.size&&stream.size<=5248U*1024U)stream.member=2;
         if(!stream.member||(stream.seen&stream.member)||(!stream.seen&&stream.member!=1))return -1;
         stream.seen|=stream.member;stream.remaining=stream.size;stream.sum=0;stream.phase=1;
     }return 0;
@@ -84,8 +83,8 @@ void ota_stream_abort(int error)
 int ota_stream_begin(uint32_t total,const unsigned char hash[32],const char *version,const unsigned char *signature,unsigned signature_size)
 {
     boot_status_t boot;boot_manager_get(&boot);
-    /* 官方引擎按ENV选择OS和资源槽，配对状态异常时拒绝进入擦写。 */
-    if(!boot.confirmed||boot.current!=boot.resource||(boot.current!='A'&&boot.current!='B'))return -3;
+    /* 官方引擎按ENV选择非活动OS槽；资源文件系统固定使用A区。 */
+    if(!boot.confirmed||boot.resource!='A'||(boot.current!='A'&&boot.current!='B'))return -3;
     if(ota_manager_receive_begin(version))return -3;
     memset(&stream,0,sizeof(stream));stream.total=total;stream.need=110;
     memcpy(stream.hash,hash,32);rt_snprintf(stream.version,sizeof(stream.version),"%s",version);
@@ -110,9 +109,9 @@ int ota_stream_feed(const unsigned char *data,unsigned length)
 }
 int ota_stream_finish(const unsigned char actual_hash[32])
 {
-    extern bool os_status,rodatafs_status;
+    extern bool os_status;
     ota_manager_phase(4);ota_manager_stream_state(OTA_CHECK,100,0);
-    if(!stream.initialized||stream.checked!=stream.total||!stream.trailer||memcmp(actual_hash,stream.hash,32)||!os_status||!rodatafs_status){ota_stream_abort(-23);return -23;}
+    if(!stream.initialized||stream.checked!=stream.total||!stream.trailer||memcmp(actual_hash,stream.hash,32)||!os_status){ota_stream_abort(-23);return -23;}
     ota_deinit();stream.initialized=0;
     ota_manager_phase(5);char record[96];
     rt_snprintf(record,sizeof(record),"TCP direct verified version=%s",stream.version);

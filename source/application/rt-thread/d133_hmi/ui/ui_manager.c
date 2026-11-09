@@ -949,7 +949,7 @@ static void ota_action(lv_event_t *event)
 
     lv_msgbox_add_title(box, action == 1 ? "确认安装升级包？" : "确认重启系统？");
     lv_msgbox_add_text(box, action == 1 ?
-        "系统将校验签名并更新非活动系统槽和资源槽。成功后设备会自动重启。\n请保持供电。" :
+        "系统将校验签名并更新非活动系统槽；固定资源分区不会随 OTA 修改。成功后设备会自动重启。\n请保持供电。" :
         "即将重启设备，请确认当前操作已保存。重启期间请保持供电。");
     button_obj = lv_msgbox_add_footer_button(box, "确认");
     lv_obj_add_event_cb(button_obj, action == 1 ? confirm_sd : confirm_reboot,
@@ -1447,8 +1447,8 @@ static void timer(lv_timer_t *timer_obj)
             lv_label_set_text(wifi_indicator_label, status);
     }
     if (page != 0 && !image_overlay && !video_overlay) {
-        snprintf(text, sizeof(text), "当前槽 %c  下次启动 %c  资源槽 %c  SD 卡 %s",
-                 boot.current, boot.next, boot.resource,
+        snprintf(text, sizeof(text), "系统槽 %c  下次启动 %c  固定资源分区A  SD 卡 %s",
+                 boot.current, boot.next,
                  sd_manager_ready() ? "已就绪" : "未插入");
         lv_label_set_text(top, text);
     }
@@ -1472,7 +1472,7 @@ static void timer(lv_timer_t *timer_obj)
         remote_dialog = lv_msgbox_create(NULL);
         lv_msgbox_add_title(remote_dialog, "远程升级确认");
         lv_msgbox_add_text(remote_dialog,
-            "电脑工具箱请求安装固件。确认后将写入非活动系统槽和资源槽。\n是否继续？");
+            "电脑工具箱请求安装系统固件。固定资源分区不会随 OTA 修改。\n是否继续？");
         button_obj = lv_msgbox_add_footer_button(remote_dialog, "允许升级");
         lv_obj_add_event_cb(button_obj, remote_answer, LV_EVENT_CLICKED,
                             (void *)(uintptr_t)1);
@@ -1515,10 +1515,10 @@ static void timer(lv_timer_t *timer_obj)
         if (page == 6) {
             rt_memory_info(&heap_total, &heap_used, &heap_peak);
             snprintf(text, sizeof(text),
-                     "当前槽：%c    下次启动：%c\n资源槽：%c    健康状态：%s\n"
+                     "当前槽：%c    下次启动：%c\n固定资源分区：A    健康状态：%s\n"
                      "健康故障位：0x%02lx\n网络：%s\nSD 卡：%s\n运行时间：%lu 秒\n"
                      "SRAM 堆：%lu / %lu KiB\nPSRAM：8 MiB",
-                     boot.current, boot.next, boot.resource,
+                     boot.current, boot.next,
                      boot.confirmed ? "已确认" : "健康检查中",
                      (unsigned long)boot_manager_health_faults(), network,
                      sd_manager_ready() ? "已就绪" : "未插入",

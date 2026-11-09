@@ -1,4 +1,4 @@
-# D133-控制终端
+公开候选 v1.0.118：单一RODATA资源区，OS_A/OS_B各5248KiB：[AiBurn工厂IMG](downloads/D133-CT_factory_v1.0.118.zip)、[OS直写OTA](downloads/D133-CT_OTA_v1.0.118.zip)、[工具箱TCP补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)、[分区与迁移说明](docs/候选版本_v1.0.118_单资源.md)。本机私有定制工厂镜像和OS-only OTA为v1.0.119，仅保存在内部部署目录。旧DATA布局迁移前需备份并全片擦除，须手动使用AiBurn；未执行真实烧录。
 
 基于 ArtInChip Luban-Lite 1.3.2、RT-Thread 和 LVGL 9.1，目标板 D133CBV-QFN88-V1-2 / D133CBS，16 MiB SPI NOR、1 MiB SRAM 与 8 MiB PSRAM。
 

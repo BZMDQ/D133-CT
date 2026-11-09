@@ -52,7 +52,7 @@ static void monitor(void *arg)
         rt_tick_t now=rt_tick_get();
         int touch_ok=!profile.touch_enabled || (profile.touch_device[0] && rt_device_find(profile.touch_device));
         int ui_alive=heartbeat && now-heartbeat<rt_tick_from_millisecond(3000);
-        int slot_ok=snapshot.current==snapshot.resource;
+        int slot_ok=(snapshot.current=='A'||snapshot.current=='B')&&(snapshot.next=='A'||snapshot.next=='B')&&snapshot.resource=='A';
         int ro_ok=ro && !strcmp(ro->path, "/rodata");
         int ok=watchdog_ok && touch_ok && slot_ok && ui_alive && ro_ok;
         rt_uint32_t faults=(!watchdog_ok?1U:0U)|(!touch_ok?2U:0U)|(!slot_ok?4U:0U)|(!ui_alive?8U:0U)|(!ro_ok?16U:0U);

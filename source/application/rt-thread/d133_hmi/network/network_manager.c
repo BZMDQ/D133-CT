@@ -232,7 +232,7 @@ static void session(int fd)
             hmi_ota_status_t state;ota_manager_get(&state);
             if(active||h[3]<=132||h[3]>644||(state.state!=OTA_IDLE&&state.state!=OTA_FAILED)){reply(fd,h[1],3,0,0);continue;}
             memcpy(&total,payload,4);
-            if(!total||total>(3392U+3904U)*1024U+8192U||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
+            if(!total||total>5248U*1024U+8192U||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
             if(rt_mutex_take(&upload_lock,0)!=RT_EOK){reply(fd,h[1],3,0,0);continue;}
             owns_upload=1;stream_mode=1;memcpy(sha,payload+4,32);memcpy(version,payload+100,32);
             device_event_manager_notify(DEVICE_EVENT_TOOLBOX_OTA_STARTED);

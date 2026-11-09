@@ -22,12 +22,11 @@ static void trim(char *s)
     size_t n=strlen(s);while(n&&s[n-1]==' ')s[--n]=0;
     while(*s==' ')memmove(s,s+1,strlen(s));
 }
-/* ota_info.bin 的字段清单固定为官方 OS 与 RODATA 映射，拒绝额外目标。 */
+/* OTA 更新仅允许官方 OS 映射，固定资源分区不参与日常升级。 */
 int ota_metadata_check(const unsigned char meta[512],char version[32],uint32_t archive_size)
 {
     static const char *expected[]={"[image]","$SIZE","$VERSION","[file]",
-                                   "ota_info.bin:file;","d13x_os.itb:os;",
-                                   "rodata.fatfs:rodata;"};
+                                   "ota_info.bin:file;","d13x_os.itb:os;"};
     char line[128],size_text[32],version_text[32];unsigned index=0,pos=4;size_t n;
     size_text[0]=version_text[0]=0;
     while(pos<512){
@@ -53,7 +52,7 @@ int ota_metadata_check(const unsigned char meta[512],char version[32],uint32_t a
     }
     /* 仅允许 mkenvimage 的 0xFF 填充，禁止第二段隐藏配置。 */
     for(;pos<512;pos++)if(meta[pos]!=0&&meta[pos]!=0xff)return -1;
-    if(index!=7||!size_text[0]||!version_text[0]||strtoul(size_text,NULL,10)!=archive_size)return -1;
+    if(index!=6||!size_text[0]||!version_text[0]||strtoul(size_text,NULL,10)!=archive_size)return -1;
     snprintf(version,32,"%s",version_text);return 0;
 }
 int ota_version_newer(const char *s)
@@ -84,7 +83,7 @@ int ota_package_check(const char *path,char version[32])
         if(fread(name,1,names,f)!=names||name[names-1]||memchr(name,0,names-1))goto done;
         if(fseek(f,(4-((110+names)&3))&3,SEEK_CUR))goto done;
         if(!strcmp(name,"TRAILER!!!")){
-            if(size||expected||seen!=7||!ota_version_newer(version))goto done;
+            if(size||expected||seen!=3||!ota_version_newer(version))goto done;
             while((tail=fgetc(f))!=EOF)if(tail)goto done;
             if(ferror(f))goto done;
             result=0;goto done;
@@ -92,8 +91,7 @@ int ota_package_check(const char *path,char version[32])
         if((mode&0170000)!=0100000)goto done;
         unsigned flag=0;
         if(!strcmp(name,"ota_info.bin")&&size==512)flag=1;
-        else if(!strcmp(name,"d13x_os.itb")&&size&&size<=3473408)flag=2;
-        else if(!strcmp(name,"rodata.fatfs")&&size&&size<=3997696)flag=4;
+        else if(!strcmp(name,"d13x_os.itb")&&size&&size<=5248U*1024U)flag=2;
         if(!flag||(seen&flag)||(!seen&&flag!=1))goto done;
         seen|=flag;sum=0;remaining=size;uint32_t offset=0;
         while(remaining){size_t n=remaining>sizeof(buffer)?sizeof(buffer):remaining;

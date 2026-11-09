@@ -14,7 +14,7 @@ PORT = 5000
 INFO, BEGIN, DATA, COMMIT, SIGNATURE = range(0xD100, 0xD105)
 HEALTH = 0xD105
 STREAM_BEGIN = 0xD106
-LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 3392*1024, 'rodata.fatfs': 5*1024*1024}
+LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 5248*1024}
 
 def validate_cpio(data):
     """只接受官方 crc CPIO，校验成员、长度、加和及固定分区白名单。"""
@@ -35,8 +35,8 @@ def validate_cpio(data):
             for item in members['ota_info.bin'][4:].split(b'\0'):
                 if not item or item.startswith(b'\xff'):break
                 entries.append(item.decode('ascii').strip())
-            if len(entries)!=7 or entries[0]!='[image]' or not entries[1].startswith('size = "') or not entries[1].endswith('";') or entries[3]!='[file]' or entries[4:]!=['ota_info.bin:file;','d13x_os.itb:os;','rodata.fatfs:rodata;']:
-                raise ValueError('CPIO 仅允许 ota_info、OS、RODATA，禁止 SPL/DATA 映射')
+            if len(entries)!=6 or entries[0]!='[image]' or not entries[1].startswith('size = "') or not entries[1].endswith('";') or entries[3]!='[file]' or entries[4:]!=['ota_info.bin:file;','d13x_os.itb:os;']:
+                raise ValueError('CPIO 仅允许 ota_info 和 OS，禁止 SPL/DATA/RODATA 映射')
             match=re.fullmatch(r'version\s*=\s*"(\d+\.\d+\.\d+)";',entries[2])
             size_match=re.fullmatch(r'size\s*=\s*"(\d+)";',entries[1])
             if not match or not size_match or int(size_match.group(1))!=len(data):raise ValueError('CPIO 版本或声明长度不正确')

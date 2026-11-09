@@ -79,7 +79,7 @@ static void worker(void *unused)
         if(ota_init())goto fail;
         initialized=1;update(OTA_WRITE,0,0);
         while((n=fread(buf,1,sizeof(buf),f))){if(mbedtls_sha256_update_ret(&stream_hash,(unsigned char*)buf,n)){error=-22;goto fail;}if(ota_shard_download_fun(buf,n)<0){error=-25;goto fail;}written+=n;update(OTA_WRITE,(unsigned)(written*100/total),0);/* 每 64 KiB 让出 CPU，使网络查询和界面能及时运行。 */if((written&0xFFFF)==0)rt_thread_mdelay(1);}
-        if(ferror(f)||!os_status||!rodatafs_status){error=-26;goto fail;}
+        if(ferror(f)||!os_status){error=-26;goto fail;}
         unsigned char written_hash[32];if(mbedtls_sha256_finish_ret(&stream_hash,written_hash)||memcmp(written_hash,hash,32)){error=-23;goto fail;}mbedtls_sha256_free(&stream_hash);hash_initialized=0;
         fclose(f);f=0;ota_deinit();initialized=0;
                 char record[160];boot_status_t boot;boot_manager_get(&boot);

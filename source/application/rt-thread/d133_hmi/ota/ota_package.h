@@ -10,7 +10,7 @@
 #endif
 #define HMI_PRODUCT "D133CBS"
 #define HMI_HARDWARE "D133CBV-QFN88-V1-2"
-/* 严格预检：CPIO CRC、完整结尾、文件白名单、槽位容量和版本均在写 Flash 前验证。 */
+/* 严格预检：CPIO CRC、完整结尾、OS 文件白名单、槽位容量和版本均在写 Flash 前验证。 */
 int ota_package_check(const char *path,char version[32]);
 int ota_version_newer(const char *version);
 int ota_package_sha256(const char *path,unsigned char digest[32]);
