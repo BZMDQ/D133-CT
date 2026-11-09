@@ -23,7 +23,7 @@ static void trim(char *s)
     while(*s==' ')memmove(s,s+1,strlen(s));
 }
 /* ota_info.bin 的字段清单固定为官方 OS 与 RODATA 映射，拒绝额外目标。 */
-static int metadata_check(const unsigned char meta[512],char version[32],uint32_t archive_size)
+int ota_metadata_check(const unsigned char meta[512],char version[32],uint32_t archive_size)
 {
     static const char *expected[]={"[image]","$SIZE","$VERSION","[file]",
                                    "ota_info.bin:file;","d13x_os.itb:os;",
@@ -103,7 +103,7 @@ int ota_package_check(const char *path,char version[32])
             remaining-=(uint32_t)n;
         }
         if(sum!=expected)goto done;
-        if(flag==1&&metadata_check(meta,version,archive_size))goto done;
+        if(flag==1&&ota_metadata_check(meta,version,archive_size))goto done;
         if(fseek(f,(4-(size&3))&3,SEEK_CUR))goto done;
     }
 done:fclose(f);return result;

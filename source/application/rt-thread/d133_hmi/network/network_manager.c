@@ -1,5 +1,6 @@
 #include "network_manager.h"
 #include "ota_manager.h"
+#include "ota_stream.h"
 #include "ota_package.h"
 #include "file_manager.h"
 #include "sd_manager.h"
@@ -11,6 +12,9 @@
 #include <rtthread.h>
 #include <lwip/sockets.h>
 #include <lwip/tcp.h>
+#include <errno.h>
+#include <unistd.h>
+#include <mbedtls/sha256.h>
 #include <aic_crc32.h>
 #include <stdio.h>
 #include <string.h>
@@ -31,6 +35,7 @@
 #define OP_SIGNATURE 0xD104
 /* 新工具箱用独立健康查询，避免升级重启轮询重复触发连接提示音。 */
 #define OP_HEALTH 0xD105
+#define OP_STREAM_BEGIN 0xD106
 #define STAGING "/sdcard/UPDATE/ota.cpio.part"
 #define PACKAGE "/sdcard/UPDATE/ota.cpio"
 static struct rt_mutex upload_lock;
@@ -38,8 +43,34 @@ static rt_mq_t clients;
 /* 0 正在启动，1 正在监听，-1 最近一次监听尝试失败。 */
 static volatile int tcp_listener_state[1];
 typedef struct { int fd; } tcp_client_job_t;
+/* 每个报文有绝对截止时间，避免半包持续到达或失联连接占满工作线程。 */
 static int exact(int fd,void *data,unsigned size,int sending)
-{unsigned off=0;while(off<size){int n=sending?send(fd,(char*)data+off,size-off,0):recv(fd,(char*)data+off,size-off,0);if(n<=0)return -1;off+=n;}return 0;}
+{
+    unsigned off=0;rt_uint32_t started=rt_tick_get_millisecond();
+    while(off<size){
+        rt_uint32_t elapsed=rt_tick_get_millisecond()-started;
+        fd_set ready;struct timeval wait;
+        if(elapsed>=15000U)return -1;
+        wait.tv_sec=(15000U-elapsed)/1000U;wait.tv_usec=((15000U-elapsed)%1000U)*1000U;
+        FD_ZERO(&ready);FD_SET(fd,&ready);
+        int result=select(fd+1,sending?NULL:&ready,sending?&ready:NULL,NULL,&wait);
+        if(result<0&&errno==EINTR)continue;
+        if(result<=0)return -1;
+        int n=sending?send(fd,(char*)data+off,size-off,MSG_DONTWAIT):recv(fd,(char*)data+off,size-off,MSG_DONTWAIT);
+        if(n<0&&(errno==EINTR||errno==EWOULDBLOCK||errno==EAGAIN))continue;
+        if(n<=0)return -1;off+=(unsigned)n;
+    }
+    return 0;
+}
+/* 整块提交 DFS，避免 stdio 将 16 KiB 下载块拆成小块写卡。 */
+static int write_upload(FILE *file,const unsigned char *data,unsigned size)
+{
+    unsigned offset=0;
+    while(offset<size){ssize_t n=write(fileno(file),data+offset,size-offset);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0)return -1;offset+=(unsigned)n;}
+    return 0;
+}
 static int reply(int fd,uint32_t op,uint32_t status,const void *body,uint32_t length)
 {uint32_t h[5];memcpy(h,"LNET",4);h[1]=op;h[2]=status;h[3]=length;h[4]=crc32(crc32(0,(void*)h,16),body,length);return exact(fd,h,20,1)||exact(fd,(void*)body,length,1);}
 
@@ -140,13 +171,16 @@ static void session(int fd)
 {
     /* 每个连接独享报文缓冲，避免健康查询覆盖升级数据。 */
     unsigned char payload[16384];
-    int owns_upload=0, info_handshake=0;
+    int owns_upload=0, info_handshake=0,receive_error=-30,stream_mode=0;
+    mbedtls_sha256_context receive_hash;mbedtls_sha256_init(&receive_hash);
     uint32_t h[5],total=0,written=0;unsigned char sha[32],actual[32];char version[32]={0};FILE *file=0;int active=0,tcp_event_sent=0;
-    struct timeval timeout={120,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
-    while(!exact(fd,h,20,0)){
-        if(memcmp(h,"LNET",4)||h[3]>sizeof(payload))break;
-        if(exact(fd,payload,h[3],0))break;
-        if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
+    struct timeval timeout={15,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
+    while(1){
+        /* 细分接收失败点，健康查询可读取 ota_error，不再全部归为 -30。 */
+        receive_error=-101;if(exact(fd,h,20,0))break;
+        receive_error=-102;if(memcmp(h,"LNET",4)||h[3]>sizeof(payload))break;
+        receive_error=-103;if(exact(fd,payload,h[3],0))break;
+        receive_error=-104;if(h[4]!=crc32(crc32(0,(void*)h,16),payload,h[3])){reply(fd,h[1],9,0,0);break;}
         /* 0/1 为 ResearchToolbox 认证与设备信息；27 为无写权限的快速发现。 */
         if(h[1]==0){
             if(h[2]||!toolbox_key_matches(payload,h[3])){reply(fd,0x80000000U,13,0,0);break;}
@@ -189,46 +223,47 @@ static void session(int fd)
             char escaped_name[HMI_DEVICE_NAME_MAX_BYTES * 2U + 8U];
             system_manager_get_device_name(device_name, sizeof(device_name));
             if (json_escape(escaped_name, sizeof(escaped_name), device_name) < 0) break;
-            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"device_name\":\"%s\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"health_faults\":%lu,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d,\"sram_mb\":1,\"psram_mb\":8}",escaped_name,boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)boot_manager_health_faults(),(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
+            int length=snprintf(info,sizeof(info),"{\"product\":\"D133CBS\",\"hardware\":\"D133CBV-QFN88-V1-2\",\"device_name\":\"%s\",\"version\":\"" HMI_VERSION "\",\"protocol\":1,\"stream_ota\":2,\"package\":\"aic-cpio-crc\",\"slot\":\"%c\",\"next_slot\":\"%c\",\"confirmed\":%s,\"health_faults\":%lu,\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\",\"ota_state\":%u,\"ota_percent\":%u,\"ota_error\":%d,\"sram_mb\":1,\"psram_mb\":8}",escaped_name,boot.current,boot.next,boot.confirmed?"true":"false",(unsigned long)boot_manager_health_faults(),(unsigned long)event_id,event_name,device_message,(unsigned)ota.state,ota.percent,ota.error);
             if(length<0||length>=(int)sizeof(info))break;
             if(reply(fd,h[1],0,info,length))break;
             continue;
         }
-        if(h[1]==OP_BEGIN){
-            hmi_ota_status_t state;ota_manager_get(&state);uint64_t capacity,free_bytes;
-            if(active||h[3]!=132||(state.state!=OTA_IDLE&&state.state!=OTA_FAILED)){reply(fd,h[1],3,0,0);continue;}
+        if(h[1]==OP_STREAM_BEGIN){
+            hmi_ota_status_t state;ota_manager_get(&state);
+            if(active||h[3]<=132||h[3]>644||(state.state!=OTA_IDLE&&state.state!=OTA_FAILED)){reply(fd,h[1],3,0,0);continue;}
             memcpy(&total,payload,4);
-            /* 上限与新 A/B 分区大小一致，并预留 CPIO 头与填充空间。 */
             if(!total||total>(3392U+3904U)*1024U+8192U||payload[67]||payload[99]||payload[131]||strcmp((char*)payload+36,HMI_PRODUCT)||strcmp((char*)payload+68,HMI_HARDWARE)||!ota_version_newer((char*)payload+100)){reply(fd,h[1],4,0,0);continue;}
-            if(!sd_manager_ready()||file_manager_capacity("/sdcard",&capacity,&free_bytes)||free_bytes<total+65536){reply(fd,h[1],5,0,0);continue;}
-            if(!owns_upload){if(rt_mutex_take(&upload_lock,0)!=RT_EOK){reply(fd,h[1],3,0,0);continue;}owns_upload=1;}
-            ota_manager_get(&state);
-            if(state.state!=OTA_IDLE&&state.state!=OTA_FAILED){reply(fd,h[1],3,0,0);break;}
-            memcpy(sha,payload+4,32);memcpy(version,payload+100,32);mkdir("/sdcard/UPDATE",0777);file=fopen(STAGING,"wb");if(!file){reply(fd,h[1],5,0,0);continue;}
-            if(ota_manager_receive_begin(version)){fclose(file);file=0;reply(fd,h[1],3,0,0);break;}
-            written=0;active=1;
-            if(!tcp_event_sent){device_event_manager_notify(DEVICE_EVENT_TOOLBOX_TCP_CONNECTED);tcp_event_sent=1;}
+            if(rt_mutex_take(&upload_lock,0)!=RT_EOK){reply(fd,h[1],3,0,0);continue;}
+            owns_upload=1;stream_mode=1;memcpy(sha,payload+4,32);memcpy(version,payload+100,32);
             device_event_manager_notify(DEVICE_EVENT_TOOLBOX_OTA_STARTED);
-            {
-                char ack[320],event_name[32],device_message[192];rt_uint32_t event_id=0;
-                device_event_manager_snapshot(event_name,sizeof(event_name),device_message,sizeof(device_message),&event_id);
-                int ack_length=snprintf(ack,sizeof(ack),"{\"event_id\":%lu,\"event\":\"%s\",\"device_message\":\"%s\"}",(unsigned long)event_id,event_name,device_message);
-                if(reply(fd,h[1],0,ack,(uint32_t)ack_length))break;
-            }
-            continue;
+            int result=ota_stream_begin(total,sha,version,payload+132,h[3]-132);
+            if(result){reply(fd,h[1],(uint32_t)(-result),0,0);break;}
+            if(mbedtls_sha256_starts_ret(&receive_hash,0)){reply(fd,h[1],9,0,0);break;}
+            written=0;active=1;if(reply(fd,h[1],0,0,0))break;continue;
         }
+        /* 旧工具箱暂存协议明确拒绝，防止用户误以为已切换为直写。 */
+        if(h[1]==OP_BEGIN){reply(fd,h[1],11,0,0);continue;}
         if(h[1]==OP_DATA){
             if(!active||h[2]!=written||!h[3]||h[3]>total-written){reply(fd,h[1],6,0,0);break;}
-            if(fwrite(payload,1,h[3],file)!=h[3]){reply(fd,h[1],5,0,0);break;}written+=h[3];ota_manager_receive_progress(written,total);if(reply(fd,h[1],0,&written,4))break;continue;
+            receive_error=-105;if(stream_mode?ota_stream_feed(payload,h[3]):write_upload(file,payload,h[3])){reply(fd,h[1],5,0,0);break;}
+            receive_error=-106;if(mbedtls_sha256_update_ret(&receive_hash,payload,h[3])){reply(fd,h[1],9,0,0);break;}
+            written+=h[3];ota_manager_receive_progress(written,total);
+            receive_error=-107;if(reply(fd,h[1],0,&written,4))break;continue;
         }
                 if(h[1]==OP_SIGNATURE){
+            if(stream_mode){reply(fd,h[1],11,0,0);break;}
             if(!active||!h[3]||h[3]>512||file_manager_write(STAGING ".sig",payload,h[3])){reply(fd,h[1],9,0,0);break;}
             reply(fd,h[1],0,0,0);continue;
         }
         if(h[1]==OP_COMMIT){
             if(!active||written!=total||h[3]){reply(fd,h[1],6,0,0);break;}
+            if(stream_mode){
+                active=0;
+                if(mbedtls_sha256_finish_ret(&receive_hash,actual)||memcmp(sha,actual,32)||ota_stream_finish(actual)){reply(fd,h[1],9,0,0);break;}
+                reply(fd,h[1],0,&written,4);rt_thread_mdelay(500);ota_manager_reboot();break;
+            }
             int close_result=fclose(file);file=0;active=0;
-            if(close_result||ota_package_sha256(STAGING,actual)||memcmp(sha,actual,32)){reply(fd,h[1],9,0,0);break;}
+            if(close_result||mbedtls_sha256_finish_ret(&receive_hash,actual)||memcmp(sha,actual,32)){reply(fd,h[1],9,0,0);break;}
             /* 完整收到并校验摘要后才替换 SD 暂存包；官方 OTA 再次预检后才写 Flash。 */
             remove(PACKAGE);remove(PACKAGE ".sig");if(rename(STAGING ".sig",PACKAGE ".sig")||rename(STAGING,PACKAGE)||ota_manager_request(PACKAGE,sha,version,1)){reply(fd,h[1],3,0,0);break;}
             hmi_ota_status_t state;unsigned wait;
@@ -239,8 +274,13 @@ static void session(int fd)
         reply(fd,h[1],11,0,0);break;
     }
     if(file)fclose(file);
+    if(stream_mode){hmi_ota_status_t state;ota_manager_get(&state);if(state.state!=OTA_READY)ota_stream_abort(receive_error);}
+    mbedtls_sha256_free(&receive_hash);
     /* 连接中断或接收校验失败时解除占用，已进入官方升级阶段则不改变状态。 */
-    if(owns_upload)ota_manager_receive_abort(-30);
+    if(owns_upload){
+        char fault[128];rt_snprintf(fault,sizeof(fault),"OTA接收退出：阶段=%d 已收=%lu/%lu errno=%d",receive_error,(unsigned long)written,(unsigned long)total,errno);
+        system_manager_log(fault);ota_manager_receive_abort(receive_error);
+    }
     if(owns_upload)rt_mutex_release(&upload_lock);
     /* 断线只保留未激活的暂存文件，绝不提交 ENV。 */
 }
@@ -296,7 +336,7 @@ int network_manager_init(void)
     unsigned i;
     rt_mutex_init(&upload_lock,"otaupload",RT_IPC_FLAG_PRIO);
     clients=rt_mq_create("tcpjobs",sizeof(tcp_client_job_t),2,RT_IPC_FLAG_FIFO);if(!clients)return -1;
-    for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,24576,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
+    for(i=0;i<2;i++){rt_thread_t worker=rt_thread_create(i?"tcpcli1":"tcpcli0",client_worker,0,32768,23,10);if(!worker)return -1;if(rt_thread_startup(worker)!=RT_EOK)return -1;}
     rt_thread_t t;
     t=rt_thread_create("hmi_tcp",server,RT_NULL,4096,23,10);return t?rt_thread_startup(t):-1;
 }

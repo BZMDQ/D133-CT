@@ -1,3 +1,4 @@
+#include <time.h>
 #include "ui_manager.h"
 #include "hmi_serial_log.h"
 #include "app_manager.h"
@@ -538,12 +539,14 @@ static void show_image_preview(const char *path)
 }
 
 /* 退出只提交停止请求；播放器资源由后台线程释放。 */
+static lv_obj_t *video_playbar,*video_time_text;
 static void close_video(lv_event_t *event)
 {
     LV_UNUSED(event);
     if (video_timer) { lv_timer_delete(video_timer); video_timer = NULL; }
     if (video_overlay) { lv_obj_delete(video_overlay); video_overlay = NULL; }
     video_image = video_label = NULL;
+    video_playbar=video_time_text=NULL;
     lv_image_cache_drop(&video_image_dsc);
     if (video_direct_lease) { video_player_release_frame(video_direct_lease); video_direct_lease = 0; }
     if (video_image_raw) { aicos_free(MEM_CMA, video_image_raw); video_image_raw = NULL; }
@@ -567,6 +570,14 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
     video_state_t state;
     (void)timer_obj;
     if (!video_overlay) return;
+    if(video_playbar){
+        unsigned position,duration;char timing[48];
+        video_player_progress(&position,&duration);
+        int value=duration?(int)((uint64_t)position*1000U/duration):0;
+        if(lv_bar_get_value(video_playbar)!=value)lv_bar_set_value(video_playbar,value,LV_ANIM_OFF);
+        rt_snprintf(timing,sizeof(timing),"%02u:%02u / %02u:%02u",position/60000U,position/1000U%60U,duration/60000U,duration/1000U%60U);
+        if(strcmp(lv_label_get_text(video_time_text),timing))lv_label_set_text(video_time_text,timing);
+    }
     state = video_player_status(&width, &height, status, sizeof(status));
     if (video_player_direct_mode() && width && height) {
         const uint8_t *data = NULL;
@@ -575,8 +586,21 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
             unsigned screen_w = (unsigned)lv_obj_get_width(video_overlay);
             unsigned screen_h = (unsigned)lv_obj_get_height(video_overlay);
             unsigned scale_w = screen_w * 256U / width, scale_h = screen_h * 256U / height;
-            unsigned scale = scale_w < scale_h ? scale_w : scale_h;
-            if (scale > 256U) scale = 256U;
+            /* 界面持有独立交换帧，拷贝后立即归还解码帧，避免依赖渲染事件归还造成停播。 */
+            size_t bytes = width * height * 2U;
+            if (!video_image_buffer) {
+                video_image_raw = aicos_malloc_try_cma((int)bytes + CACHE_LINE_SIZE - 1);
+                if (!video_image_raw) {
+                    video_player_release_frame(next_sequence);
+                    lv_label_set_text(video_label, "视频显示交换缓存不足"); video_player_close(); return;
+                }
+                video_image_buffer = (void *)ALIGN_UP((ulong)video_image_raw, CACHE_LINE_SIZE);
+            }
+            for (unsigned y=0;y<height;y++)
+                memcpy((uint8_t*)video_image_buffer+y*width*2U,data+y*stride,width*2U);
+            video_player_release_frame(next_sequence);
+            aicos_dcache_clean_range((unsigned long*)video_image_buffer,bytes);
+            data = video_image_buffer; stride = width*2U;
             memset(&video_image_dsc, 0, sizeof(video_image_dsc));
             video_image_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
             video_image_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
@@ -590,11 +614,13 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
             }
             lv_image_cache_drop(&video_image_dsc);
             lv_image_set_src(video_image, &video_image_dsc);
-            lv_image_set_scale(video_image, scale);
+            /* 视频按屏幕宽高分别缩放，横竖比例不同也铺满显示区域。 */
+            lv_image_set_scale_x(video_image, scale_w);
+            lv_image_set_scale_y(video_image, scale_h);
             lv_obj_center(video_image);
             lv_obj_clear_flag(video_image, LV_OBJ_FLAG_HIDDEN);
             lv_obj_invalidate(video_image);
-            video_sequence = next_sequence; video_direct_lease = next_sequence;
+            video_sequence = next_sequence; video_direct_lease = 0;
         }
     } else if (!video_image_buffer && width && height) {
         size_t bytes = width * height * 2U;
@@ -610,6 +636,8 @@ static void video_ui_refresh(lv_timer_t *timer_obj)
         video_image_dsc.data_size = bytes; video_image_dsc.data = video_image_buffer;
         video_image = lv_image_create(video_overlay);
         lv_image_set_src(video_image, &video_image_dsc);
+        lv_image_set_scale_x(video_image, (unsigned)lv_obj_get_width(video_overlay)*256U/width);
+        lv_image_set_scale_y(video_image, (unsigned)lv_obj_get_height(video_overlay)*256U/height);
         lv_obj_center(video_image);
         lv_obj_move_background(video_image);
     }
@@ -630,7 +658,7 @@ static void video_pause_action(lv_event_t *event)
     video_player_toggle_pause();
 }
 
-static void show_video(const char *path)
+static void play_video_selected(const char *path)
 {
     lv_obj_t *root = lv_screen_active(), *back;
     if (video_player_init() || video_player_open(path)) {
@@ -657,10 +685,22 @@ static void show_video(const char *path)
     lv_obj_set_height(back, 56);
     back = button(video_overlay, "暂停 / 继续", 144, 16, 140, video_pause_action, NULL);
     lv_obj_set_height(back, 56);
+    /* 底部只读进度，不绑定触摸跳转，避免干扰解封装队列。 */
+    video_playbar=lv_bar_create(video_overlay);
+    lv_obj_set_pos(video_playbar,16,lv_obj_get_height(root)-26);
+    lv_obj_set_size(video_playbar,lv_obj_get_width(root)-32,10);
+    lv_bar_set_range(video_playbar,0,1000);
+    lv_obj_set_style_bg_color(video_playbar,lv_color_hex(0x718096),LV_PART_MAIN);
+    lv_obj_set_style_bg_color(video_playbar,lv_color_hex(UI_COLOR_BLUE),LV_PART_INDICATOR);
+    video_time_text=label(video_overlay,"00:00 / 00:00",16,lv_obj_get_height(root)-62,300);
+    lv_obj_set_style_text_color(video_time_text,lv_color_hex(0xFFFFFF),LV_PART_MAIN);
     lv_obj_move_foreground(video_overlay);
     video_timer = lv_timer_create(video_ui_refresh, 8, NULL);
     if (!video_timer) close_video(NULL);
 }
+
+/* 文件管理直接进入自动播放，不再显示原始分辨率选项。 */
+static void show_video(const char *path){play_video_selected(path);}
 
 static uint32_t file_icon_color(const fm_entry_t *entry)
 {
@@ -738,6 +778,8 @@ static void file_grid_render(void)
         if (!card)
             continue;
         file_grid_cards[i] = card;
+        /* 手指开始滑动后允许取消按压，避免松手误进入文件夹。 */
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_PRESS_LOCK | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         lv_obj_set_pos(card, column * 147, row * 104);
         lv_obj_set_size(card, 140, 96);
         lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
@@ -1127,6 +1169,9 @@ static void screen(unsigned number)
         lv_obj_set_style_border_width(file_grid, 1, LV_PART_MAIN);
         lv_obj_set_style_radius(file_grid, 10, LV_PART_MAIN);
         lv_obj_set_style_pad_all(file_grid, 6, LV_PART_MAIN);
+        /* 文件列表独立惯性滚动，边缘不把手势传给上层页面。 */
+        lv_obj_add_flag(file_grid, LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC);
+        lv_obj_clear_flag(file_grid, LV_OBJ_FLAG_SCROLL_CHAIN);
         lv_obj_set_scroll_dir(file_grid, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(file_grid, LV_SCROLLBAR_MODE_AUTO);
         lv_obj_set_style_bg_color(file_grid, lv_color_hex(UI_COLOR_ACCENT), LV_PART_SCROLLBAR);
@@ -1140,9 +1185,9 @@ static void screen(unsigned number)
               "网络升级：研发工具箱  D133CBS\n"
               "升级期间请保持设备供电。",
               32, 28, 920);
-        details = label(content, "等待升级操作。", 32, 168, 920);
+        details = label(content, "等待升级操作。", 32, 126, 920);
         progress = lv_bar_create(content);
-        lv_obj_set_pos(progress, 32, 240);
+        lv_obj_set_pos(progress, 32, 280);
         lv_obj_set_size(progress, 920, 24);
         lv_obj_set_style_bg_color(progress, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(progress, LV_OPA_COVER, LV_PART_MAIN);
@@ -1288,11 +1333,13 @@ static const char *ota_state_text(hmi_ota_state_t state)
     case OTA_WRITE:   return "正在写入";
     case OTA_READY:   return "升级完成，准备重启";
     case OTA_FAILED:  return "升级失败";
-    case OTA_RECEIVE: return "正在接收升级包";
+    case OTA_RECEIVE: return "正在接收并写入非活动槽";
     case OTA_IDLE:
     default:          return "空闲";
     }
 }
+
+static lv_obj_t *clock_label;
 
 static void timer(lv_timer_t *timer_obj)
 {
@@ -1306,6 +1353,24 @@ static void timer(lv_timer_t *timer_obj)
     hmi_ota_status_t ota;
 
     LV_UNUSED(timer_obj);
+    /* 所有时间控件仅由 LVGL 线程更新，避免跨线程访问。 */
+    if (clock_label) {
+        static time_t previous_second = (time_t)-1;
+        time_t now = time(NULL);
+        if (page == 0) {
+            lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(clock_label,LV_ALIGN_TOP_RIGHT,-16,22);
+            lv_obj_move_foreground(clock_label);
+            if (now != previous_second) {
+                struct tm *calendar = localtime(&now);
+                char clock_text[32];
+                if (calendar && calendar->tm_year >= 124)
+                    strftime(clock_text, sizeof(clock_text), "%Y-%m-%d %H:%M:%S", calendar);
+                else rt_snprintf(clock_text,sizeof(clock_text),"时间未设置");
+                lv_label_set_text(clock_label, clock_text); previous_second = now;
+            }
+        } else lv_obj_add_flag(clock_label, LV_OBJ_FLAG_HIDDEN);
+    }
     boot_manager_ui_heartbeat();
     boot_manager_get(&boot);
     ota_manager_get(&ota);
@@ -1462,8 +1527,9 @@ static void timer(lv_timer_t *timer_obj)
                      (unsigned long)(heap_total / 1024U));
             lv_label_set_text(details, text);
         } else if (page == 2) {
-            snprintf(text, sizeof(text), "状态：%s | 进度：%u%% | 错误码：%d | 版本：%s",
-                     ota_state_text(ota.state), ota.percent, ota.error, ota.version);
+            snprintf(text, sizeof(text), "目标槽：%c | 状态：%s | 进度：%u%% | 错误码：%d\n下载速度：%lu KiB/s | 版本：%s\n签名 %lu ms  确认 %lu ms  接收写入 %lu ms\n校验 %lu ms  提交 %lu ms  总计 %lu ms",
+                     boot.current=='A'?'B':'A',ota_state_text(ota.state), ota.percent, ota.error, (unsigned long)(ota.state==OTA_RECEIVE?ota.bytes_per_second/1024U:0U), ota.version,
+                     (unsigned long)ota.phase_ms[1],(unsigned long)ota.phase_ms[2],(unsigned long)ota.phase_ms[3],(unsigned long)ota.phase_ms[4],(unsigned long)ota.phase_ms[5],(unsigned long)ota.total_ms);
             lv_label_set_text(details, text);
             lv_bar_set_value(progress, ota.percent, LV_ANIM_OFF);
         } else if (page == 4) {
@@ -1544,15 +1610,21 @@ void hmi_ui_init(void)
     lv_obj_set_style_shadow_width(top, 0, LV_PART_MAIN);
 
     /* 首页 Wi-Fi 状态胶囊由 LVGL 定时器更新；灰色表示无线未启动。 */
+    clock_label = label(root, "时间未设置", 748, 22, 260);
+    lv_obj_set_height(clock_label, 36);
+    lv_obj_set_style_text_color(clock_label,lv_color_hex(UI_COLOR_TEXT),LV_PART_MAIN);
+    lv_obj_align(clock_label,LV_ALIGN_TOP_RIGHT,-16,22);
+    lv_obj_set_style_text_align(clock_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    lv_obj_clear_flag(clock_label, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     wifi_indicator_dot = lv_obj_create(root);
-    lv_obj_set_pos(wifi_indicator_dot, 884, 31);
+    lv_obj_set_pos(wifi_indicator_dot, 610, 31);
     lv_obj_set_size(wifi_indicator_dot, 14, 14);
     lv_obj_set_style_radius(wifi_indicator_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(wifi_indicator_dot, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(wifi_indicator_dot, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(wifi_indicator_dot, 0, LV_PART_MAIN);
     lv_obj_clear_flag(wifi_indicator_dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    wifi_indicator_label = label(root, "未开启", 906, 22, 100);
+    wifi_indicator_label = label(root, "未开启", 632, 22, 100);
     lv_obj_set_height(wifi_indicator_label, 36);
     lv_obj_set_style_text_font(wifi_indicator_label, small_font(), LV_PART_MAIN);
     lv_obj_set_style_text_color(wifi_indicator_label, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);

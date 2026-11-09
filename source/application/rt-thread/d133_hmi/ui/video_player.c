@@ -23,6 +23,14 @@ static volatile int stop_requested;
 static volatile int pause_requested;
 static video_state_t state = VIDEO_IDLE;
 static unsigned frame_width, frame_height, frame_sequence;
+static unsigned play_position_ms,play_duration_ms;
+void video_player_progress(unsigned *position_ms,unsigned *duration_ms)
+{
+    rt_mutex_take(&video_lock,RT_WAITING_FOREVER);
+    if(position_ms)*position_ms=play_position_ms;
+    if(duration_ms)*duration_ms=play_duration_ms;
+    rt_mutex_release(&video_lock);
+}
 static uint8_t *frame_buffer;
 static unsigned direct_stride;
 static int direct_mode;
@@ -82,8 +90,8 @@ static void video_worker(void *parameter)
         struct av_media_info media = {0};
         uint8_t *pixels = RT_NULL;
         unsigned width = 0, height = 0;
-        int started = 0, failed = 0, paused = 0;
-        int64_t first_pts = -1;
+        int started = 0, failed = 0, paused = 0, decode_scale = 0;
+        int64_t first_pts = -1, progress_origin = -1;
         rt_uint32_t start_ms = 0;
         rt_uint32_t last_frame_ms = 0;
         int first_frame_received = 0;
@@ -99,12 +107,17 @@ static void video_worker(void *parameter)
             failed = 1;
             goto cleanup;
         }
+        rt_mutex_take(&video_lock,RT_WAITING_FOREVER);
+        play_position_ms=0;play_duration_ms=media.duration>0?(unsigned)(media.duration/1000):0;
+        rt_mutex_release(&video_lock);
         width = (unsigned)media.video_stream.width;
         height = (unsigned)media.video_stream.height;
         rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
         direct_mode = (width * height > VIDEO_COPY_LIMIT);
         rt_mutex_release(&video_lock);
         if (direct_mode) {
+            /* 仅保留自动模式：大画面半尺寸硬件解码，小画面维持源尺寸。 */
+            decode_scale=1;
             int extra_frames = 0;
             /* SDK 的 MJPEG 帧数为 1 + extra_frames。界面归还后再解码下一帧，
              * 因此只保留一帧，减少 720P 时约 1.76 MiB 的连续 PSRAM 需求。 */
@@ -130,6 +143,13 @@ static void video_worker(void *parameter)
             }
         }
         started = 1;
+        /* 720P 输入采用硬件半尺寸解码，避免连续 PSRAM 分配失败。 */
+        if (direct_mode && decode_scale) {
+            if (aic_player_set_decode_scale(player, decode_scale)) {
+                set_state(VIDEO_ERROR, "无法配置硬件缩小解码"); failed=1; goto cleanup;
+            }
+            width >>= 1; height >>= 1;
+        }
         /* 首帧等待从解码器真正启动后计时，不把 SD 打开和索引准备算进去。 */
         last_frame_ms = rt_tick_get_millisecond();
         set_state(VIDEO_PLAYING, "解码器已启动，正在等待首帧…");
@@ -153,6 +173,10 @@ static void video_worker(void *parameter)
                         first_frame_received ? "视频帧中断超过 3 秒（帧缓存错误 %d，格式 %d，步幅 %d，高 %d）" :
                         "3 秒未收到首帧（帧缓存错误 %d，格式 %d，步幅 %d，高 %d）",
                         alloc_error,alloc_format,alloc_stride,alloc_height);
+                    if (!alloc_error) {
+                        int io[5];aic_file_stream_read_stats(io);
+                        rt_snprintf(diagnostic,sizeof(diagnostic),"SDK=%d 帧=%u I/O=%d\n请求=%d 返回=%d errno=%d 次数=%d",result,frame_sequence,io[0],io[1],io[2],io[3],io[4]);
+                    }
                     set_state(VIDEO_ERROR, diagnostic);
                     failed = 1; break;
                 }
@@ -196,6 +220,11 @@ static void video_worker(void *parameter)
                            (const uint8_t *)(uintptr_t)frame.buf.phy_addr[0] + y * frame.buf.stride[0], width * 2U);
                 frame_buffer = pixels;
             }
+            if(frame.pts>=0){
+                if(progress_origin<0)progress_origin=frame.pts;
+                play_position_ms=(unsigned)((frame.pts-progress_origin)/1000);
+                if(play_duration_ms && play_position_ms>play_duration_ms)play_position_ms=play_duration_ms;
+            }
             frame_width = width; frame_height = height;
             frame_sequence++;
             rt_mutex_release(&video_lock);
@@ -219,7 +248,12 @@ static void video_worker(void *parameter)
                 frame_buffer = RT_NULL;
                 rt_mutex_release(&video_lock);
             }
-            aic_player_put_frame(player, &frame);
+            /* 归还失败必须立即报告，不能继续耗尽唯一解码帧。 */
+            int return_result=aic_player_put_frame(player, &frame);
+            if (return_result) {
+                char error_text[96];rt_snprintf(error_text,sizeof(error_text),"SDK归还视频帧失败：%d",return_result);
+                set_state(VIDEO_ERROR,error_text);failed=1;
+            }
             if (failed) break;
             last_frame_ms = rt_tick_get_millisecond();
         }
@@ -232,11 +266,11 @@ cleanup:
         rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
         frame_buffer = RT_NULL; frame_width = frame_height = frame_sequence = direct_stride = 0;
         direct_mode = 0;
-        rt_mutex_release(&video_lock);
         if (pixels) mpp_phy_free((unsigned int)(uintptr_t)pixels);
-        stop_requested = 0;
-        pause_requested = 0;
-        set_state(VIDEO_IDLE, "视频已关闭");
+        /* 清理完成与状态、停止标志一起发布，避免重开请求看到中间状态。 */
+        stop_requested=0;pause_requested=0;state=VIDEO_IDLE;
+        rt_snprintf(state_text,sizeof(state_text),"视频已关闭");
+        rt_mutex_release(&video_lock);
     }
 }
 
@@ -270,7 +304,9 @@ int video_player_open(const char *path)
     if (!video_jobs || !path || strncmp(path, "/sdcard/", 8) || strlen(path) >= 128) return -1;
     rt_mutex_take(&video_lock, RT_WAITING_FOREVER);
     busy = state != VIDEO_IDLE;
-    if (!busy) state = VIDEO_LOADING;
+    /* 退出正在后台清理时允许排队一次重开，不让界面阻塞等待。 */
+    if (!busy) { stop_requested=0; state = VIDEO_LOADING; }
+    else if (state==VIDEO_STOPPING) busy=0;
     rt_mutex_release(&video_lock);
     if (busy) return -1;
     rt_snprintf(job, sizeof(job), "%s", path);
@@ -279,11 +315,15 @@ int video_player_open(const char *path)
         char *ext = strrchr(job, '.');
         if (ext) while (*ext) { if (*ext >= 'A' && *ext <= 'Z') *ext = (char)(*ext + ('a' - 'A')); ext++; }
     }
-    if (rt_mq_send(video_jobs, job, sizeof(job)) != RT_EOK) { set_state(VIDEO_IDLE, "视频任务繁忙"); return -1; }
+    if (rt_mq_send(video_jobs, job, sizeof(job)) != RT_EOK) return -1;
     return 0;
 }
 
-void video_player_close(void) { stop_requested = 1; }
+void video_player_close(void) {
+    rt_mutex_take(&video_lock,RT_WAITING_FOREVER);
+    if(state!=VIDEO_IDLE){stop_requested=1;state=VIDEO_STOPPING;}
+    rt_mutex_release(&video_lock);
+}
 void video_player_toggle_pause(void) { pause_requested = 1; }
 
 video_state_t video_player_status(unsigned *width, unsigned *height, char *text, size_t size)

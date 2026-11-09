@@ -490,7 +490,17 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             const uint8_t *src = source_row;
             uint16_t *dst = (uint16_t *)output_row;
 
-            for (x = 0; x < output_width; x++) {
+            /* 四像素展开减少循环控制，按字节取样以兼容未对齐 BGR24/BGRX32。 */
+#define BMP_BGR565(p) ((uint16_t)((((uint16_t)(p)[2]&0xF8U)<<8)|(((uint16_t)(p)[1]&0xFCU)<<3)|((p)[0]>>3)))
+            for (x = 0; x + 3U < output_width; x += 4U) {
+                dst[x] = BMP_BGR565(src);
+                dst[x+1U] = BMP_BGR565(src+bytes_per_pixel);
+                dst[x+2U] = BMP_BGR565(src+bytes_per_pixel*2U);
+                dst[x+3U] = BMP_BGR565(src+bytes_per_pixel*3U);
+                src += bytes_per_pixel*4U;
+            }
+#undef BMP_BGR565
+            for (; x < output_width; x++) {
                 uint8_t blue = src[0];
                 uint8_t green = src[1];
                 uint8_t red = src[2];

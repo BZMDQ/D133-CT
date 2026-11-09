@@ -14,9 +14,23 @@
 #include <stdio.h>
 #include <string.h>
 typedef struct {char path[256],version[32];unsigned char sha[32];int has_sha,remote;} job_t;
+static uint32_t receive_sample_ms,receive_sample_bytes,transaction_start,phase_start;
 static rt_mq_t queue;static struct rt_mutex mutex;static hmi_ota_status_t status;static volatile int decision;static ota_signature_verifier_t verifier;
 void ota_manager_set_signature_verifier(ota_signature_verifier_t v){verifier=v;}
-void ota_manager_get(hmi_ota_status_t *out){rt_mutex_take(&mutex,RT_WAITING_FOREVER);*out=status;rt_mutex_release(&mutex);}
+void ota_manager_get(hmi_ota_status_t *out){rt_mutex_take(&mutex,RT_WAITING_FOREVER);*out=status;
+    if(status.phase){uint32_t now=rt_tick_get_millisecond();out->phase_ms[status.phase]+=now-phase_start;out->total_ms=now-transaction_start;}
+    rt_mutex_release(&mutex);}
+void ota_manager_phase(unsigned phase){
+    if(phase>5)return;rt_mutex_take(&mutex,RT_WAITING_FOREVER);uint32_t now=rt_tick_get_millisecond();
+    if(status.phase)status.phase_ms[status.phase]+=now-phase_start;
+    if(!transaction_start)transaction_start=now;
+    status.phase=phase;phase_start=now;status.total_ms=now-transaction_start;rt_mutex_release(&mutex);
+}
+void ota_manager_stream_state(hmi_ota_state_t s,unsigned p,int e){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=e;rt_mutex_release(&mutex);}
+int ota_manager_stream_confirm(void){decision=0;ota_manager_phase(2);ota_manager_stream_state(OTA_CONFIRM,0,0);
+    for(unsigned i=0;i<600&&decision==0;i++)rt_thread_mdelay(100);
+    return decision==1?0:-14;
+}
 static void update(hmi_ota_state_t s,unsigned p,int err){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=err;rt_mutex_release(&mutex);}
 void ota_manager_decide(int accept){decision=accept?1:-1;}
 void ota_manager_reboot(void){if(reboot_manager_request())system_manager_log("重启请求失败");}
@@ -25,13 +39,18 @@ int ota_manager_receive_begin(const char *version)
 {
     int result=0;rt_mutex_take(&mutex,RT_WAITING_FOREVER);
     if(status.state!=OTA_IDLE&&status.state!=OTA_FAILED)result=-1;
-    else{status.state=OTA_RECEIVE;status.remote=1;status.percent=0;status.error=0;rt_snprintf(status.version,sizeof(status.version),"%s",version?version:"");}
+    else{memset(status.phase_ms,0,sizeof(status.phase_ms));status.phase=0;transaction_start=rt_tick_get_millisecond();phase_start=transaction_start;receive_sample_ms=rt_tick_get_millisecond();receive_sample_bytes=0;status.bytes_per_second=0;status.state=OTA_RECEIVE;status.remote=1;status.percent=0;status.error=0;rt_snprintf(status.version,sizeof(status.version),"%s",version?version:"");}
     rt_mutex_release(&mutex);return result;
 }
 void ota_manager_receive_progress(uint32_t written,uint32_t total)
 {
     rt_mutex_take(&mutex,RT_WAITING_FOREVER);
-    if(status.state==OTA_RECEIVE&&total)status.percent=(unsigned)((uint64_t)written*100U/total);
+    if(status.state==OTA_RECEIVE&&total){
+        uint32_t now=rt_tick_get_millisecond(),elapsed=now-receive_sample_ms;
+        status.percent=(unsigned)((uint64_t)written*100U/total);
+        /* 每半秒统计已落盘字节，不将网络接收缓存计入下载速度。 */
+        if(elapsed>=500U){status.bytes_per_second=(uint32_t)((uint64_t)(written-receive_sample_bytes)*1000U/elapsed);receive_sample_ms=now;receive_sample_bytes=written;}
+    }
     rt_mutex_release(&mutex);
 }
 void ota_manager_receive_abort(int error)

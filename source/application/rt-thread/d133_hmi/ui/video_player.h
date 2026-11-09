@@ -8,9 +8,13 @@ typedef enum {
 } video_state_t;
 
 /* 所有读取和 MPP 调用由工作线程完成，界面线程只复制已完成帧。 */
+/* SDK 文件读取快照：进行中、请求长度、返回长度、errno、调用次数。 */
+void aic_file_stream_read_stats(int out[5]);
 int video_player_init(void);
 int video_player_supported(const char *path);
 int video_player_open(const char *path);
+/* 毫秒进度快照，不执行跳转或文件读取。 */
+void video_player_progress(unsigned *position_ms,unsigned *duration_ms);
 void video_player_close(void);
 void video_player_toggle_pause(void);
 video_state_t video_player_status(unsigned *width, unsigned *height, char *text, size_t size);

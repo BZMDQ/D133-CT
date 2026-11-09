@@ -14,6 +14,7 @@
 int ota_package_check(const char *path,char version[32]);
 int ota_version_newer(const char *version);
 int ota_package_sha256(const char *path,unsigned char digest[32]);
+int ota_metadata_check(const unsigned char meta[512],char version[32],uint32_t archive_size);
 #endif
 
 

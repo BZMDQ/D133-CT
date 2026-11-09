@@ -1,216 +1,54 @@
-当前候选版 v1.0.73：[公开 OTA 包](downloads/D133-CT_OTA_v1.0.73.zip)、[公开工厂镜像](downloads/D133-CT_factory_v1.0.73.zip)、[验证说明](docs/候选版本_v1.0.73.md)。公开包不含 WiFi 密码和工具箱 Key；视频改为单帧缓存，须上板验证。本机私有定制版 v1.0.74 仅保存在内部部署目录。
-
-当前候选版 v1.0.66：[统一端口 5000 OTA](downloads/D133-CT_OTA_v1.0.66.zip)、[工厂包](downloads/D133-CT_factory_v1.0.66.zip)、[网络设置说明](docs/网络设置与无以太网_v1.0.66.md)。网络页状态行调整，关闭 DHCP 服务端和 GMAC 以太网配置，保留 Wi-Fi STA、DHCP 客户端及 TCP 5000。实机连接和显示效果待验证。
-
-当前候选版 v1.0.64：[统一端口 5000 OTA](downloads/D133-CT_OTA_v1.0.64.zip)、[工厂包](downloads/D133-CT_factory_v1.0.64.zip)、[工具箱 5000 补丁](downloads/D133_工具箱统一端口5000_v1.0.63.zip)、[STA 网络说明](docs/STA网络页面_v1.0.64.md)。设备热点已关闭，实机 STA/TCP 待验证。
-
-当前候选版 v1.0.62：[签名 OTA](downloads/D133-CT_OTA_v1.0.62.zip)、[工厂包](downloads/D133-CT_factory_v1.0.62.zip)、[TCP 监听与网络页面说明](docs/TCP监听与网络页面_v1.0.62.md)。服务监听状态和跨网段连接待实机验证。
-
-当前候选版 v1.0.61：[签名 OTA](downloads/D133-CT_OTA_v1.0.61.zip)、[工厂包](downloads/D133-CT_factory_v1.0.61.zip)、[低码率测试视频](downloads/D133_720P60_MJPEG_5s.mp4)、[黑屏修正说明](docs/视频黑屏修正_v1.0.61.md)。同一开发板播放尚待复测。
-
-
-
-当前候选版 v1.0.60：[签名 OTA](downloads/D133-CT_OTA_v1.0.60.zip)、[工厂包](downloads/D133-CT_factory_v1.0.60.zip)、[720P 视频说明](docs/720P视频_v1.0.60.md)、[低码率测试视频](downloads/D133_720P60_MJPEG_5s.mp4)。720P 软硬件组合及帧率待实机验证。
-
-当前候选版 v1.0.59：[工厂包](downloads/D133-CT_factory_v1.0.59.zip)、[签名 OTA](downloads/D133-CT_OTA_v1.0.59.zip)、[视频启动说明](docs/视频启动诊断_v1.0.59.md)。调整视频缓存申请顺序并增加错误诊断，板上结果待验证。
-
-当前候选版 v1.0.58：[工厂包](downloads/D133-CT_factory_v1.0.58.zip)、[签名 OTA](downloads/D133-CT_OTA_v1.0.58.zip)、[界面说明](docs/界面美化_v1.0.58.md)。首页已移除视频、系统信息及系统日志入口，视频仍可从文件管理打开；实机效果待验证。
-
-当前候选版 v1.0.57：[工厂包](downloads/D133-CT_factory_v1.0.57.zip)、[签名 OTA](downloads/d13x_d133cbv-hmi-nor_ota_v1.0.57.cpio)、[视频播放与转换说明](docs/视频播放_v1.0.57.md)。AVI/MJPEG 播放待开发板验证。
-
-当前候选版 v1.0.56：[工厂包](downloads/D133-CT_factory_v1.0.56.zip)、[签名 OTA](downloads/d13x_d133cbv-hmi-nor_ota_v1.0.56.cpio)、[工具箱补丁](downloads/D133_工具箱兼容补丁_v1.0.56.zip)、[TCP 操作说明](docs/TCP信息与升级_v1.0.56.md)。TCP 实机连接和 OTA 待验证。
-
-当前候选版 v1.0.55：[通用工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.55.img)、[说明](docs/WiFi界面与连接_v1.0.55.md)。修正无线初始化顺序并增加附近网络扫描；实机验证待完成。
-
-当前候选版 v1.0.54：[公开工厂镜像](downloads/d13x_d133cbv-hmi-nor_v1.0.54.img)、[说明](docs/WiFi_SDIO_v1.0.54.md)。针对无线卡死风险调整 SDK SDIO 收包线程；实际板卡稳定性尚待验证。
-
-
-当前版本 v1.0.51：[公开通用工厂烧录包](downloads/D133-CT_factory_v1.0.51.zip)，支持 AIC8800D40L SDIO STA+AP、最多五组 STA 网络及新 A/B 分区布局。[无线与分区说明](docs/WiFi_STA_AP_v1.0.51.md)。此公开镜像不含默认路由器密码。
-
-
-当前版本 v1.0.49：[烧录包](downloads/D133-CT_factory_v1.0.49.zip)，BMP 双缓冲复用对齐窗口重叠扇区，减少反复定位。[说明](docs/BMP预读优化_v1.0.49.md)；实际提速待上板验证。
-
-
-当前版本 v1.0.48：[烧录包](downloads/D133-CT_factory_v1.0.48.zip)，BMP 使用对齐缓冲、对齐文件窗口和 DFS/POSIX 直接读取，按偏移访问像素。[说明](docs/BMP对齐读取_v1.0.48.md)。实际提速待上板验证。
-
-
-当前版本 v1.0.47：[烧录包](downloads/D133-CT_factory_v1.0.47.zip)，启用 SDK SDMC 中断等待，增加 BMP 加载阶段及停留时间显示。[测试说明](docs/SD中断与BMP诊断_v1.0.47.md)。SD 读写、OTA 与性能尚待上板验证。
-
-
-当前版本 v1.0.46：[烧录包](downloads/D133-CT_factory_v1.0.46.zip)，网络 OTA 等待期间允许独立健康查询，增加升级状态字段并调整 BMP 双缓冲调度。详见 [说明](docs/网络OTA与BMP_v1.0.46.md)，实机升级与性能待验证。
-
-
-当前版本 v1.0.45：[烧录包](downloads/D133-CT_factory_v1.0.45.zip)，BMP 双缓冲、RGB555 优化和 LVGL 完成通知；实机结果待验证。详见 [说明](docs/BMP并发读取_v1.0.45.md)。
-
-
-当前版本 v1.0.44：[烧录包](downloads/D133-CT_factory_v1.0.44.zip)，BMP 批读上限 512 KiB / 128 行；实机性能待验证。
-
-
-当前版本 v1.0.43：[烧录包](downloads/D133-CT_factory_v1.0.43.zip)，BMP 批读上限 256 KiB / 64 行；实机性能待验证。
-
 # D133-控制终端
 
-当前版本 **v1.0.42**：[工厂烧录 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.42.img)、[完整烧录包 ZIP](downloads/D133-CT_factory_v1.0.42.zip)、[烧录与 BMP 优化说明](docs/BMP优化与烧录_v1.0.42.md)。
+基于 ArtInChip Luban-Lite 1.3.2、RT-Thread 和 LVGL 9.1，目标板 D133CBV-QFN88-V1-2 / D133CBS，16 MiB SPI NOR、1 MiB SRAM 与 8 MiB PSRAM。
 
-此版优化 BMP 连续批读，覆盖行填充和适度水平裁剪，单批最多 32 行、缓存上限 128 KiB，减少文件定位和 SD 读取调用。主机边界模型检查通过，目标 OS 构建通过；实际 SD 打开速度、显示颜色和连续使用稳定性尚待上板验证，不能把减少读取次数当作实测提速比例。
+## 当前候选资源
 
-下面保留历史版本和工程说明。
+- [v1.0.113 工厂镜像](downloads/D133-CT_factory_v1.0.113.zip)
+- [v1.0.113 签名 OTA 包](downloads/D133-CT_OTA_v1.0.113.zip)
+- [工具箱 TCP 直写补丁](downloads/D133_TCP_direct_patch_v1.0.112.zip)
+- [直写协议、阶段计时及验证边界](docs/TCP直写与阶段耗时_v1.0.113.md)
 
-## v1.0.40 更新
+公开包不包含私有工具箱 Key 或默认 WiFi 密码。本机定制版为 v1.0.112，仅保存在本地内部部署目录。当前资源属于候选版本，真实 Flash 写入、掉电恢复及 A/B 回滚未验收。
 
-修复关闭 FinSH 时屏幕切换和 OTA 调用空复位函数的问题，使用 SDK 看门狗触发重启；CS001 的实际背光、显示和接口供电尚未经过硬件验证。[下载工厂 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.40.img)；[接口和测试说明](docs/CS001_串口复位与接口_v1.0.40.md)。
+## 功能
 
-# D133-控制终端
+中文应用卡片首页、文件图标管理、图片居中与裁剪、自动视频播放及只读进度条、屏幕显示/多指划线检测、WiFi STA 网络配置与最多五组保存网络、TCP 5000 系统信息和 OTA、设备重命名、NTP 自动校时。当前不提供 AP 或以太网配置。
 
-工程针对 D133CBV-QFN88-V1-2、D133CBS、ArtInChip Luban-Lite、RT-Thread 和 16 MiB SPI NOR。支持 CS000（1024×600 LVDS/GT911）与 CS001（800×1280 ILI9881C MIPI-DSI，触摸暂禁用）两个启动 profile；板级方案保留官方驱动，在独立 target 中选择显示接口和应用。
+视频只支持经测试流程准备的无音频 MJPEG 封装，不支持常见 MP4/H.264 硬解。小视频维持源尺寸，大视频采用半尺寸硬件解码并铺满屏幕；比例不同时会拉伸。已移除原始画质选项。连续播放和重复打开仍需目标板验收，不能保证 720P 60 fps。
 
-固件启动后直接进入中文 LVGL 9.1 HMI，不显示旧演示页。启动时钟按 SDK 板级目标配置：CPU 480 MHz、AXI/AHB 200 MHz、APB 100 MHz；SPI NOR 使用 SDK 默认的 QSPI 四线、100 MHz、半周期采样。100 MHz 是当前有官方配置依据的速度基准，板级实际最大稳定值仍需按 NOR 具体型号和实机冷启动验证；没有盲目超频。
+BMP 使用扇区对齐、双缓冲预读和通用像素格式转换，24/32位常见格式加入四像素展开。主机像素窗口验证通过，不代表实际 SD 打开速度已测量。
 
-旧 v1.0.0 镜像的 SDK 配置仍选择了 AIC_DISP_COLOR_BLOCK，所以烧录成功后会看到彩色色块。当前工厂镜像 v1.0.39 关闭 Bootloader 预启动 Logo，OS 黑屏初始化后直接显示中文应用中心，采用 STM32F750 工程的 5×3 图标启动器布局；设备总览在独立页面中打开，屏幕检测作为独立入口，首页隐藏状态胶囊。
+## TCP OTA 使用
 
-启动优化保留原 QSPI/NOR 时钟和 LVDS 预热；v1.0.27 继续静默 RT 控制台、FinSH Shell 和 ULOG。UART0 profile 服务启动时发送当前代号，由专用线程轮询接收；CS000 的触摸健康检查按 SDK 的 gt911 设备名匹配。/data 挂载失败和 GT911 名称大小写不再触发 15 秒看门狗循环。v1.0.20 热复位实测 1.632 秒；v1.0.31 尚未上板测量，1 秒目标未达成。
+首次请手动使用 AiBurn 烧录配套工厂 IMG；USB BROM 工厂恢复保留，禁止把日常 OTA 当成首次部署镜像。日常 OTA 不包含 SPL、DATA 或 ENV 镜像。
 
-本目录的 `source/` 保存新增应用、专用 target/defconfig 与本工程对 SDK 的变更。完整 Luban-Lite 基础源码不包含在本仓库；构建脚本逐文件同步 overlay 到通过 `-SdkRoot` 指定的 SDK 构建树。板级分区配置跟踪在 `source/target/d13x/d133cbv-hmi-nor/pack/`，构建日志和说明在 `docs/`，当前工厂镜像在 `downloads/`。研发工具箱 D133 接入源码在 `toolbox/Source/`，GitHub 源码仓库和手动下载包发布流程在 `toolbox/YF-Tbox/`（`BZMDQ/YF-Tbox`）。
+手动退出研发工具箱后，以 PowerShell 7 运行补丁包中的 `安装补丁.ps1`，再重新打开工具箱。补丁仅适用于其 SHA256 检查匹配的已核对模块，先备份再替换 D133 客户端，不修改其它开发板。工具箱实际加载根目录 `.pyc`，只编辑 Source 中的 `.py` 不会生效。
 
-```powershell
-.\scripts\build.ps1 -Target Bootloader -LogName stage_fastboot_v1.0.31_bootloader.log
-.\scripts\build.ps1 -Target OS -LogName stage_cs001_backlight_v1.0.39_os.log
-.\scripts\build.ps1 -Target OtaCandidate -LogName local_ota_candidate_build.log
-.\scripts\build.ps1 -Target OtaProfile -LogName stage44_rt_init_profile_v1.0.19_build.log
-```
+工具箱选择 D133CBS 和设备 IP、端口 5000，选择 `.cpio`，同名 `.cpio.sig` 必须放在一起。新协议先发送签名摘要，设备预检后要求屏幕确认；随后调用官方 aic-ota 直接写非活动 OS/资源槽，接收结束校验完整性后通过官方 aic-env 提交切换。A 运行写 B，B 运行写 A。失败不激活未完成槽。首次配套安装后，下一次升级包版本必须高于当前固件。
 
-先生成配套 Bootloader，再生成 OS/工厂镜像。日常 OTA 不包含 SPL、ENV 或 DATA。生成镜像不代表板级验收；本工程没有自动连接开发板或写 Flash。
+开发板显示目标槽、进度、下载速度、签名/确认/接收写入/校验/提交耗时及总耗时。工具箱另外显示连接、重启及健康确认耗时。接收与写入合并计时，不重复累加。
 
-文件管理页选中 SD 图片并按“打开 / 读取”后，图片按原始像素 1:1 显示：小图居中，大图中心裁去屏幕以外部分；左上角固定“返回”键。BMP 只读取可见区域并申请屏幕大小的 RGB565 输出区，支持 16/24/32 位 BI_RGB 与 16/32 位 BI_BITFIELDS；JPG/JPEG、PNG 使用 SDK MPP 硬件裁剪窗口。JPEG/PNG 压缩输入上限为 4 MiB，PNG 仍遵循 SDK 800 万像素限制，解码硬件与 LVGL 图像描述符上限仍适用。当前只完成编译，需在目标板验证颜色、裁剪和 CMA 余量。
+旧暂存协议在新固件中被明确拒绝；新客户端对旧固件也会提示不支持直写，不会静默回退到 SD 暂存。
 
-首页新增“屏幕检测”页面，提供全屏白屏划线、色条/灰阶、边框、测试图片和纯色测试。测试画面只由 UP/DOWN 按键切换；左上角“返回”按键返回说明页。触摸只在白屏页绘线。图片只从 `/sdcard/测试图像使用/` 选择与当前活动分辨率完全匹配的可解码 BMP/JPG/JPEG/PNG；缺卡或缺少匹配图时显示“SD没有本机测试图片”。扫描与解码在线程中运行，详细操作见[屏幕检测功能说明](docs/屏幕检测功能说明.md)。
+## 源码与构建
 
-UART0 接收 CS000/CS001 屏幕代号并返回状态；profile 改变时保存到官方 ENV 并重启。CS000 为 1024×600 LVDS/GT911；CS001 为 ILI9881C-04T00GA 800×1280 MIPI-DSI，触摸暂时关闭。启动时串口打印当前代号；时序与硬件验证边界见[屏幕代号串口协议](docs/屏幕代号串口协议.md)和[CS001 MIPI 接入说明](docs/CS001_MIPI接入说明.md)。
-
-- [实施与构建说明](docs/实施说明.md)
-- [STM32F750 UI 风格对齐说明](docs/STM32_UI_风格对齐.md)
-- [研发工具箱 TCP OTA 协议](docs/工具箱OTA接入说明.md)
-- [屏幕代号串口协议](docs/屏幕代号串口协议.md)
-- [屏幕检测功能说明](docs/屏幕检测功能说明.md)
-- [图片与划线性能优化及板上对比方法](docs/图片与划线性能优化.md)
-- [v1.0.31 Bootloader 构建日志](docs/stage_fastboot_v1.0.31_bootloader.log)
-- [v1.0.28 屏幕检测 OS 构建日志](docs/stage_screen_test_v1.0.28_os_build.log)
-- [v1.0.28 屏幕检测源码差异](docs/screen_test_page_v1.0.28_source.patch)
-- [v1.0.29 按键切页与返回键 OS 构建日志](docs/stage_screen_test_buttons_v1.0.29_os_build.log)
-- [v1.0.29 按键切页与返回键源码差异](docs/screen_test_buttons_v1.0.29_source.patch)
-- [v1.0.30 图片与划线构建日志](docs/stage_speed_v1.0.30_final_os_build.log)
-- [v1.0.30 源码差异](docs/speed_v1.0.30_source.patch)
-- [故障排查](docs/故障排查.md)
-- [v1.0.27 触摸设备名健康检查修复构建日志](docs/stage_uart_config_v1.0.27_build.log)
-- [v1.0.27 看门狗健康检查源码差异](docs/v1.0.26_touch_health_source.patch)
-- [v1.0.22 图片预览与屏幕串口源码差异](docs/panel_serial_images_v1.0.22_source.patch)
-- [v1.0.21 静默启动代码差异](docs/quiet_startup_v1.0.21_source.patch)
-- [分区配置](source/target/d13x/d133cbv-hmi-nor/pack/image_cfg.json)
-- [ENV 配置](source/target/d13x/d133cbv-hmi-nor/pack/env.txt)
-- [OTA 子镜像配置](source/target/d13x/d133cbv-hmi-nor/pack/ota-subimgs.cfg)
-
-当前工厂镜像为 [v1.0.39 IMG](downloads/d13x_d133cbv-hmi-nor_v1.0.39.img)，大小 4,295,168 字节，SHA-256 `653d58bde523d1936169db28dda8c6a5fb5cfbdf63bbd072f52ea4eb5fa5c36b`。镜像包含首次部署用配套 SPL/Bootloader，供人工使用 AiBurn；本工程不会自动连接开发板、烧录或擦除 Flash。此次未生成日常 OTA 包。按键导航、返回键、触摸划线和 SD 图片仍需上板确认。
-
-## 仓库内容
-
-仓库包含 Luban-Lite 应用 overlay、Windows 构建/OTA 脚本、工程文档、研发工具箱 D133 源码和当前工厂镜像。研发工具箱 0.8.37 手动覆盖包已在 [YF-Tbox Release](https://github.com/BZMDQ/YF-Tbox/releases/tag/v0.8.37) 发布；本地副本和校验文件在 `downloads/`。首次安装仍可用 0.8.36 完整便携包/安装程序。完整 SDK 需另行准备；本仓库不包含 00_原始配置备份和未发布历史固件。
-
-开发签名私钥不会存入仓库。需要生成 OTA 时，请在本地提供私钥文件，并将私钥保存在 `keys/development_private.pem` 或通过 `sign_ota.ps1 -PrivateKey` 指定路径。当前跟踪的 v1.0.18 OTA、签名与元数据位于 `downloads/`，Release 页面链接这些仓库文件；当前 Release 使用开发测试密钥，量产前必须替换为受控密钥并完成目标板验收。
-
-早期启动逐项计时使用单独的 v1.0.19 RT_DEBUG_INIT 诊断 OTA，见 [诊断包说明](docs/rt_init_profile_v1.0.19.md) 和 [诊断 Release](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.19-initdiag)。它会输出大量启动日志并增加启动耗时，仅用于分析初始化瓶颈，不作为生产固件；安装后版本变为 1.0.19，后续正式 OTA 需使用更高版本。
-
-## 从仓库构建
-
-在 Windows PowerShell 中准备 Luban-Lite SDK，然后显式指定 SDK 路径：
+`source/` 是需要同步到原 SDK 的实际源码覆盖层，包含应用、目标板配置以及必要的 MPP 中间件修改；不包含完整 SDK、工具链或私钥。构建脚本使用 SDK 官方 SCons、镜像和 OTA 打包工具。
 
 ```powershell
-.\scripts\build.ps1 -Target OS -SdkRoot "D:\path\to\luban-lite-master" -LogName local_factory_build.log
+# 请使用 PowerShell 7，显式指定本机原 SDK 路径。
+.\scripts\build.ps1 -Target OS -SdkRoot 'D:\path\to\luban-lite-master' -LogName local_os.log
+.\scripts\build.ps1 -Target Bootloader -SdkRoot 'D:\path\to\luban-lite-master' -LogName local_bootloader.log
 ```
 
-构建脚本会先从 `source/` 同步工程 overlay，再由 SDK 官方 SCons 系统编译。镜像输出在 SDK 的 `output/d13x_d133cbv-hmi-nor_rt-thread_d133_hmi/images/`。构建不会烧录开发板。
+`OtaCandidate` 可构建独立 OTA profile；工厂 OS 构建也由官方工具生成同版 `ota.cpio`。版本化包经 `prepare_ota.py` 修复官方打包元数据 CRC 并预检，再由 `sign_ota.ps1 -PrivateKey <本机私钥>` 离线签名。量产需更换开发公钥及受控私钥，私钥不得进入仓库或固件。
 
-## 界面页面
+本机定制可传入 `-ToolboxKeyFile` 和 `-WifiBootstrapFile`，后者为 SSID、密码各一行。临时私有头文件只在 SDK 构建期间存在，结束时清理。私有镜像禁止上传公开仓库。
 
-首页采用 5×3 应用网格，显示七个已实现入口；剩余位置留白。首页不显示设备总览详情和顶部状态胶囊。点击“设备总览”进入单独页面，查看 A/B 槽位、网络、SD 卡、健康状态、运行时间与硬件信息。点击“屏幕检测”进入说明页，再启动全屏测试；测试页仅由 UP/DOWN 按键切换，并在左上角提供返回键。文件管理、固件升级、系统信息、网络设置和系统日志页面均提供顶部返回键。
+## 验证与故障定位
 
-用户提供的 v1.0.20 外部引脚热复位日志为 1.632 秒；同类 v1.0.18 日志为 1.630 秒，整机未见可测提速。v1.0.23 保持静默 RT 控制台、FinSH/MSH 和 ULOG 关闭，同时用 UART0 接收代号并输出启动 profile。此次启动耗时尚未上板测量，QSPI/NOR 时钟保持不变。
+当前已完成 SDK OS 编译、CPIO 白名单/破坏数据/SPL 映射拒绝、RSA 验签，以及实际编译 Python3.8 客户端在模拟设备下的正常提交、旧能力拒绝和错误偏移不提交测试。C 流式校验器已交叉编译，未进行本机原生 C 运行测试或真实 Flash 写入验收。
 
-板载蜂鸣器已按 D133CBS 原理图接入 PWM1_A/PE.11，工具箱 LNET 会话建立及 OTA 开始时会记录设备消息并异步请求 1 秒提示音。无线 Wi-Fi 暂未启用：板卡模块为 RTL8723DS，而当前 Luban-Lite WLAN 选择项/预编译库只覆盖 RTL8733、RTL8189 等芯片，没有匹配的 RTL8723DS RT-Thread 驱动和 E907F 库。具体依赖与接入步骤见 [无线与蜂鸣器集成状态](docs/无线与蜂鸣器集成.md)。
+旧协议的两次获准 SD 暂存接收诊断（不发送提交或重启）分别在不同进度复现超时，另一状态连接持续可用。这个结果不等于新直写协议已通过实机验收。
 
-v1.0.27 修复 UART0 配置覆盖：先用 RT_SERIAL_GET_CONFIG 读取 SDK 注册配置，再修改波特率，避免默认模板 uart_index=15 导致打开失败。SDK 编译与板上验收分别记录；硬件结果仍需确认。
-
-v1.0.28 新增全屏屏幕检测和 SD 分辨率精确匹配。v1.0.29 将测试页切换限制为 GPAI2 UP/DOWN 按键，并增加左上角触摸返回键；白屏页触摸仅绘制蓝线。SDK OS 构建和工厂镜像封装已完成，未连接开发板验证。
-
-v1.0.30 将触摸笔迹分为局部线段，减少单次重绘区域；BMP 可视区域按文件偏移正向读取，并在内存中处理倒置行，文件管理与屏幕测试共用。最多保留 64 段笔迹，超出时移除最旧线段。屏幕测试复用已读取的图片头，JPEG/PNG 解码继续使用 SDK MPP；实际打开耗时和显示效果需在板上对比测量。
-
-
-v1.0.31 在专用 Bootloader 中跳过普通 NOR 开机的 U 盘自动扫描，去除该路径的 1000 ms 连接检查等待。实测提速仍待上板确认。此改动需要人工部署配套工厂 IMG；日常 OS/RODATA OTA 不更新 Bootloader。
-
-- [快速启动说明及验收方法](docs/快速启动_v1.0.31.md)
-- [Bootloader 构建日志](docs/stage_fastboot_v1.0.31_bootloader.log)
-- [OS 构建日志](docs/stage_fastboot_v1.0.31_os.log)
-- [源码差异](docs/fastboot_v1.0.31_source.patch)
-
-
-v1.0.32 文件管理页采用位置栏、地址栏、工具栏与文件列表布局；BMP 连续完整行分批读取，内存不足时回退逐行读取。JPEG/PNG 继续使用 SDK MPP 解码。界面显示、图片颜色和加速效果仍需在设备上验证。
-
-- [文件管理与图片说明](docs/文件管理_v1.0.32.md)
-- [OS 最终构建日志](docs/stage_explorer_v1.0.32_final_os.log)
-- [源码差异](docs/explorer_v1.0.32_source.patch)
-
-
-v1.0.33 加快常见 BMP 像素转换：RGB565 直接复制，RGB555 使用等价位运算，标准 32 位通道顺序采用直接转换。其他掩码沿用通用转换；JPEG/PNG 继续使用 SDK MPP。实际解码时间、颜色和大图内存仍需上板验证。
-
-- [解码优化说明](docs/解码优化_v1.0.33.md)
-- [OS 构建日志](docs/stage_decode_v1.0.33_os.log)
-- [源码差异](docs/decode_v1.0.33_source.patch)
-
-
-v1.0.34 为 24 位及标准 32 位 BMP 增加逐行直接转换路径，绕过通用像素格式分派及逐像素 memcpy。其他 BMP 掩码沿用通用转换；JPEG/PNG 仍由 SDK MPP 解码。速度和屏幕颜色需上板测量。
-
-- [BMP 解码优化说明](docs/bmp_decode_v1.0.34.md)
-- [OS 构建日志](docs/stage_bmp_decode_v1.0.34_os.log)
-- [源码差异](docs/bmp_decode_v1.0.34_source.patch)
-
-
-v1.0.35 将完整行 BMP 连续读取批次提升至最多 16 行，缓冲上限 128 KiB，分配不足时逐级回退；24/32 位路径保留快速像素转换。速度改善仍需使用实际 SD 卡在板上测量。
-
-- [BMP 批量读取优化说明](docs/bmp_batch_v1.0.35.md)
-- [OS 构建日志](docs/stage_bmp_batch_v1.0.35_os.log)
-- [源码差异](docs/bmp_batch_v1.0.35_source.patch)
-
-
-v1.0.36 屏幕检测白屏页通过 GT911 track ID 接收最多五个触点，为每根手指分别绘线。多指输入数据由现有触摸线程采集，LVGL 线程读取快照并更新笔迹。多指效果仍需 GT911 屏幕实机验证。
-
-- [多指划线说明](docs/多指划线_v1.0.36.md)
-- [OS 构建日志](docs/stage_multitouch_v1.0.36_os.log)
-- [源码差异](docs/multitouch_v1.0.36_source.patch)
-
-
-v1.0.37 为屏幕检测五个 GT911 触点 ID 分配蓝、红、绿、橙、紫五种固定笔迹颜色。多指显示效果仍需板上验证。
-
-- [v1.0.38 CS001 ILI9881C 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
-- [源码差异](docs/finger_colors_v1.0.37_source.patch)
-
-
-v1.0.38 将 CS001 切换为 SDK ILI9881C-04 面板配置，按 WJ101E5 图纸设置为 800×1280 四通道 MIPI。屏幕控制器初始化由 SDK 面板驱动提供，lane/极性、RESET 和出图仍待实板确认。
-
-- [CS001 ILI9881C MIPI 接入说明](docs/CS001_MIPI接入说明.md)
-- [v1.0.38 OS 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
-
-
-v1.0.38 将 CS001 profile 更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA，原生分辨率 800×1280，使用 SDK ILI9881C_04_DEFAULT 四通道 MIPI 驱动。panel 选择配置和面板时序已在主机侧构建；MIPI 出图和竖屏界面适配仍需上板确认。
-
-CS001 原 MIPI 面板型号已更正为 WJ101E5TAAUMNG10# / ILI9881C-04T00GA。v1.0.38 使用 SDK ILI9881C_04_DEFAULT 和 800×1280 四通道 MIPI 配置；其驱动、FPC lane/极性、RESET、出图和竖屏 UI 仍需实板确认。
-
-- [CS001 ILI9881C panel and mode build info](docs/CS001_MIPI接入说明.md)
-
-
-v1.0.39 在 ILI9881C-04 初始化命令前打开 PE.13 背光使能，减少 DSI 初始化异常时黑屏难以区分的情况。VLED 背光供电仍需确认模组与载板实际连接。
-
-CS001 ILI9881C 面板 v1.0.39 在 DSI 初始化前打开 PE.13 背光使能，初始化后再次确认使能。若仍无背光，应核实模组 VLED+/VLED− 供电和载板 LED 电流驱动；软件不能替代缺失的背光电源。
-
-- [CS001 背光说明和检查步骤](docs/CS001_backlight_v1.0.39.md)
-- [v1.0.39 OS 构建日志](docs/stage_cs001_backlight_v1.0.39_os.log)
-
-- [v1.0.39 ILI9881C 背光使能源码差异](docs/cs001_backlight_v1.0.39_source.patch)
+视频超时时会显示 SDK 返回码、帧数以及文件读取快照。`SDK=3` 表示没有可解码的数据包；若重复打开后复现，请保留完整 I/O 请求/返回/errno 信息。[历史故障排查](docs/故障排查.md)和 `docs/` 中旧版说明仅供追溯，协议与资源以本页当前版本为准。

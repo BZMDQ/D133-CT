@@ -13,6 +13,7 @@ HARDWARE = 'D133CBV-QFN88-V1-2'
 PORT = 5000
 INFO, BEGIN, DATA, COMMIT, SIGNATURE = range(0xD100, 0xD105)
 HEALTH = 0xD105
+STREAM_BEGIN = 0xD106
 LIMITS = {'ota_info.bin': 512, 'd13x_os.itb': 3392*1024, 'rodata.fatfs': 5*1024*1024}
 
 def validate_cpio(data):
@@ -51,7 +52,7 @@ def _request(sock,op,offset=0,payload=b''):
     sock.sendall(frame(op,offset,payload))
     try: response,body=receive(sock)
     except DeviceError as exc:
-        messages={3:'设备忙',4:'型号、硬件或版本不匹配',5:'SD 卡未就绪或容量不足',6:'传输偏移错误',9:'数据校验失败',14:'开发板拒绝升级或等待超时',20:'CPIO 包预检失败',21:'包版本与传输版本不一致',22:'SHA256 计算失败',23:'SHA256 不匹配',24:'RSA 固件签名验证失败',25:'官方 OTA 写入失败',26:'包成员未完整写入',27:'启动状态提交失败',28:'升级状态文件保存失败'}
+        messages={11:'协议不兼容，请安装配套的TCP直写工具箱补丁',3:'设备忙',4:'型号、硬件或版本不匹配',5:'SD 卡未就绪或容量不足',6:'传输偏移错误',9:'数据校验失败',14:'开发板拒绝升级或等待超时',20:'CPIO 包预检失败',21:'包版本与传输版本不一致',22:'SHA256 计算失败',23:'SHA256 不匹配',24:'RSA 固件签名验证失败',25:'官方 OTA 写入失败',26:'包成员未完整写入',27:'启动状态提交失败',28:'升级状态文件保存失败'}
         raise RuntimeError(messages.get(exc.status,'D133CBS 返回错误 '+str(exc.status))) from exc
     if response!=op:raise ValueError('D133 升级应答命令不匹配')
     return body
@@ -76,26 +77,35 @@ def upload(host,port,path,progress,cancel):
     data=Path(path).read_bytes();version=validate_cpio(data)
     signature=Path(str(path)+'.sig').read_bytes()
     if not 1<=len(signature)<=512:raise ValueError('需要有效的 RSA 签名文件 ota.cpio.sig')
+    connection_started=time.monotonic()
     with socket.create_connection((host,int(port)),timeout=10) as sock:
         # 每块等待设备确认；关闭 Nagle 可减少小包交互延时。
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.settimeout(180);info=json.loads(_request(sock,INFO).decode('utf-8'))
         _device_message(json.dumps(info,ensure_ascii=False).encode('utf-8'),progress)
         if info.get('product')!=PRODUCT or info.get('hardware')!=HARDWARE or info.get('protocol')!=1:raise ValueError('目标不是兼容的 D133CBS OTA 服务')
+        progress(0,'连接与信息读取：%.2f 秒'%(time.monotonic()-connection_started))
         current=tuple(map(int,info['version'].split('.')))
         if tuple(map(int,version.split('.')))<=current:raise ValueError('升级包版本必须高于当前固件 '+info['version'])
         metadata=struct.pack('<I32s32s32s32s',len(data),hashlib.sha256(data).digest(),PRODUCT.encode(),HARDWARE.encode(),version.encode())
-        begin_reply=_request(sock,BEGIN,payload=metadata)
+        if info.get('stream_ota',0)<2:raise ValueError('此设备尚不支持TCP直写；请先手动安装配套工厂镜像')
+        progress(0,'签名预检／等待开发板确认；确认后接收并写入非活动槽')
+        preflight_started=time.monotonic()
+        begin_reply=_request(sock,STREAM_BEGIN,payload=metadata+signature)
+        progress(0,'签名预检和屏幕确认：%.2f 秒'%(time.monotonic()-preflight_started))
+        transfer_started=time.monotonic()
         _device_message(begin_reply,progress)
         for offset in range(0,len(data),16384):
             if cancel.is_set():raise InterruptedError('已停止，暂存包不会激活')
             block=data[offset:offset+16384];ack=_request(sock,DATA,offset,block)
             if ack!=struct.pack('<I',offset+len(block)):raise ValueError('设备下载进度不匹配')
-            progress((offset+len(block))*100//len(data),'正在接收升级包')
+            elapsed=max(time.monotonic()-transfer_started,0.001)
+            progress((offset+len(block))*100//len(data),'接收写入 %.2f 秒，平均 %.1f KiB/s'%(elapsed,(offset+len(block))/1024/elapsed))
         if cancel.is_set():raise InterruptedError('已停止，尚未提交升级')
-        _request(sock,SIGNATURE,payload=signature)
         progress(100,'请在开发板屏幕确认；等待校验、写入和重启，提交后请勿断电')
+        commit_started=time.monotonic()
         ack=_request(sock,COMMIT)
+        progress(100,'完整性核对与启动提交：%.2f 秒'%(time.monotonic()-commit_started))
         if ack!=struct.pack('<I',len(data)):raise ValueError('升级提交应答长度错误')
     progress(100,'已提交；等待设备重启及健康检查')
     deadline=time.monotonic()+420
@@ -107,7 +117,7 @@ def upload(host,port,path,progress,cancel):
                 check.settimeout(5);state=_health_info(check)
                 elapsed=420-(deadline-time.monotonic())
                 if state.get('version')==version and state.get('confirmed') and state.get('slot')==state.get('next_slot'):
-                    progress(100,'升级完成；新系统版本、槽位和健康状态已确认');return version
+                    progress(100,'升级完成；重启和健康确认 %.1f 秒，版本和槽位已核对'%elapsed);return version
                 if elapsed>30 and state.get('version')==info.get('version') and state.get('confirmed') and state.get('slot')==state.get('next_slot'):
                     raise RuntimeError('Bootloader 已回滚 OS 与 RODATA 到原版本 '+info['version'])
         except (OSError,ValueError):pass

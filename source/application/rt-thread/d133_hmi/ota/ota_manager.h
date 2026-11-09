@@ -3,13 +3,17 @@
 #include <stdint.h>
 /* 接收状态追加在末尾，保持既有工具箱状态编号不变。 */
 typedef enum { OTA_IDLE,OTA_CONFIRM,OTA_CHECK,OTA_WRITE,OTA_READY,OTA_FAILED,OTA_RECEIVE } hmi_ota_state_t;
-typedef struct {hmi_ota_state_t state;unsigned percent;int error,remote;char version[32];} hmi_ota_status_t;
+typedef struct {hmi_ota_state_t state;unsigned percent;int error,remote;uint32_t bytes_per_second,total_ms,phase_ms[6];unsigned phase;char version[32];} hmi_ota_status_t;
 int ota_manager_init(void);
 int ota_manager_request(const char *path,const unsigned char *sha,const char *version,int remote);
 int ota_manager_receive_begin(const char *version);
 void ota_manager_receive_progress(uint32_t written,uint32_t total);
 void ota_manager_receive_abort(int error);
 void ota_manager_decide(int accept);
+/* 阶段：1签名、2确认、3接收写入、4校验、5提交；0结束。 */
+void ota_manager_phase(unsigned phase);
+int ota_manager_stream_confirm(void);
+void ota_manager_stream_state(hmi_ota_state_t state,unsigned percent,int error);
 void ota_manager_get(hmi_ota_status_t *out);
 void ota_manager_reboot(void);
 /* 产品可注册签名验证器；无验证器时明确返回未支持，不伪造验证成功。 */
