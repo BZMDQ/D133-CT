@@ -39,7 +39,7 @@ from local_tcp_client import (
 
 
 APP_TITLE = '研发工具箱'
-APP_VERSION = '0.8.37'
+APP_VERSION = '0.8.38'
 APP_ICON_FILE = 'research_toolbox.ico'
 APP_LOGO_FILE = 'wslogo.png'
 DEFAULT_PORT = 5000
@@ -5125,5 +5125,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 

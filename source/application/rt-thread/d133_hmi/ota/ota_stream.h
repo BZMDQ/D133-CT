@@ -7,3 +7,4 @@ int ota_stream_feed(const unsigned char *data,unsigned length);
 int ota_stream_finish(const unsigned char actual_hash[32]);
 void ota_stream_abort(int error);
 #endif
+

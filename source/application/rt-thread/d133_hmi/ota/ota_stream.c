@@ -120,3 +120,4 @@ int ota_stream_finish(const unsigned char actual_hash[32])
     if(aic_upgrade_end()){ota_stream_abort(-27);return -27;}
     boot_manager_refresh();ota_manager_stream_state(OTA_READY,100,0);ota_manager_phase(0);return 0;
 }
+

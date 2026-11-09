@@ -408,7 +408,10 @@ static void close_image_preview(lv_event_t *event)
     image_object = NULL;
     if (overlay)
         lv_obj_delete(overlay);
+    /* 解码线程仍在运行时由它完成释放，避免同时清理LVGL缓存。 */
+    int was_loading = image_preview_status(NULL,0)==IMAGE_PREVIEW_LOADING;
     image_preview_cancel();
+    if(!was_loading)lv_image_cache_drop(NULL);
 }
 
 /* 由 LVGL 线程快速检查解码结果，避免等待主界面 200 ms 状态轮询。 */
@@ -553,6 +556,7 @@ static void close_video(lv_event_t *event)
     video_image_buffer = NULL;
     memset(&video_image_dsc, 0, sizeof(video_image_dsc));
     video_player_close();
+    lv_image_cache_drop(NULL);
 }
 
 /* LVGL 已把当前帧画入显示缓冲；保留画面，避免 SD/解码稍慢时闪黑。 */
@@ -1112,7 +1116,8 @@ static void screen(unsigned number)
         lv_obj_set_width(page_title, 400);
     } else {
         lv_obj_clear_flag(back_button, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(top, LV_OBJ_FLAG_HIDDEN);
+        /* 各页面右上角不显示系统槽位信息。 */
+        lv_obj_add_flag(top, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(logo_image, LV_OBJ_FLAG_HIDDEN);
         if (wifi_indicator_dot) lv_obj_add_flag(wifi_indicator_dot, LV_OBJ_FLAG_HIDDEN);
         if (wifi_indicator_label) lv_obj_add_flag(wifi_indicator_label, LV_OBJ_FLAG_HIDDEN);
@@ -1297,15 +1302,6 @@ static void screen(unsigned number)
         label(content, display_info, 540, 200, 410);
         label(content, "内存：SRAM 1 MiB + PSRAM 8 MiB",
               540, 238, 410);
-        label(content, "修改设备名称", 540, 302, 240);
-        device_name_input = input(content, device_name, 540, 328, 270, 44);
-        lv_textarea_set_max_length(device_name_input, HMI_DEVICE_NAME_MAX_BYTES);
-        primary_button(content, "保存名称", 820, 328, 136,
-                       save_device_name_action, NULL);
-        device_name_status_label = label(content, "名称修改会同步到 TCP 5000 工具箱信息。",
-                                          540, 384, 410);
-        lv_obj_set_height(device_name_status_label, 48);
-        lv_label_set_long_mode(device_name_status_label, LV_LABEL_LONG_DOT);
         button(content, ui_reduce_motion ? "减少动画：开" : "减少动画：关",
                40, 392, 240, toggle_reduce_motion, NULL);
     } else if (number == 7) {
@@ -1661,3 +1657,4 @@ void hmi_ui_init(void)
     }
     hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
 }
+

@@ -1147,3 +1147,4 @@ void image_preview_cancel(void)
         rt_mutex_release(&state_lock);
     }
 }
+

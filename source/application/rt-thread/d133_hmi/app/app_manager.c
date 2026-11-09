@@ -44,3 +44,4 @@ int app_manager_init(void)
 
 INIT_APP_EXPORT(app_manager_init);
 
+

@@ -86,7 +86,7 @@ def upload(host,port,path,progress,cancel):
         if info.get('product')!=PRODUCT or info.get('hardware')!=HARDWARE or info.get('protocol')!=1:raise ValueError('目标不是兼容的 D133CBS OTA 服务')
         progress(0,'连接与信息读取：%.2f 秒'%(time.monotonic()-connection_started))
         current=tuple(map(int,info['version'].split('.')))
-        if tuple(map(int,version.split('.')))<=current:raise ValueError('升级包版本必须高于当前固件 '+info['version'])
+        # 允许签名有效的固件回刷或重装；设备仍进行型号、槽位及签名校验。
         metadata=struct.pack('<I32s32s32s32s',len(data),hashlib.sha256(data).digest(),PRODUCT.encode(),HARDWARE.encode(),version.encode())
         if info.get('stream_ota',0)<2:raise ValueError('此设备尚不支持TCP直写；请先手动安装配套工厂镜像')
         progress(0,'签名预检／等待开发板确认；确认后接收并写入非活动槽')
@@ -122,4 +122,5 @@ def upload(host,port,path,progress,cancel):
                     raise RuntimeError('Bootloader 已回滚 OS 与 RODATA 到原版本 '+info['version'])
         except (OSError,ValueError):pass
     raise RuntimeError('OTA 已提交；420 秒内未确认新系统健康，请检查开发板状态及回滚日志')
+
 

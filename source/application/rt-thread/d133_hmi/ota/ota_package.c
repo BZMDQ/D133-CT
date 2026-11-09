@@ -55,11 +55,11 @@ int ota_metadata_check(const unsigned char meta[512],char version[32],uint32_t a
     if(index!=6||!size_text[0]||!version_text[0]||strtoul(size_text,NULL,10)!=archive_size)return -1;
     snprintf(version,32,"%s",version_text);return 0;
 }
+/* 保留版本格式验证；用户允许已签名固件回刷和重装。 */
 int ota_version_newer(const char *s)
 {
-    unsigned a,b,c,x,y,z;char tail;
-    if(sscanf(s,"%u.%u.%u%c",&a,&b,&c,&tail)!=3||sscanf(HMI_VERSION,"%u.%u.%u",&x,&y,&z)!=3)return 0;
-    return a>x||(a==x&&(b>y||(b==y&&c>z)));
+    unsigned a,b,c;char tail;
+    return s && sscanf(s,"%u.%u.%u%c",&a,&b,&c,&tail)==3;
 }
 int ota_package_sha256(const char *path,unsigned char hash[32])
 {
@@ -106,5 +106,6 @@ int ota_package_check(const char *path,char version[32])
     }
 done:fclose(f);return result;
 }
+
 
 

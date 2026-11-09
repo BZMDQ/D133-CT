@@ -51,3 +51,4 @@ int time_sync_init(void)
     rt_thread_t worker=rt_thread_create("hmi_time",sync_worker,RT_NULL,2048,25,10);
     return worker?rt_thread_startup(worker):-1;
 }
+

@@ -371,6 +371,7 @@ static void wifi_scan_event(int event, struct rt_wlan_buff *buff, void *paramete
             memcpy(scan_items[i].ssid, info->ssid.val, len);
             scan_items[i].ssid[len] = 0;
             scan_items[i].rssi = info->rssi;
+            /* 报告回调可能晚于扫描完成事件，仍标记列表变化供UI合并刷新。 */
             scan_generation++;
         }
     }
@@ -391,6 +392,8 @@ static void wifi_do_scan(void)
     result = rt_wlan_scan_with_info(RT_NULL);
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     scan_in_progress = 0;
+    /* 扫描结束后一次刷新列表，避免每条结果反复重建下拉框。 */
+    scan_generation++;
     rt_mutex_release(&state_lock);
     update_status(result == RT_EOK ? "扫描完成" : "扫描失败，请检查无线模块");
 }
@@ -510,16 +513,19 @@ int wifi_manager_scan(void)
         return -1;
     job.command = WIFI_JOB_SCAN;
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
+    if(scan_in_progress){rt_mutex_release(&state_lock);return 0;}
     scan_in_progress = 1;
     indicator_state = WIFI_INDICATOR_CONNECTING;
+    /* 此接口可能由LVGL调用，不读取需要WLAN管理锁的驱动信息。 */
+    rt_snprintf(state_text,sizeof(state_text),"正在刷新周围 Wi-Fi 网络");
     rt_mutex_release(&state_lock);
-    update_status("正在刷新周围 Wi-Fi 网络");
     if (rt_mq_send(jobs, &job, sizeof(job)) == RT_EOK)
         return 0;
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     scan_in_progress = 0;
+    indicator_state = WIFI_INDICATOR_FAILED;
+    rt_snprintf(state_text,sizeof(state_text),"Wi-Fi 刷新请求失败");
     rt_mutex_release(&state_lock);
-    update_status("Wi-Fi 刷新请求失败");
     return -1;
 }
 
@@ -711,3 +717,4 @@ int wifi_manager_get_uid(char *text, size_t capacity)
         rt_snprintf(text + i * 2U, capacity - i * 2U, "%02X", sta->netdev->hwaddr[i]);
     return (int)(length * 2U);
 }
+

@@ -21,3 +21,4 @@ typedef int (*ota_signature_verifier_t)(const char *path,const unsigned char dig
 void ota_manager_set_signature_verifier(ota_signature_verifier_t verify);
 #endif
 
+

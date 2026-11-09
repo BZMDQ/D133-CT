@@ -378,3 +378,4 @@ void video_player_release_frame(unsigned sequence)
     if (direct_mode && frame_sequence == sequence) frame_buffer = RT_NULL;
     rt_mutex_release(&video_lock);
 }
+

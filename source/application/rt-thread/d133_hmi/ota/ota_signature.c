@@ -25,3 +25,4 @@ int ota_signature_verify_bytes(const unsigned char hash[32],const unsigned char 
     if(!result)result=mbedtls_pk_verify(&key,MBEDTLS_MD_SHA256,hash,32,signature,length);
     mbedtls_pk_free(&key);return result;
 }
+
