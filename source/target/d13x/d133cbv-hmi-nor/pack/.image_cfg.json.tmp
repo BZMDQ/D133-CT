@@ -5,10 +5,9 @@
             "spl":        { "size": "512k" },
             "env":        { "size": "128k" },
             "env_r":      { "size": "128k" },
-            "os":         { "size": "3392k" },
-            "os_r":       { "size": "3392k" },
-            "rodata":     { "size": "3904k" },
-            "rodata_r":   { "size": "3904k" },
+            "os":         { "size": "5248k" },
+            "os_r":       { "size": "5248k" },
+            "rodata":     { "size": "4096k" },
             "data":       { "size": "1m" }
         },
     },
@@ -16,7 +15,7 @@
         "info": { // Header information about image
             "platform": "d13x",
             "product": "d133cbv-hmi-nor",
-  "version": "1.0.67",
+  "version": "1.0.118",
             "media": {
                 "type": "spi-nor",
                 "device_id": 0,
@@ -58,7 +57,7 @@
             "rodata": {
                 "file": "rodata.fatfs",
                 "attr": ["mtd", "optional"],
-                "part": ["rodata", "rodata_r"]
+                "part": ["rodata"]
             },
             "data": {
                 "file": "data.lfs",

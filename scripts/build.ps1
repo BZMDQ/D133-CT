@@ -94,7 +94,21 @@ $def=if($Target -eq 'Bootloader'){'d13x_d133cbv-hmi-nor_baremetal_bootloader_def
     if(Test-Path -LiteralPath $versionAsset){[IO.File]::WriteAllText($versionAsset,"D133-控制终端 $version`r`n",[Text.UTF8Encoding]::new($false))}
     # 隐藏的 SDK 临时镜像配置也需采用工程分区表，避免镜像打包静默沿用旧槽位大小。
     $overlayImageCfgTmp=Join-Path $overlay 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp'
+    if(!(Test-Path -LiteralPath $overlayImageCfgTmp)){throw '隐藏 .image_cfg.json.tmp 缺失；已停止打包，避免SDK复用旧烧录布局。'}
     if(Test-Path -LiteralPath $overlayImageCfgTmp){
+        # 防止 AiBurn 最终读取的隐藏临时配置继续使用旧 A/B RODATA 映射。
+        $canonicalCfg=Get-Content -LiteralPath $sourceImageCfg -Raw -Encoding UTF8
+        $hiddenCfg=Get-Content -LiteralPath $overlayImageCfgTmp -Raw -Encoding UTF8
+        $partitionPattern='(?s)"partitions"\s*:\s*\{(.*?)\r?\n\s{8}\},'
+        $canonicalParts=[regex]::Match($canonicalCfg,$partitionPattern)
+        $hiddenParts=[regex]::Match($hiddenCfg,$partitionPattern)
+        if(!$canonicalParts.Success -or !$hiddenParts.Success -or
+           ($canonicalParts.Groups[1].Value -replace '\s','') -ne ($hiddenParts.Groups[1].Value -replace '\s','')){
+            throw 'image_cfg.json 与隐藏 .image_cfg.json.tmp 的 SPI NOR 分区表不一致；已停止打包，避免生成错误烧录映射。'
+        }
+        if($hiddenCfg.Contains('"part": ["rodata", "rodata_r"]')){
+            throw '隐藏烧录配置仍将 RODATA 写入双槽；已停止打包。'
+        }
         Copy-Item -LiteralPath $overlayImageCfgTmp -Destination (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') -Force
     }
     Set-D133ImageVersion (Join-Path $sdk 'target\d13x\d133cbv-hmi-nor\pack\.image_cfg.json.tmp') $version

@@ -15,7 +15,7 @@
         "info": { // Header information about image
             "platform": "d13x",
             "product": "d133cbv-hmi-nor",
-  "version": "1.0.118",
+  "version": "1.0.120",
             "media": {
                 "type": "spi-nor",
                 "device_id": 0,
@@ -52,12 +52,7 @@
             "os": {
                 "file": "d13x_os.itb",
                 "attr": ["mtd", "required"],
-                "part": ["os"]
-            },
-            "os_r": {
-                "file": "d13x_os.itb",
-                "attr": ["mtd", "required"],
-                "part": ["os_r"]
+                "part": ["os", "os_r"]
             },
             "rodata": {
                 "file": "rodata.fatfs",
