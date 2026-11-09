@@ -1,12 +1,14 @@
-公开候选 v1.0.130：支持单资源分区、ENV必写迁移、SPL启动变量修复、OTA直写与签名版本回刷。[工厂IMG](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/D133-CT_factory_v1.0.130.zip)、[OS-only OTA](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/D133-CT_OTA_v1.0.130.zip)、[研发工具箱0.8.38](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/ResearchToolbox_0.8.38.zip)、[SHA-256校验文件](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/SHA256SUMS_v1.0.130.txt)、[工具箱更新说明](docs/研发工具箱_0.8.38_更新说明.md)、[四项变更](docs/候选版本_v1.0.130_四项.md)。本机私有固件仅存内部部署。真实烧录和A/B启动尚未验收。
+源码候选 v1.0.130：支持单资源分区、ENV必写迁移、SPL启动变量修复、OTA直写与签名版本回刷。[工具箱更新说明](docs/研发工具箱_0.8.38_更新说明.md)、[四项变更](docs/候选版本_v1.0.130_四项.md)。IMG、OTA 和研发工具箱 0.8.38 完整归档已在本机生成，尚未上传到 GitHub Release；真实烧录和 A/B 启动尚未验收。
 
 基于 ArtInChip Luban-Lite 1.3.2、RT-Thread 和 LVGL 9.1，目标板 D133CBV-QFN88-V1-2 / D133CBS，16 MiB SPI NOR、1 MiB SRAM 与 8 MiB PSRAM。
 
 ## 当前候选资源
 
-- [v1.0.130 首次部署工厂 IMG 包](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/D133-CT_factory_v1.0.130.zip)
-- [v1.0.130 签名 OS-only OTA 包](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/D133-CT_OTA_v1.0.130.zip)
-- [研发工具箱 0.8.38 完整包](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/ResearchToolbox_0.8.38.zip)（[SHA-256](https://github.com/BZMDQ/D133-CT/releases/download/v1.0.130/SHA256SUMS_v1.0.130.txt)）
+以下归档已生成在本机 `downloads/`，目前尚未提供公开下载链接：
+
+- `D133-CT_factory_v1.0.130.zip`：首次部署工厂 IMG。
+- `D133-CT_OTA_v1.0.130.zip`：签名 OS-only OTA。
+- `ResearchToolbox_0.8.38.zip`：工具箱完整包，SHA-256 在 `SHA256SUMS_v1.0.130.txt`。
 - [直写协议、阶段计时及验证边界](docs/TCP直写与阶段耗时_v1.0.113.md)
 
 公开包不包含私有工具箱 Key 或默认 WiFi 密码。本机定制版为 v1.0.112，仅保存在本地内部部署目录。当前资源属于候选版本，真实 Flash 写入、掉电恢复及 A/B 回滚未验收。
@@ -23,7 +25,7 @@ BMP 使用扇区对齐、双缓冲预读和通用像素格式转换，24/32位�
 
 首次请手动使用 AiBurn 烧录配套工厂 IMG；USB BROM 工厂恢复保留，禁止把日常 OTA 当成首次部署镜像。日常 OTA 不包含 SPL、DATA 或 ENV 镜像。
 
-手动退出研发工具箱后，以 PowerShell 7 运行补丁包中的 `安装补丁.ps1`，再重新打开工具箱。补丁仅适用于其 SHA256 检查匹配的已核对模块，先备份再替换 D133 客户端，不修改其它开发板。工具箱实际加载根目录 `.pyc`，只编辑 Source 中的 `.py` 不会生效。
+使用研发工具箱 0.8.38 完整包时，解压后运行 `ResearchToolbox_0.8.38.exe`。工具箱实际加载根目录 `.pyc`，只编辑 Source 中的 `.py` 不会生效。
 
 工具箱选择 D133CBS 和设备 IP、端口 5000，选择 `.cpio`，同名 `.cpio.sig` 必须放在一起。新协议先发送签名摘要，设备预检后要求屏幕确认；随后调用官方 aic-ota 直接写非活动 OS 槽，接收结束校验完整性后通过官方 aic-env 提交切换。A 运行写 B，B 运行写 A。失败不激活未完成槽。设备允许安装签名有效、版本相同或更低的 OS-only 包，以支持重装和回刷；分区布局和资源槽不随日常 OTA 改变，回刷包须与当前分区布局兼容。
 
