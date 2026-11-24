@@ -14,6 +14,7 @@
 #include <string.h>
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
 #include <env.h>
+#include "d133_wf101_profile.h"
 #endif
 #include "touch_common.h"
 #include "gt911.h"
@@ -25,7 +26,7 @@
 static struct rt_i2c_client gt911_client;
 
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
-/* CS001 暂时没有触摸驱动，避免把 ATMXT 控制器当成 GT911 初始化。 */
+/* 按上电选屏配置控制 GT911，避免在无触摸的产品上访问触摸器件。 */
 static int hmi_profile_uses_gt911(void)
 {
     char *profile;
@@ -34,8 +35,17 @@ static int hmi_profile_uses_gt911(void)
     if (fw_env_open() != 0)
         return use_gt911;
     profile = fw_getenv("hmi_screen");
-    if (profile && strcmp(profile, "CS001") == 0)
+    if (profile && strcmp(profile, "CS001") == 0) {
         use_gt911 = 0;
+    } else if (profile && !strcmp(profile, D133_WF101_SLOT)) {
+        const char *code = fw_getenv("hmi_screen_code");
+        if (code && !strcmp(code, D133_WF101_CODE)) {
+            const char *registry = fw_getenv("hmi_screen_registry");
+            const char *entry = registry ? strstr(registry, D133_WF101_REGISTRY_ENTRY) : NULL;
+            if (entry && (entry == registry || entry[-1] == ';'))
+                use_gt911 = 0;
+        }
+    }
     fw_env_close();
     return use_gt911;
 }

@@ -23,6 +23,7 @@ int image_preview_request_matching(const char *directory,
                                   uint16_t width, uint16_t height);
 image_preview_state_t image_preview_status(char *text, size_t text_size);
 const lv_image_dsc_t *image_preview_get_image(void);
+unsigned image_preview_get_scale(void);
 void image_preview_cancel(void);
 
 #endif

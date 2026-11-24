@@ -1,4 +1,5 @@
 #include "file_manager.h"
+#include "sd_manager.h"
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -10,7 +11,10 @@ int file_manager_list(const char *path, fm_list_t *out)
 {
     DIR *dir; struct dirent *e; struct stat st; char full[FM_PATH_MAX];
     if (!path || !out) return -1;
-    memset(out,0,sizeof(*out)); dir=opendir(path); if(!dir) return -2;
+    memset(out,0,sizeof(*out));
+    /* 避免把未挂载时 ROMFS 的空目录当作 SD 卡内容。 */
+    if (!sd_manager_ready()) return -2;
+    dir=opendir(path); if(!dir) return -2;
     while((e=readdir(dir))!=NULL) {
         if(!strcmp(e->d_name,".") || !strcmp(e->d_name,"..")) continue;
         if(out->count==FM_LIST_MAX) {out->truncated=1; break;}

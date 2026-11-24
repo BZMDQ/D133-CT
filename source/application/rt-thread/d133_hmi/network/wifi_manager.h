@@ -7,6 +7,7 @@ typedef enum {
     WIFI_INDICATOR_DISABLED = 0,
     WIFI_INDICATOR_CONNECTING,
     WIFI_INDICATOR_CONNECTED,
+    WIFI_INDICATOR_IDLE,
     WIFI_INDICATOR_FAILED
 } wifi_manager_indicator_t;
 
@@ -25,6 +26,8 @@ int wifi_manager_scan_in_progress(void);
 wifi_manager_indicator_t wifi_manager_indicator_state(void);
 int wifi_manager_scan_options(char *text, size_t capacity);
 int wifi_manager_scan_ssid(unsigned index, char *ssid, size_t capacity);
+/* 为首页返回真实 SSID 和已分配的 STA 地址。 */
+void wifi_manager_link_info(char *ssid, size_t ssid_capacity, char *ip, size_t ip_capacity);
 void wifi_manager_status(char *text, size_t capacity);
 int wifi_manager_get_uid(char *text, size_t capacity);
 

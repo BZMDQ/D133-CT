@@ -12,6 +12,8 @@
 #include <string.h>
 #include <stdio.h>
 
+enum ota_stream_source { OTA_STREAM_TCP, OTA_STREAM_USB };
+
 /* 校验边界与白名单，不替代官方 CPIO 解包和 Flash 引擎。 */
 static struct {
     unsigned char header[144],meta[512],hash[32];
@@ -19,7 +21,13 @@ static struct {
     uint32_t total,checked,size,remaining,sum,expected;
     unsigned have,need,seen,member,padding,phase;
     int initialized,metadata_ok,trailer;
+    enum ota_stream_source source;
+    uint32_t owner;
+    int (*alive)(void *);
+    void *context;
 } stream;
+static uint32_t stream_serial;
+static int stream_alive(void){return !stream.alive||stream.alive(stream.context);}
 static int hex_field(const unsigned char *p,uint32_t *out)
 {
     uint32_t value=0;for(unsigned i=0;i<8;i++){
@@ -77,35 +85,83 @@ static int validate_bytes(const unsigned char *data,unsigned length)
 }
 void ota_stream_abort(int error)
 {
+    if(!stream.owner)return;
     if(stream.initialized){ota_deinit();stream.initialized=0;}
-    ota_manager_stream_state(OTA_FAILED,0,error);ota_manager_phase(0);
+    stream.owner=0;
+    ota_manager_stream_fail(error);
 }
-int ota_stream_begin(uint32_t total,const unsigned char hash[32],const char *version,const unsigned char *signature,unsigned signature_size)
+int ota_stream_abort_session(uint32_t session,int error)
 {
+    if(!session||stream.owner!=session)return -3;
+    ota_stream_abort(error);return 0;
+}
+static int ota_stream_begin_for_source(uint32_t total,const unsigned char hash[32],
+                                       const char *version,const unsigned char *signature,
+                                       unsigned signature_size,uint32_t *session,
+                                       int (*alive)(void *),void *context,
+                                       enum ota_stream_source source)
+{
+    if(!session)return -4;
+    *session=0;
+    if(source==OTA_STREAM_USB&&(!alive||!alive(context)))return -14;
     boot_status_t boot;boot_manager_get(&boot);
     /* 官方引擎按ENV选择非活动OS槽；资源文件系统固定使用A区。 */
     if(!boot.confirmed||boot.resource!='A'||(boot.current!='A'&&boot.current!='B'))return -3;
     if(ota_manager_receive_begin(version))return -3;
     memset(&stream,0,sizeof(stream));stream.total=total;stream.need=110;
+    if(!++stream_serial)++stream_serial;
+    stream.owner=stream_serial;*session=stream.owner;stream.alive=alive;stream.context=context;
+    stream.source=source;
     memcpy(stream.hash,hash,32);rt_snprintf(stream.version,sizeof(stream.version),"%s",version);
     ota_manager_phase(1);
     if(ota_signature_verify_bytes(hash,signature,signature_size)){ota_stream_abort(-24);return -24;}
-    if(ota_manager_stream_confirm()){ota_stream_abort(-14);return -14;}
+    /* USB入口由CDC上传锁和epoch约束，签名通过后可直接初始化官方引擎。 */
+    if((source==OTA_STREAM_TCP&&(!stream_alive()||ota_manager_stream_confirm_live(alive,context)))||
+       !stream_alive()){
+        ota_stream_abort(-14);
+        return -14;
+    }
     extern bool os_status,rodatafs_status,datafs_status;
     os_status=rodatafs_status=datafs_status=0;
     if(ota_init()){ota_stream_abort(-25);return -25;}
     stream.initialized=1;ota_manager_phase(3);ota_manager_stream_state(OTA_RECEIVE,0,0);
     return 0;
 }
+int ota_stream_begin_session(uint32_t total,const unsigned char hash[32],
+                             const char *version,const unsigned char *signature,
+                             unsigned signature_size,uint32_t *session,
+                             int (*alive)(void *),void *context)
+{
+    return ota_stream_begin_for_source(total,hash,version,signature,signature_size,
+                                       session,alive,context,OTA_STREAM_TCP);
+}
+int ota_stream_begin_usb_session(uint32_t total,const unsigned char hash[32],
+                                 const char *version,const unsigned char *signature,
+                                 unsigned signature_size,uint32_t *session,
+                                 int (*alive)(void *),void *context)
+{
+    return ota_stream_begin_for_source(total,hash,version,signature,signature_size,
+                                       session,alive,context,OTA_STREAM_USB);
+}
+int ota_stream_begin(uint32_t total,const unsigned char hash[32],const char *version,const unsigned char *signature,unsigned signature_size)
+{
+    uint32_t session;return ota_stream_begin_session(total,hash,version,signature,signature_size,&session,0,0);
+}
 int ota_stream_feed(const unsigned char *data,unsigned length)
 {
-    if(!stream.initialized||!length)return -1;
+    if(!stream.initialized||!length)return -30;
     /* 首块必须覆盖元数据，以保证任何镜像写入前已验证映射白名单。 */
-    if((!stream.checked&&length<636)||validate_bytes(data,length)||!stream.metadata_ok)return -1;
-    for(unsigned offset=0;offset<length;){unsigned n=length-offset;if(n>2048)n=2048;
-        if(ota_shard_download_fun((char*)data+offset,n)<0)return -1;
-        offset+=n;rt_thread_mdelay(1);
+    if((!stream.checked&&length<636)||validate_bytes(data,length)||!stream.metadata_ok)return -31;
+    /* 保持官方解析器已验证的 4 KiB 写入边界，去掉固定让步延时。 */
+    for(unsigned offset=0;offset<length;){unsigned n=length-offset;if(n>4096U)n=4096U;
+        if(ota_shard_download_fun((char*)data+offset,(int)n)<0)return -32;
+        offset+=n;
     }return 0;
+}
+int ota_stream_feed_session(uint32_t session,const unsigned char *data,unsigned length)
+{
+    if(!session||stream.owner!=session||!stream_alive())return -3;
+    return ota_stream_feed(data,length);
 }
 int ota_stream_finish(const unsigned char actual_hash[32])
 {
@@ -114,10 +170,17 @@ int ota_stream_finish(const unsigned char actual_hash[32])
     if(!stream.initialized||stream.checked!=stream.total||!stream.trailer||memcmp(actual_hash,stream.hash,32)||!os_status){ota_stream_abort(-23);return -23;}
     ota_deinit();stream.initialized=0;
     ota_manager_phase(5);char record[96];
-    rt_snprintf(record,sizeof(record),"TCP direct verified version=%s",stream.version);
+    rt_snprintf(record,sizeof(record),"%s verified version=%s",
+                stream.source==OTA_STREAM_USB?"USB CDC":"TCP direct",stream.version);
     if(system_manager_record_upgrade(record))system_manager_log("升级校验通过，结果记录写入失败");
     /* 完整包摘要、CPIO校验及官方成员完成标志通过后才提交冗余ENV。 */
+    if(!stream_alive()){ota_stream_abort(-14);return -14;}
     if(aic_upgrade_end()){ota_stream_abort(-27);return -27;}
+    stream.owner=0;
     boot_manager_refresh();ota_manager_stream_state(OTA_READY,100,0);ota_manager_phase(0);return 0;
 }
-
+int ota_stream_finish_session(uint32_t session,const unsigned char actual_hash[32])
+{
+    if(!session||stream.owner!=session||!stream_alive())return -3;
+    return ota_stream_finish(actual_hash);
+}

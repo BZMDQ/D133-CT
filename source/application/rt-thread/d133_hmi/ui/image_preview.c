@@ -1,8 +1,10 @@
 #include "image_preview.h"
+#include "media_orientation.h"
 #include "bmp_reader.h"
 #include "ui_manager.h"
 #include "hmi_serial_log.h"
 #include "file_manager.h"
+#include "sd_manager.h"
 #include "display_profile_manager.h"
 #include <lv_mpp_dec.h>
 #include <rtthread.h>
@@ -18,8 +20,8 @@
 #define IMAGE_PREVIEW_FILE_MAX (4U * 1024U * 1024U)
 #define IMAGE_PREVIEW_PNG_MAX_PIXELS (8ULL * 1024ULL * 1024ULL)
 #define IMAGE_PREVIEW_LVFS_PREFIX "L:"
-#define IMAGE_BMP_BATCH_ROWS 128U
-#define IMAGE_BMP_BATCH_MAX_BYTES (512U * 1024U)
+#define IMAGE_BMP_BATCH_ROWS 32U
+#define IMAGE_BMP_BATCH_MAX_BYTES (128U * 1024U)
 #define IMAGE_PSRAM_ALIGNMENT 4096U
 
 typedef struct {
@@ -56,7 +58,9 @@ static void preview_phase(const char *text)
 static int decoder_opened;
 static lv_image_decoder_dsc_t decoder_dsc;
 static lv_image_dsc_t preview_image;
+static unsigned preview_pixel_scale = 256U;
 static void *preview_owned_buffer;
+static unsigned preview_owned_mem_type = MEM_CMA;
 static char preview_source_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
 
 enum {
@@ -66,6 +70,9 @@ enum {
     IMAGE_PREVIEW_ERR_FORMAT = -3,
     IMAGE_PREVIEW_ERR_DECODE = -4,
     IMAGE_PREVIEW_ERR_CANCELLED = -5,
+    IMAGE_PREVIEW_ERR_SD = -8,
+    IMAGE_PREVIEW_ERR_MEMORY = -7,
+    IMAGE_PREVIEW_ERR_DIRECTORY = -9,
     IMAGE_PREVIEW_ERR_NOT_FOUND = -6
 };
 
@@ -121,8 +128,12 @@ static void release_decode_resources(void)
         memset(&decoder_dsc, 0, sizeof(decoder_dsc));
     }
     if (preview_owned_buffer) {
-        aicos_free(MEM_CMA, preview_owned_buffer);
+        if (preview_owned_mem_type == MEM_PSRAM_SW)
+            aicos_free_align(MEM_PSRAM_SW, preview_owned_buffer);
+        else
+            aicos_free(MEM_CMA, preview_owned_buffer);
         preview_owned_buffer = NULL;
+        preview_owned_mem_type = MEM_CMA;
     }
     memset(&preview_image, 0, sizeof(preview_image));
 }
@@ -190,7 +201,54 @@ static uint8_t bmp_mask_to_u8(uint32_t pixel, const bmp_mask_info_t *info)
     return (uint8_t)((value * 255U + info->maximum / 2U) / info->maximum);
 }
 
-static void preview_viewport(uint16_t *width, uint16_t *height)
+/* 把单个 BMP 像素转换为屏幕 RGB565，供 90 度旋转路径使用。 */
+static uint16_t bmp_pixel_to_rgb565(const uint8_t *pixel, uint16_t bits_per_pixel,
+                                   uint32_t compression,
+                                   const bmp_mask_info_t *red_info,
+                                   const bmp_mask_info_t *green_info,
+                                   const bmp_mask_info_t *blue_info)
+{
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+
+    if (bits_per_pixel == 16) {
+        uint16_t value = read_le16(pixel);
+
+        if (red_info->mask == 0xF800U && green_info->mask == 0x07E0U &&
+            blue_info->mask == 0x001FU)
+            return value;
+        if (red_info->mask == 0x7C00U && green_info->mask == 0x03E0U &&
+            blue_info->mask == 0x001FU) {
+            uint16_t green5 = (value >> 5) & 0x1FU;
+            return (uint16_t)(((value & 0x7C00U) << 1) |
+                              (((green5 << 1) | (green5 >> 4)) << 5) |
+                              (value & 0x001FU));
+        }
+        red = bmp_mask_to_u8(value, red_info);
+        green = bmp_mask_to_u8(value, green_info);
+        blue = bmp_mask_to_u8(value, blue_info);
+    } else if (bits_per_pixel == 32 && compression == 3 &&
+               (red_info->mask != 0x00FF0000U ||
+                green_info->mask != 0x0000FF00U ||
+                blue_info->mask != 0x000000FFU)) {
+        uint32_t value = read_le32(pixel);
+        red = bmp_mask_to_u8(value, red_info);
+        green = bmp_mask_to_u8(value, green_info);
+        blue = bmp_mask_to_u8(value, blue_info);
+    } else {
+        blue = pixel[0];
+        green = pixel[1];
+        red = pixel[2];
+    }
+
+    return (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                      ((uint16_t)(green & 0xFCU) << 3) |
+                      ((uint16_t)blue >> 3));
+}
+
+static void preview_viewport(uint16_t *width, uint16_t *height,
+                             unsigned source_width, unsigned source_height)
 {
     display_profile_info_t profile;
 
@@ -204,6 +262,12 @@ static void preview_viewport(uint16_t *width, uint16_t *height)
         /* 仅在串口配置服务尚未启动时回退到当前 CS000 屏幕。 */
         *width = 1024;
         *height = 600;
+    }
+    /* 在源坐标轴上裁剪，保留旋转后实际可见的区域。 */
+    if (hmi_media_needs_rotation(source_width, source_height, *width, *height)) {
+        uint16_t swap = *width;
+        *width = *height;
+        *height = swap;
     }
 }
 
@@ -265,6 +329,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t source_stride_wide;
     uint32_t crop_x;
     uint32_t crop_y;
+    uint32_t source_output_width;
+    uint32_t source_output_height;
     uint32_t output_width;
     uint32_t output_height;
     uint32_t output_stride;
@@ -278,10 +344,14 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
     uint64_t output_size;
     uint64_t source_bytes;
     size_t batch_prefix = 0;
+    unsigned output_mem_type = MEM_CMA;
     uint32_t row_batch;
     size_t batch_stride;
     uint32_t y;
     int top_down;
+    int rotate_output;
+    uint32_t read_wait_ms = 0;
+    uint32_t rotate_write_ms = 0;
     int result = IMAGE_PREVIEW_ERR_DECODE;
 
     preview_phase("BMP：打开文件和读取文件头");
@@ -351,13 +421,29 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         goto done;
     }
 
-    preview_viewport(&viewport_width, &viewport_height);
-    output_width = width < viewport_width ? width : viewport_width;
-    output_height = height < viewport_height ? height : viewport_height;
-    crop_x = (width - output_width) / 2U;
-    crop_y = (height - output_height) / 2U;
+    preview_viewport(&viewport_width, &viewport_height, width, height);
+    {
+        display_profile_info_t profile;
+        uint16_t screen_width = 1024;
+        uint16_t screen_height = 600;
+
+        if (display_profile_get_active(&profile) == DISPLAY_PROFILE_OK &&
+            profile.width > 0 && profile.height > 0) {
+            screen_width = profile.width;
+            screen_height = profile.height;
+        }
+        rotate_output = hmi_media_needs_rotation(width, height,
+                                                 screen_width, screen_height);
+    }
+    source_output_width = width < viewport_width ? width : viewport_width;
+    source_output_height = height < viewport_height ? height : viewport_height;
+    crop_x = (width - source_output_width) / 2U;
+    crop_y = (height - source_output_height) / 2U;
+    /* 先把 BMP 像素实际旋转到显示方向，缓冲字节数保持不变。 */
+    output_width = rotate_output ? source_output_height : source_output_width;
+    output_height = rotate_output ? source_output_width : source_output_height;
     bytes_per_pixel = bits_per_pixel / 8U;
-    source_bytes = (uint64_t)output_width * bytes_per_pixel;
+    source_bytes = (uint64_t)source_output_width * bytes_per_pixel;
     output_stride = lv_draw_buf_width_to_stride(output_width, LV_COLOR_FORMAT_RGB565);
     output_size = (uint64_t)output_stride * output_height;
     if (source_bytes == 0 || source_bytes > UINT32_MAX || output_size == 0 ||
@@ -377,56 +463,81 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
         if (row_batch > IMAGE_BMP_BATCH_ROWS)
             row_batch = IMAGE_BMP_BATCH_ROWS;
         /* 小图无需申请超出可见高度的缓存。 */
-        if (row_batch > output_height)
-            row_batch = output_height;
+        if (row_batch > source_output_height)
+            row_batch = source_output_height;
     }
     preview_phase("BMP：分配批读与显示缓存");
-    source_buffer = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
-                                            &source_buffer_owner);
-    if (!source_buffer && row_batch > 1U) {
-        /* 内存紧张时逐步减小批次，最后回退逐行读取。 */
-        while (!source_buffer && row_batch > 1U) {
-            row_batch /= 2U;
-            source_buffer = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
-                                                    &source_buffer_owner);
-        }
-    }
-    if (!source_buffer) {
-        row_batch = 1U;
-        batch_stride = (size_t)source_bytes;
-        source_buffer = image_cma_aligned_alloc((size_t)source_bytes + BMP_READ_PADDING,
-                                                &source_buffer_owner);
-    }
-    raw = (uint8_t *)aicos_malloc_try_cma((int)output_size + CACHE_LINE_SIZE - 1);
-    if (!source_buffer || !raw) {
-        result = IMAGE_PREVIEW_ERR_SIZE;
+    /* BMP 输出直接放在专用软件 PSRAM 堆；旋转只交换宽高，不缩放像素。 */
+    raw = (uint8_t *)aicos_malloc_align(MEM_PSRAM_SW, (size_t)output_size,
+                                        CACHE_LINE_SIZE);
+    if (!raw) {
+        result = IMAGE_PREVIEW_ERR_MEMORY;
         goto done;
     }
-    output = (uint8_t *)ALIGN_UP((ulong)raw, CACHE_LINE_SIZE);
-
-    /* 双缓冲失败时退回原有单线程读取，不影响低内存场景。 */
-    if (row_batch > 1U && output_height > row_batch) {
-        source_buffer2 = image_cma_aligned_alloc(batch_stride * row_batch + BMP_READ_PADDING,
-                                                 &source_buffer2_owner);
-        if (source_buffer2 && bmp_reader_start(&reader, file, file_size) != 0) {
+    output_mem_type = MEM_PSRAM_SW;
+    /* 优先成对申请读卡缓冲；CMA 紧张时缩小批次，继续交替预读。 */
+    uint32_t preferred_rows = row_batch;
+    while (row_batch < source_output_height) {
+        size_t capacity = batch_stride * (row_batch - 1U) +
+                          (size_t)source_bytes + BMP_READ_PADDING;
+        /* 非末批可能读取完整行距，以复用相邻批次的扇区。 */
+        if (row_batch > 1U)
+            capacity = batch_stride * row_batch + BMP_READ_PADDING;
+        source_buffer = image_cma_aligned_alloc(capacity, &source_buffer_owner);
+        if (source_buffer)
+            source_buffer2 = image_cma_aligned_alloc(capacity, &source_buffer2_owner);
+        if (source_buffer2) {
+            if (bmp_reader_start(&reader, file, file_size) == 0)
+                break;
             aicos_free(MEM_CMA, source_buffer2_owner);
             source_buffer2_owner = NULL;
-            source_buffer2 = NULL;
+            break;
         }
+        if (source_buffer_owner)
+            aicos_free(MEM_CMA, source_buffer_owner);
+        source_buffer_owner = NULL;
+        source_buffer = NULL;
+        if (row_batch == 1U)
+            break;
+        row_batch /= 2U;
     }
 
-    for (y = 0; y < output_height; y++) {
+    if (!source_buffer) {
+        /* 无法启动双缓冲时，仍允许同步读取图片。 */
+        row_batch = preferred_rows;
+        do {
+            size_t capacity = row_batch == 1U ? (size_t)source_bytes :
+                              batch_stride * row_batch;
+            source_buffer = image_cma_aligned_alloc(capacity + BMP_READ_PADDING,
+                                                     &source_buffer_owner);
+            if (source_buffer || row_batch == 1U)
+                break;
+            row_batch /= 2U;
+        } while (1);
+    }
+    if (!source_buffer) {
+        result = IMAGE_PREVIEW_ERR_MEMORY;
+        goto done;
+    }
+    output = raw;
+    if (rotate_output && output_stride > output_width * 2U)
+        memset(output, 0, (size_t)output_size);
+
+    for (y = 0; y < source_output_height; y++) {
         /* 总是按文件偏移递增读取，倒序 BMP 在内存中翻转显示行。 */
-        uint32_t source_y = top_down ? crop_y + y : height - crop_y - output_height + y;
-        uint32_t output_y = top_down ? y : output_height - 1U - y;
+        uint32_t source_y = top_down ? crop_y + y :
+                            height - crop_y - source_output_height + y;
+        uint32_t output_y = top_down ? y : source_output_height - 1U - y;
         uint64_t source_offset = (uint64_t)pixel_offset +
             (uint64_t)source_y * source_stride + (uint64_t)crop_x * bytes_per_pixel;
-        uint8_t *output_row = output + (size_t)output_y * output_stride;
+        uint8_t *output_row = rotate_output ? NULL :
+                              output + (size_t)output_y * output_stride;
         uint32_t x;
 
         if ((y % row_batch) == 0U) {
-            uint32_t rows = output_height - y;
+            uint32_t rows = source_output_height - y;
             size_t read_bytes;
+            uint32_t read_started = rt_tick_get_millisecond();
             preview_phase("BMP：SD 读取／等待预读");
             if (preview_cancelled()) {
                 result = IMAGE_PREVIEW_ERR_CANCELLED;
@@ -438,7 +549,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             read_bytes = batch_stride * (rows - 1U) + (size_t)source_bytes;
             /* 后续还有一批时连同行尾间隙读取，使下一批直接顺序读，
              * 避免每批 fseek 导致标准库缓存失效。最后一批保留精确边界。 */
-            if (rows > 1U && y + rows < output_height)
+            if (rows > 1U && y + rows < source_output_height)
                 read_bytes = batch_stride * rows;
             if (source_offset + read_bytes > image_end || source_offset > LONG_MAX) {
                 result = IMAGE_PREVIEW_ERR_DECODE;
@@ -455,8 +566,8 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                 }
                 /* 下一批预读会改写 reader.prefix，先保存本批偏移。 */
                 batch_prefix = reader.prefix;
-                if (y + rows < output_height) {
-                    uint32_t remaining = output_height - y - rows;
+                if (y + rows < source_output_height) {
+                    uint32_t remaining = source_output_height - y - rows;
                     uint32_t next_rows = remaining > row_batch ? row_batch : remaining;
                     size_t next_bytes = batch_stride * (next_rows - 1U) + (size_t)source_bytes;
                     uint64_t next = source_offset + (uint64_t)rows * source_stride;
@@ -477,9 +588,61 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                     goto done;
                 }
             }
+            read_wait_ms += rt_tick_get_millisecond() - read_started;
             preview_phase("BMP：像素转换");
         }
         source_row = batch_buffer + batch_prefix + (size_t)(y % row_batch) * batch_stride;
+
+        if (rotate_output) {
+            uint32_t rows = source_output_height - y;
+            uint32_t row;
+            int bgr_format = bits_per_pixel == 24 ||
+                (bits_per_pixel == 32 && (compression == 0 ||
+                 (red_mask == 0x00FF0000U && green_mask == 0x0000FF00U &&
+                  blue_mask == 0x000000FFU)));
+            if (rows > row_batch)
+                rows = row_batch;
+            uint32_t rotate_started = rt_tick_get_millisecond();
+            uint16_t tile[32][32];
+            uint32_t tile_x;
+            uint32_t first_column = top_down ?
+                source_output_height - y - rows : y;
+            /* 小块源像素先连续转换到线程栈，再连续写入旋转后的目标行。 */
+            for (tile_x = 0; tile_x < source_output_width; tile_x += 32U) {
+                uint32_t columns = source_output_width - tile_x;
+                uint32_t column;
+                if (columns > 32U)
+                    columns = 32U;
+                for (row = 0; row < rows; ++row) {
+                    const uint8_t *pixel = batch_buffer + batch_prefix +
+                        (size_t)row * batch_stride +
+                        (size_t)tile_x * bytes_per_pixel;
+                    if (bgr_format) {
+                        for (column = 0; column < columns; ++column) {
+                            tile[column][top_down ? rows - 1U - row : row] = (uint16_t)(
+                                ((uint16_t)(pixel[2] & 0xF8U) << 8) |
+                                ((uint16_t)(pixel[1] & 0xFCU) << 3) | (pixel[0] >> 3));
+                            pixel += bytes_per_pixel;
+                        }
+                    } else {
+                        for (column = 0; column < columns; ++column) {
+                            tile[column][top_down ? rows - 1U - row : row] = bmp_pixel_to_rgb565(pixel, bits_per_pixel,
+                                compression, &red_info, &green_info, &blue_info);
+                            pixel += bytes_per_pixel;
+                        }
+                    }
+                }
+                for (column = 0; column < columns; ++column) {
+                    uint16_t *destination = (uint16_t *)(output +
+                        (size_t)(tile_x + column) * output_stride) + first_column;
+                    /* SRAM 小块已按目标方向排列，整段连续写入 PSRAM。 */
+                    memcpy(destination, tile[column], rows * sizeof(uint16_t));
+                }
+            }
+            rotate_write_ms += rt_tick_get_millisecond() - rotate_started;
+            y += rows - 1U;
+            continue;
+        }
 
         /* 常见 BGR24/BGRX32 不走通用格式分派与逐像素 memcpy。 */
         if (bits_per_pixel == 24 ||
@@ -492,7 +655,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
 
             /* 四像素展开减少循环控制，按字节取样以兼容未对齐 BGR24/BGRX32。 */
 #define BMP_BGR565(p) ((uint16_t)((((uint16_t)(p)[2]&0xF8U)<<8)|(((uint16_t)(p)[1]&0xFCU)<<3)|((p)[0]>>3)))
-            for (x = 0; x + 3U < output_width; x += 4U) {
+            for (x = 0; x + 3U < source_output_width; x += 4U) {
                 dst[x] = BMP_BGR565(src);
                 dst[x+1U] = BMP_BGR565(src+bytes_per_pixel);
                 dst[x+2U] = BMP_BGR565(src+bytes_per_pixel*2U);
@@ -500,7 +663,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
                 src += bytes_per_pixel*4U;
             }
 #undef BMP_BGR565
-            for (; x < output_width; x++) {
+            for (; x < source_output_width; x++) {
                 uint8_t blue = src[0];
                 uint8_t green = src[1];
                 uint8_t red = src[2];
@@ -540,7 +703,7 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             continue;
         }
 
-        for (x = 0; x < output_width; x++) {
+        for (x = 0; x < source_output_width; x++) {
             uint16_t rgb565;
             if (bits_per_pixel == 16) {
                 uint32_t pixel = read_le16(source_row + (size_t)x * 2U);
@@ -576,18 +739,22 @@ static int decode_bmp_preview(const char *path, uint64_t file_size)
             memset(output_row + output_width * 2U, 0, output_stride - output_width * 2U);
     }
 
+    hmi_serial_log("[BMP] SD等待=%u ms, 旋转写入=%u ms, 批次=%u行, 双缓冲=%u\n",
+                   read_wait_ms, rotate_write_ms, row_batch, reader.active);
     preview_phase("BMP：同步显示缓存");
     aicos_dcache_clean_range((unsigned long *)output, (int64_t)output_size);
     preview_owned_buffer = raw;
+    preview_owned_mem_type = output_mem_type;
     raw = NULL;
     memset(&preview_image, 0, sizeof(preview_image));
     preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
     preview_image.header.cf = LV_COLOR_FORMAT_RGB565;
-    preview_image.header.w = output_width;
-    preview_image.header.h = output_height;
+    preview_image.header.w = (uint16_t)output_width;
+    preview_image.header.h = (uint16_t)output_height;
     preview_image.header.stride = output_stride;
     preview_image.data_size = (uint32_t)output_size;
     preview_image.data = output;
+    preview_pixel_scale = 256U;
     result = IMAGE_PREVIEW_ERR_NONE;
 
 done:
@@ -597,8 +764,12 @@ done:
         aicos_free(MEM_CMA, source_buffer2_owner);
     if (source_buffer_owner)
         aicos_free(MEM_CMA, source_buffer_owner);
-    if (raw)
-        aicos_free(MEM_CMA, raw);
+    if (raw) {
+        if (output_mem_type == MEM_PSRAM_SW)
+            aicos_free_align(MEM_PSRAM_SW, raw);
+        else
+            aicos_free(MEM_CMA, raw);
+    }
     if (file)
         fclose(file);
     return result;
@@ -616,6 +787,7 @@ static int normalize_decoded_frame_to_rgb565(const lv_draw_buf_t *decoded)
     rt_uint32_t x;
     size_t destination_size;
 
+    preview_pixel_scale = 256U;
     if (source_header.cf == LV_COLOR_FORMAT_RGB565) {
         preview_image.header = source_header;
         preview_image.header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -720,7 +892,7 @@ static int decode_mpp_image(const lv_image_header_t *header)
     if (!dimensions_supported(header))
         return IMAGE_PREVIEW_ERR_SIZE;
 
-    preview_viewport(&viewport_width, &viewport_height);
+    preview_viewport(&viewport_width, &viewport_height, header->w, header->h);
     crop_width = header->w < viewport_width ? header->w : viewport_width;
     crop_height = header->h < viewport_height ? header->h : viewport_height;
     if (crop_width != header->w || crop_height != header->h) {
@@ -888,8 +1060,29 @@ static int make_lv_image_path(const char *path, char *lv_path, size_t path_size)
     return 0;
 }
 
+/* BMP 直接读取有符号高度，兼容从上往下存储的文件。 */
+static int read_test_bmp_header(const char *path, lv_image_header_t *header)
+{
+    uint8_t bytes[26];
+    int32_t width, height;
+    FILE *file = fopen(path, "rb");
+    if (!file) return -1;
+    size_t size = fread(bytes, 1, sizeof(bytes), file);
+    fclose(file);
+    if (size != sizeof(bytes) || memcmp(bytes, "BM", 2) || read_le32(bytes + 14) < 40)
+        return -1;
+    width = (int32_t)read_le32(bytes + 18);
+    height = (int32_t)read_le32(bytes + 22);
+    if (width <= 0 || width > UINT16_MAX || !height ||
+        height < -(int32_t)UINT16_MAX || height > UINT16_MAX)
+        return -1;
+    memset(header, 0, sizeof(*header));
+    header->w = width;
+    header->h = height < 0 ? -height : height;
+    return 0;
+}
 /* 目录扫描和解码都在图片工作线程执行，LVGL 线程不会访问 SD 文件系统。 */
-static int load_matching_image(const image_preview_job_t *job)
+static int scan_matching_directory(const image_preview_job_t *job, const char *path)
 {
     DIR *directory;
     struct dirent *entry;
@@ -897,48 +1090,155 @@ static int load_matching_image(const image_preview_job_t *job)
     char candidate[FM_PATH_MAX];
     char lv_path[FM_PATH_MAX + sizeof(IMAGE_PREVIEW_LVFS_PREFIX)];
     lv_image_header_t header;
+    char rotated_candidate[FM_PATH_MAX] = {0};
+    lv_image_header_t rotated_header = {0};
+    unsigned pass;
     int found_matching_size = 0;
     int last_decode_error = IMAGE_PREVIEW_ERR_DECODE;
 
-    directory = opendir(job->path);
+    directory = opendir(path);
     if (!directory)
-        return IMAGE_PREVIEW_ERR_NOT_FOUND;
+        return IMAGE_PREVIEW_ERR_DIRECTORY;
 
+    /* 原尺寸优先；第二次扫描接受交换宽高的文件。 */
+    for (pass = 0; pass < (job->match_width == job->match_height ? 1U : 2U); ++pass) {
+        while ((entry = readdir(directory)) != NULL) {
+            if (preview_cancelled()) {
+                closedir(directory);
+                return IMAGE_PREVIEW_ERR_CANCELLED;
+            }
+            if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..") ||
+                !image_preview_supported(entry->d_name))
+                continue;
+            if (snprintf(candidate, sizeof(candidate), "%s/%s",
+                         path, entry->d_name) >= (int)sizeof(candidate))
+                continue;
+            if (stat(candidate, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0)
+                continue;
+            if (image_kind(candidate) == IMAGE_KIND_BMP) {
+                if (read_test_bmp_header(candidate, &header))
+                    continue;
+            } else if (make_lv_image_path(candidate, lv_path, sizeof(lv_path)) ||
+                       lv_image_decoder_get_info(lv_path, &header) != LV_RESULT_OK) {
+                continue;
+            }
+            /* 原向仍优先，首次扫描记住首张旋转尺寸图片，避免再次读全部图片头。 */
+            if (pass == 0 && !rotated_candidate[0] &&
+                job->match_width != job->match_height &&
+                header.w == job->match_height && header.h == job->match_width) {
+                snprintf(rotated_candidate, sizeof(rotated_candidate), "%s", candidate);
+                rotated_header = header;
+            }
+            if (pass == 1 && rotated_candidate[0] &&
+                !strcmp(candidate, rotated_candidate))
+                continue;
+            if (header.w != (pass ? job->match_height : job->match_width) ||
+                header.h != (pass ? job->match_width : job->match_height))
+                continue;
+
+            found_matching_size = 1;
+            last_decode_error = load_image(candidate, &header);
+            if (last_decode_error == IMAGE_PREVIEW_ERR_NONE) {
+                closedir(directory);
+                return IMAGE_PREVIEW_ERR_NONE;
+            }
+            release_decode_resources();
+        }
+        if (pass == 0 && job->match_width != job->match_height) {
+            if (rotated_candidate[0]) {
+                found_matching_size = 1;
+                last_decode_error = load_image(rotated_candidate, &rotated_header);
+                if (last_decode_error == IMAGE_PREVIEW_ERR_NONE ||
+                    last_decode_error == IMAGE_PREVIEW_ERR_CANCELLED) {
+                    closedir(directory);
+                    return last_decode_error;
+                }
+                release_decode_resources();
+            }
+            closedir(directory);
+            directory = opendir(path);
+            if (!directory) break;
+        }
+    }
+    if (directory) closedir(directory);
+    return found_matching_size ? last_decode_error : IMAGE_PREVIEW_ERR_NOT_FOUND;
+}
+
+static int scan_matching_tree(const image_preview_job_t *job,
+                              const char *path, unsigned depth);
+
+static int load_matching_image(const image_preview_job_t *job)
+{
+    const char *paths[] = {job->path, "/sdcard/TESTPIC", "/sdcard"};
+    int last_error = IMAGE_PREVIEW_ERR_NOT_FOUND;
+    unsigned i;
+
+    if (!sd_manager_ready())
+        return IMAGE_PREVIEW_ERR_SD;
+    /* 优先使用配置目录，再递归兼容 TESTPIC 和 SD 卡其他目录。 */
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+        /* 扫描期间若卡片卸载，报告挂载状态并停止访问旧目录。 */
+        if (!sd_manager_ready())
+            return IMAGE_PREVIEW_ERR_SD;
+        int result = scan_matching_tree(job, paths[i], 0);
+        if (result == IMAGE_PREVIEW_ERR_NONE || result == IMAGE_PREVIEW_ERR_CANCELLED)
+            return result;
+        if (result != IMAGE_PREVIEW_ERR_NOT_FOUND)
+            last_error = result;
+    }
+    return sd_manager_ready() ? last_error : IMAGE_PREVIEW_ERR_SD;
+}
+
+/* 递归检查 SD 目录。每层目录内部由 scan_matching_directory 先查原向，再查旋转向。 */
+static int scan_matching_tree(const image_preview_job_t *job,
+                              const char *path, unsigned depth)
+{
+    DIR *directory;
+    struct dirent *entry;
+    struct stat attributes;
+    char child[FM_PATH_MAX];
+    int result = scan_matching_directory(job, path);
+
+    if (result == IMAGE_PREVIEW_ERR_NONE ||
+        result == IMAGE_PREVIEW_ERR_CANCELLED || depth >= 4U)
+        return result;
+
+    directory = opendir(path);
+    if (!directory)
+        return result;
     while ((entry = readdir(directory)) != NULL) {
+        int nested_result;
+
         if (preview_cancelled()) {
             closedir(directory);
             return IMAGE_PREVIEW_ERR_CANCELLED;
         }
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..") ||
-            !image_preview_supported(entry->d_name))
-            continue;
-        if (snprintf(candidate, sizeof(candidate), "%s/%s",
-                     job->path, entry->d_name) >= (int)sizeof(candidate))
-            continue;
-        if (stat(candidate, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0)
-            continue;
-        if (make_lv_image_path(candidate, lv_path, sizeof(lv_path)) ||
-            lv_image_decoder_get_info(lv_path, &header) != LV_RESULT_OK ||
-            header.w != job->match_width || header.h != job->match_height)
+            snprintf(child, sizeof(child), "%s/%s", path, entry->d_name) >=
+                (int)sizeof(child) || stat(child, &attributes) ||
+            !S_ISDIR(attributes.st_mode))
             continue;
 
-        found_matching_size = 1;
-        last_decode_error = load_image(candidate, &header);
-        if (last_decode_error == IMAGE_PREVIEW_ERR_NONE) {
+        nested_result = scan_matching_tree(job, child, depth + 1U);
+        if (nested_result == IMAGE_PREVIEW_ERR_NONE ||
+            nested_result == IMAGE_PREVIEW_ERR_CANCELLED) {
             closedir(directory);
-            return IMAGE_PREVIEW_ERR_NONE;
+            return nested_result;
         }
-        release_decode_resources();
+        if (nested_result != IMAGE_PREVIEW_ERR_NOT_FOUND &&
+            nested_result != IMAGE_PREVIEW_ERR_DIRECTORY)
+            result = nested_result;
     }
-
     closedir(directory);
-    return found_matching_size ? last_decode_error : IMAGE_PREVIEW_ERR_NOT_FOUND;
+    return result;
 }
-
 static const char *error_text(int error)
 {
     switch (error) {
     case IMAGE_PREVIEW_ERR_NOT_FOUND: return "SD没有本机测试图片";
+    case IMAGE_PREVIEW_ERR_SD: return "SD 卡未挂载，无法查找测试图片。";
+    case IMAGE_PREVIEW_ERR_MEMORY: return "PSRAM 不足，无法分配图片缓冲。";
+    case IMAGE_PREVIEW_ERR_DIRECTORY: return "SD 图片目录无法读取，请检查卡片是否掉线或目录是否存在。";
     case IMAGE_PREVIEW_ERR_PATH: return "图片路径无效。";
     case IMAGE_PREVIEW_ERR_SIZE: return "图片缓冲或尺寸超过当前 SDK 的安全范围；JPEG/PNG 输入上限为 4 MiB，PNG 像素上限为 800 万。";
     case IMAGE_PREVIEW_ERR_FORMAT: return "图片格式不支持，请选择基线 JPG/JPEG、PNG 或 16/24/32 位 BMP。";
@@ -1121,6 +1421,11 @@ const lv_image_dsc_t *image_preview_get_image(void)
     return image;
 }
 
+unsigned image_preview_get_scale(void)
+{
+    return preview_pixel_scale;
+}
+
 void image_preview_cancel(void)
 {
     int release_now = 0;
@@ -1147,4 +1452,3 @@ void image_preview_cancel(void)
         rt_mutex_release(&state_lock);
     }
 }
-

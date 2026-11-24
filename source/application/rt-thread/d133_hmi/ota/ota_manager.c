@@ -16,6 +16,25 @@
 typedef struct {char path[256],version[32];unsigned char sha[32];int has_sha,remote;} job_t;
 static uint32_t receive_sample_ms,receive_sample_bytes,transaction_start,phase_start;
 static rt_mq_t queue;static struct rt_mutex mutex;static hmi_ota_status_t status;static volatile int decision;static ota_signature_verifier_t verifier;
+/* 受同一状态mutex保护；预约不改变对外OTA状态编号和既有wire格式。 */
+static int control_reserved;
+int ota_manager_control_reserve(void)
+{
+    int result = -1;
+    rt_mutex_take(&mutex, RT_WAITING_FOREVER);
+    if (!control_reserved && (status.state == OTA_IDLE || status.state == OTA_FAILED)) {
+        control_reserved = 1;
+        result = 0;
+    }
+    rt_mutex_release(&mutex);
+    return result;
+}
+void ota_manager_control_release(void)
+{
+    rt_mutex_take(&mutex, RT_WAITING_FOREVER);
+    control_reserved = 0;
+    rt_mutex_release(&mutex);
+}
 void ota_manager_set_signature_verifier(ota_signature_verifier_t v){verifier=v;}
 void ota_manager_get(hmi_ota_status_t *out){rt_mutex_take(&mutex,RT_WAITING_FOREVER);*out=status;
     if(status.phase){uint32_t now=rt_tick_get_millisecond();out->phase_ms[status.phase]+=now-phase_start;out->total_ms=now-transaction_start;}
@@ -26,11 +45,32 @@ void ota_manager_phase(unsigned phase){
     if(!transaction_start)transaction_start=now;
     status.phase=phase;phase_start=now;status.total_ms=now-transaction_start;rt_mutex_release(&mutex);
 }
-void ota_manager_stream_state(hmi_ota_state_t s,unsigned p,int e){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=e;rt_mutex_release(&mutex);}
-int ota_manager_stream_confirm(void){decision=0;ota_manager_phase(2);ota_manager_stream_state(OTA_CONFIRM,0,0);
-    for(unsigned i=0;i<600&&decision==0;i++)rt_thread_mdelay(100);
-    return decision==1?0:-14;
+void ota_manager_stream_state(hmi_ota_state_t s,unsigned p,int e){rt_mutex_take(&mutex,RT_WAITING_FOREVER);
+    /* 被拒绝的流式入口/清理不能覆盖正在等待USB ACK的控制预约。 */
+    if(!control_reserved){status.state=s;status.percent=p;status.error=e;}rt_mutex_release(&mutex);}
+void ota_manager_stream_fail(int error){
+    rt_mutex_take(&mutex,RT_WAITING_FOREVER);
+    if(!control_reserved){
+        uint32_t now=rt_tick_get_millisecond();
+        if(status.phase)status.phase_ms[status.phase]+=now-phase_start;
+        status.total_ms=now-transaction_start;status.phase=0;
+        status.state=OTA_FAILED;status.percent=0;status.error=error;
+    }
+    rt_mutex_release(&mutex);
 }
+int ota_manager_stream_confirm_live(int (*alive)(void *),void *context){
+    rt_mutex_take(&mutex,RT_WAITING_FOREVER);
+    /* 流式确认只能承接已成功receive_begin的事务，不能另开无预约写入路径。 */
+    if(control_reserved||status.state!=OTA_RECEIVE){rt_mutex_release(&mutex);return -3;}
+    decision=0;status.state=OTA_CONFIRM;status.percent=0;status.error=0;
+    rt_mutex_release(&mutex);ota_manager_phase(2);
+    for(unsigned i=0;i<600&&decision==0;i++){
+        if(alive&&!alive(context))return -14;
+        rt_thread_mdelay(100);
+    }
+    return decision==1&&(!alive||alive(context))?0:-14;
+}
+int ota_manager_stream_confirm(void){return ota_manager_stream_confirm_live(0,0);}
 static void update(hmi_ota_state_t s,unsigned p,int err){rt_mutex_take(&mutex,RT_WAITING_FOREVER);status.state=s;status.percent=p;status.error=err;rt_mutex_release(&mutex);}
 void ota_manager_decide(int accept){decision=accept?1:-1;}
 void ota_manager_reboot(void){if(reboot_manager_request())system_manager_log("重启请求失败");}
@@ -38,7 +78,7 @@ void ota_manager_reboot(void){if(reboot_manager_request())system_manager_log("�
 int ota_manager_receive_begin(const char *version)
 {
     int result=0;rt_mutex_take(&mutex,RT_WAITING_FOREVER);
-    if(status.state!=OTA_IDLE&&status.state!=OTA_FAILED)result=-1;
+    if(control_reserved||(status.state!=OTA_IDLE&&status.state!=OTA_FAILED))result=-1;
     else{memset(status.phase_ms,0,sizeof(status.phase_ms));status.phase=0;transaction_start=rt_tick_get_millisecond();phase_start=transaction_start;receive_sample_ms=rt_tick_get_millisecond();receive_sample_bytes=0;status.bytes_per_second=0;status.state=OTA_RECEIVE;status.remote=1;status.percent=0;status.error=0;rt_snprintf(status.version,sizeof(status.version),"%s",version?version:"");}
     rt_mutex_release(&mutex);return result;
 }
@@ -96,10 +136,9 @@ int ota_manager_init(void){rt_thread_t t;verifier=ota_signature_verify;rt_mutex_
 int ota_manager_request(const char *path,const unsigned char *sha,const char *version,int remote)
 {
     job_t j;int r;memset(&j,0,sizeof(j));if(!path||strlen(path)>=sizeof(j.path))return -1;
-    rt_mutex_take(&mutex,RT_WAITING_FOREVER);if(status.state!=OTA_IDLE&&status.state!=OTA_FAILED&&!(remote&&status.state==OTA_RECEIVE)){rt_mutex_release(&mutex);return -3;}status.state=OTA_CHECK;status.remote=remote;status.error=0;status.percent=0;if(version)snprintf(status.version,32,"%s",version);else status.version[0]=0;rt_mutex_release(&mutex);
+    rt_mutex_take(&mutex,RT_WAITING_FOREVER);if(control_reserved||(status.state!=OTA_IDLE&&status.state!=OTA_FAILED&&!(remote&&status.state==OTA_RECEIVE))){rt_mutex_release(&mutex);return -3;}status.state=OTA_CHECK;status.remote=remote;status.error=0;status.percent=0;if(version)snprintf(status.version,32,"%s",version);else status.version[0]=0;rt_mutex_release(&mutex);
     snprintf(j.path,sizeof(j.path),"%s",path);if(version)snprintf(j.version,32,"%s",version);if(sha){memcpy(j.sha,sha,32);j.has_sha=1;}j.remote=remote;r=rt_mq_send(queue,&j,sizeof(j));if(r)update(OTA_FAILED,0,r);return r;
 }
-
 
 
 

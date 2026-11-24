@@ -21,6 +21,7 @@
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
 /* 由 HMI profile 服务返回当前屏幕是否已配置触摸输入。 */
 extern int display_profile_touch_enabled(void);
+extern const char *display_profile_touch_device(void);
 #endif
 
 #if LV_DISP_FB_DUMP
@@ -153,12 +154,21 @@ static inline void disp_do_blit(aic_disp_t *aic_disp, lv_display_t *disp, lv_dra
     lv_display_rotation_t rotation = lv_display_get_rotation(disp);
 
 #if LV_USE_DRAW_GE2D
-    lv_draw_ge2d_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
-                        src_stride, dst_stride, rotation, cf);
-#else
-    lv_draw_sw_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
-                      src_stride, dst_stride, rotation, cf);
+    if (lv_draw_ge2d_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
+                            src_stride, dst_stride, rotation, cf) == 0)
+        return;
 #endif
+    /* GE 不可用时保证旋转缓冲仍能送屏，0 度需要单独拷贝。 */
+    if (rotation == LV_DISPLAY_ROTATION_0) {
+        size_t row_bytes = (size_t)hor_res * lv_color_format_get_size(cf);
+        for (int32_t y = 0; y < ver_res; ++y)
+            memcpy((uint8_t *)dest_buf + y * dst_stride,
+                   (const uint8_t *)disp_buf->data + y * src_stride, row_bytes);
+    } else {
+        lv_draw_sw_rotate(disp_buf->data, dest_buf, hor_res, ver_res,
+                          src_stride, dst_stride, rotation, cf);
+    }
+    aicos_dcache_clean_invalid_range(dest_buf, ALIGN_UP(aic_disp->fb_size, CACHE_LINE_SIZE));
 }
 
 static inline void display_power_on(aic_disp_t *aic_disp)
@@ -199,6 +209,32 @@ static inline void disp_draw_buf_flush(aic_disp_t *aic_disp, lv_display_t *disp,
 #endif // AIC_PAN_DISPLAY
 #endif
 }
+
+#ifdef HMI_APP
+#if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+static void disp_sync_before_render(lv_event_t *event)
+{
+    lv_display_t *display = lv_event_get_current_target(event);
+    aic_disp_t *aic_disp = lv_display_get_user_data(display);
+    if (aic_disp && aic_disp->sync_next_refresh) {
+        aic_disp->sync_next_refresh = false;
+        /* 单缓冲先等垂直消隐再开始绘制，超时仍保留 SDK 的正常刷新路径。 */
+        mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
+    }
+}
+#endif
+
+void lv_port_disp_sync_next_refresh(void)
+{
+#if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+    lv_display_t *display = lv_display_get_default();
+    aic_disp_t *aic_disp = display ? lv_display_get_user_data(display) : NULL;
+    if (aic_disp)
+        aic_disp->sync_next_refresh = true;
+#endif
+}
+
+#endif
 
 static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
@@ -376,6 +412,9 @@ static int lv_de_display_init()
     lv_display_set_color_format(disp, cf);
     lv_display_set_flush_cb(disp, disp_flush);
     lv_display_set_user_data(disp, aic_disp);
+#if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+    lv_display_add_event_cb(disp, disp_sync_before_render, LV_EVENT_RENDER_START, NULL);
+#endif
 
 #if defined(LV_DISPLAY_ROTATE_EN) && defined(LV_ROTATE_DEGREE)
     lv_display_set_buffers(disp, buf1, buf2, aic_disp->buf_size, LV_DISPLAY_RENDER_MODE_DIRECT);
@@ -446,11 +485,13 @@ void lv_port_disp_init(void)
 #ifndef AIC_MONKEY_TEST
 #if defined(KERNEL_RTTHREAD) && defined(AIC_USING_TOUCH)
     int touch_enabled = 1;
+    const char *touch_name = AIC_TOUCH_PANEL_NAME;
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
     touch_enabled = display_profile_touch_enabled();
+    touch_name = display_profile_touch_device();
 #endif
     if (touch_enabled) {
-        int result = tpc_run(AIC_TOUCH_PANEL_NAME, fb_info.width, fb_info.height);
+        int result = tpc_run(touch_name, fb_info.width, fb_info.height);
         if (result)
             LV_LOG_INFO("can't find touch panel\n");
     }

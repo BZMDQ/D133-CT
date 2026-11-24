@@ -550,6 +550,10 @@ static int ili9881c_04_enable(struct aic_panel *panel)
     panel_backlight_enable(panel, 0);
     panel_dsi_send_perpare(panel);
 
+    /* 板上 MIPI_RESET 只有上电 RC 复位，暖重启时不会重新拉低；用 DCS 软件复位恢复 ILI9881C 初始状态。 */
+    panel_dsi_dcs_send_seq(panel, 0x01);
+    aic_delay_ms(200);
+
     /* 厂商 ZW-T101BYIA-04 例程中启用的 ILI9881C 四线初始化表。 */
     panel_dsi_generic_send_seq(panel, 0xFF,0x98,0x81,0x03);
     panel_dsi_generic_send_seq(panel, 0x01,0x00);
@@ -748,14 +752,16 @@ static int ili9881c_04_enable(struct aic_panel *panel)
         pr_err("Failed to exit sleep mode: %d\n", ret);
         return ret;
     }
-    aic_delay_ms(120);
+    /* 与可显示的 ZW-T101BYIA-04 初始化程序一致，Sleep Out 后等待 800 ms。 */
+    aic_delay_ms(800);
 
     ret = panel_dsi_dcs_set_display_on(panel);
     if (ret < 0) {
         pr_err("Failed to set display on: %d\n", ret);
         return ret;
     }
-    aic_delay_ms(5);
+    /* 面板在 Display On 后需完成内部输出准备。 */
+    aic_delay_ms(40);
 
     panel_dsi_setup_realmode(panel);
 
@@ -774,19 +780,21 @@ static struct aic_panel_funcs ili9881c_04_funcs = {
 };
 
 static struct display_timing ili9881c_04_timing = {
-    .pixelclock = 95000000,
+    /* 对齐厂商 DSW：PLL=74，HFP/HBP/HSYNC=60/60/20，VFP/VBP/VSYNC=16/22/6。 */
+    .pixelclock = 74000000,
     .hactive = 800,
-    .hfront_porch = 200,
-    .hback_porch = 200,
-    .hsync_len = 10,
+    .hfront_porch = 60,
+    .hback_porch = 60,
+    .hsync_len = 20,
     .vactive = 1280,
-    .vfront_porch = 12,
-    .vback_porch = 12,
-    .vsync_len = 3,
+    .vfront_porch = 16,
+    .vback_porch = 22,
+    .vsync_len = 6,
 };
 
 static struct panel_dsi ili9881c_04_dsi = {
-    .mode = DSI_MOD_VID_BURST | DSI_MOD_NO_EOT_PACKET | DSI_CLOCK_NON_CONTINUOUS,
+    /* 可显示参考程序配置为非 Burst、同步事件视频模式，使用连续时钟和默认 EoT。 */
+    .mode = DSI_MOD_VID_EVENT,
     .format = DSI_FMT_RGB888,
     .lane_num = 4,
 };

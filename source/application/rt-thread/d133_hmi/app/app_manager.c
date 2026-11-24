@@ -11,6 +11,9 @@ unsigned int app_manager_boot_elapsed_ms(void)
 #include "system_manager.h"
 #include "device_event_manager.h"
 #include "hmi_serial_log.h"
+#ifdef HMI_USB_CDC_CONTROL
+#include "usb_cdc_control.h"
+#endif
 #ifdef HMI_DISPLAY_PROFILE_SERIAL
 #include "display_profile_manager.h"
 #endif
@@ -38,10 +41,12 @@ int app_manager_init(void)
 #endif
     if(time_sync_init())system_manager_log("网络校时服务启动失败");
     ready=1;system_manager_log("应用服务初始化完成");
+#ifdef HMI_USB_CDC_CONTROL
+    if(usb_cdc_control_init())system_manager_log("USB CDC控制服务启动失败");
+#endif
     hmi_serial_log("[boot_time] app_services_ready=%u ms\n",app_manager_boot_elapsed_ms());
     return 0;
 }
 
 INIT_APP_EXPORT(app_manager_init);
-
 

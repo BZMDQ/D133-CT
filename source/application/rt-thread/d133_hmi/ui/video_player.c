@@ -11,8 +11,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define VIDEO_MAX_WIDTH 1280U
-#define VIDEO_MAX_HEIGHT 720U
+#define VIDEO_MAX_LONG_EDGE 1280U
+#define VIDEO_MAX_SHORT_EDGE 800U
 #define VIDEO_COPY_LIMIT (640U * 480U)
 #define VIDEO_PATH_SIZE 256
 #define VIDEO_NO_FRAME_TIMEOUT_MS 3000U
@@ -45,7 +45,7 @@ static int direct_alloc(struct frame_allocator *allocator, struct mpp_frame *fra
     (void)allocator;
     alloc_format=(int)format;alloc_stride=stride;alloc_height=height;
     if (!frame || format != MPP_FMT_RGB_565 || stride <= 0 || height <= 0 ||
-        (uint64_t)stride * (unsigned)height > 1280U * 736U * 2U) {
+        (uint64_t)stride * (unsigned)height > VIDEO_MAX_LONG_EDGE * VIDEO_MAX_SHORT_EDGE * 2U) {
         alloc_error=1;
         return -1;
     }
@@ -101,9 +101,12 @@ static void video_worker(void *parameter)
         if (!player || aic_player_set_uri(player, path) || aic_player_prepare_sync(player) ||
             aic_player_get_media_info(player, &media) || !media.has_video || media.has_audio ||
             media.video_stream.width <= 0 || media.video_stream.height <= 0 ||
-            media.video_stream.width > VIDEO_MAX_WIDTH || media.video_stream.height > VIDEO_MAX_HEIGHT ||
+            (unsigned)media.video_stream.width > VIDEO_MAX_LONG_EDGE ||
+            (unsigned)media.video_stream.height > VIDEO_MAX_LONG_EDGE ||
+            ((unsigned)media.video_stream.width > VIDEO_MAX_SHORT_EDGE &&
+             (unsigned)media.video_stream.height > VIDEO_MAX_SHORT_EDGE) ||
             (media.video_stream.width & 1)) {
-            set_state(VIDEO_ERROR, "视频不支持：请使用不超过 1280×720 的无音频 MJPEG");
+            set_state(VIDEO_ERROR, "视频不支持：请使用长边不超过 1280、短边不超过 800 的无音频 MJPEG");
             failed = 1;
             goto cleanup;
         }
@@ -378,4 +381,3 @@ void video_player_release_frame(unsigned sequence)
     if (direct_mode && frame_sequence == sequence) frame_buffer = RT_NULL;
     rt_mutex_release(&video_lock);
 }
-

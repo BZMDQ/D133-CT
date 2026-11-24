@@ -305,10 +305,10 @@ static void update_status(const char *message)
             WIFI_INDICATOR_FAILED : WIFI_INDICATOR_CONNECTING;
     else if (message && (strstr(message, "失败") || strstr(message, "不可用")))
         indicator_state = WIFI_INDICATOR_FAILED;
-    else if (scan_in_progress || (message && (strstr(message, "正在") || strstr(message, "连接"))))
+    else if (scan_in_progress || (message && (strstr(message, "正在") || strstr(message, "连接默认路由器"))))
         indicator_state = WIFI_INDICATOR_CONNECTING;
     else
-        indicator_state = WIFI_INDICATOR_FAILED;
+        indicator_state = WIFI_INDICATOR_IDLE;
     rt_mutex_release(&state_lock);
 }
 
@@ -346,7 +346,7 @@ static int init_radio(void)
         return result;
     /* READY 表示联网协议已就绪，不能在首次连接之前等待它。 */
     /* 当前产品仅启用路由器客户端 STA，不启动开发板热点。 */
-    rt_wlan_config_autoreconnect(RT_TRUE);
+    rt_wlan_config_autoreconnect(RT_FALSE);
     /* SDIO 函数固件加载后给 STA/AP VIF 留出启动时间。 */
     rt_thread_mdelay(1000);
     return 0;
@@ -426,11 +426,33 @@ static int bootstrap_load(char *ssid, char *password)
     return (ssid[0] && len <= 63) ? 0 : -1;
 }
 
+/* 连接成功后显式保存 SDK 配置缓存，保存结果反馈给网络页面。 */
+static void wifi_save_connected(const char *key)
+{
+    struct rt_wlan_cfg_info saved;
+    memset(&saved, 0, sizeof(saved));
+    if (!persistence_ready || rt_wlan_get_info(&saved.info) != RT_EOK) {
+        profile_save_error = 1;
+        return;
+    }
+    saved.key.len = strlen(key);
+    memcpy(saved.key.val, key, saved.key.len);
+    int result = rt_wlan_cfg_save(&saved);
+    if (result == RT_EOK)
+        result = rt_wlan_cfg_cache_save();
+    profile_save_error = result != RT_EOK;
+    rt_memset(&saved.key, 0, sizeof(saved.key));
+    refresh_saved_names();
+}
+
 static void wifi_worker(void *parameter)
 {
     wifi_job_t job;
     char bootstrap_ssid[34] = {0}, bootstrap_key[66] = {0};
     int persistence_ready_local = 0, bootstrap_attempted = 0;
+    uint32_t reconnect_due = 0;
+    unsigned reconnect_index = 0;
+    unsigned reconnect_failures = 0;
     (void)parameter;
     update_status("初始化 SDIO 无线模块");
     if (init_radio()) {
@@ -448,15 +470,21 @@ static void wifi_worker(void *parameter)
     rt_wlan_register_event_handler(RT_WLAN_EVT_SCAN_REPORT, wifi_scan_event, RT_NULL);
     /* 配置可能由驱动在启动阶段载入；即使 DATA 尚未挂载，也先显示缓存项。 */
     refresh_saved_names();
-    wifi_do_scan();
     while (1) {
         /* DATA 若稍晚挂载，Wi-Fi 仍已启动；后续重试配置恢复与持久化。 */
         if (!persistence_ready_local && wifi_persistence_init() == 0) {
             persistence_ready_local = 1;
             persistence_ready = 1;
-            rt_wlan_config_autoreconnect(RT_TRUE);
+            rt_wlan_config_autoreconnect(RT_FALSE);
                 refresh_saved_names();
                 update_status("已加载本地网络配置");
+            /* 配置加载成功后立即提交首个保存网络，不依赖页面操作。 */
+            if (rt_wlan_cfg_get_num() > 0) {
+                wifi_job_t initial = {0};
+                initial.command = WIFI_JOB_CONNECT_SAVED;
+                initial.index = 0;
+                rt_mq_send(jobs, &initial, sizeof(initial));
+            }
         }
         if (persistence_ready_local && !bootstrap_attempted && !rt_wlan_cfg_get_num()) {
             bootstrap_attempted = 1;
@@ -464,7 +492,7 @@ static void wifi_worker(void *parameter)
                 update_status("连接默认路由器");
                 if (rt_wlan_connect(bootstrap_ssid, bootstrap_key) != RT_EOK)
                     update_status("默认路由器连接失败，可在 WiFi 页面重试");
-                else { rt_thread_mdelay(300); refresh_saved_names(); }
+                else { wifi_save_connected(bootstrap_key); rt_thread_mdelay(300); refresh_saved_names(); }
                 rt_memset(bootstrap_key, 0, sizeof(bootstrap_key));
                 rt_memset(bootstrap_ssid, 0, sizeof(bootstrap_ssid));
             }
@@ -476,6 +504,7 @@ static void wifi_worker(void *parameter)
             } else if (job.command == WIFI_JOB_CONNECT) {
                 update_status("正在连接路由器");
                 result = rt_wlan_connect(job.ssid, job.key);
+                if (result == RT_EOK) wifi_save_connected(job.key);
                 rt_memset(job.key, 0, sizeof(job.key));
                 if (result == RT_EOK) {
                     /* WLAN 事件工作队列稍后落盘；先刷新内存缓存，再由定时轮询更新界面。 */
@@ -483,7 +512,11 @@ static void wifi_worker(void *parameter)
                     refresh_saved_names();
                     update_status(!persistence_ready ? "已连接；数据分区不可用，网络未保存" :
                                   (profile_save_error ? "已连接，但网络凭据保存失败" : "路由器连接成功"));
-                } else update_status("路由器连接失败，请检查密码和信号");
+                } else {
+                    char reason[80];
+                    rt_snprintf(reason, sizeof(reason), "路由器关联失败 (%d)，请检查密码和信号", result);
+                    update_status(reason);
+                }
             } else if (job.command == WIFI_JOB_CONNECT_SAVED) {
                 struct rt_wlan_cfg_info saved;
                 memset(&saved, 0, sizeof(saved));
@@ -494,11 +527,50 @@ static void wifi_worker(void *parameter)
                     memcpy(key, saved.key.val, saved.key.len);
                     key[saved.key.len] = 0;
                     update_status("正在连接已保存网络");
-                    result = rt_wlan_connect(ssid, key);
+                    /* 自动和手动连接统一使用 SDK 完整关联流程。 */
+                result = rt_wlan_connect(ssid, key);
                     rt_memset(key, 0, sizeof(key));
                     update_status(result == RT_EOK ? "已保存网络连接成功" : "已保存网络连接失败");
                 }
             }
+        }
+        /* 当前工作线程串行重连，避免 SDK 自动重连与手动扫描同时竞争。 */
+        uint32_t now = rt_tick_get_millisecond();
+        if (rt_wlan_is_connected()) {
+            reconnect_due = now + 10000U;
+            reconnect_index = 0;
+            reconnect_failures = 0;
+        } else if ((int32_t)(now - reconnect_due) >= 0) {
+            struct rt_wlan_cfg_info saved;
+            unsigned count = rt_wlan_cfg_get_num();
+            memset(&saved, 0, sizeof(saved));
+            int result = -RT_ERROR;
+            update_status("正在自动重连 Wi-Fi");
+            if (count && rt_wlan_cfg_read_index(&saved, reconnect_index++ % count) == 1 &&
+                saved.info.ssid.len <= RT_WLAN_SSID_MAX_LENGTH &&
+                saved.key.len <= RT_WLAN_PASSWORD_MAX_LENGTH) {
+                char ssid[RT_WLAN_SSID_MAX_LENGTH + 1] = {0};
+                char key[RT_WLAN_PASSWORD_MAX_LENGTH + 1] = {0};
+                memcpy(ssid, saved.info.ssid.val, saved.info.ssid.len);
+                memcpy(key, saved.key.val, saved.key.len);
+                /* 自动和手动连接统一使用 SDK 完整关联流程。 */
+                result = rt_wlan_connect(ssid, key);
+                rt_memset(key, 0, sizeof(key));
+            } else if (!count && bootstrap_load(bootstrap_ssid, bootstrap_key) == 0) {
+                result = rt_wlan_connect(bootstrap_ssid, bootstrap_key);
+                if (result == RT_EOK) wifi_save_connected(bootstrap_key);
+                rt_memset(bootstrap_key, 0, sizeof(bootstrap_key));
+            }
+            rt_memset(&saved, 0, sizeof(saved));
+            if (result == RT_EOK)
+                reconnect_failures = 0;
+            else if (reconnect_failures < 4U)
+                reconnect_failures++;
+            uint32_t retry_ms = reconnect_failures < 3U ?
+                (1000U << reconnect_failures) : 10000U;
+            reconnect_due = rt_tick_get_millisecond() + retry_ms;
+            update_status(result == RT_EOK ? "Wi-Fi 自动重连成功" :
+                          "Wi-Fi 重连失败，正在等待自动重试");
         }
         /* SDK 的连接事件异步保存，可能晚于连接返回；定期同步已保存列表。 */
         if (persistence_ready_local) refresh_saved_names();
@@ -565,6 +637,8 @@ wifi_manager_indicator_t wifi_manager_indicator_state(void)
         return WIFI_INDICATOR_CONNECTED;
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     value = indicator_state;
+    if (value == WIFI_INDICATOR_CONNECTED)
+        value = WIFI_INDICATOR_IDLE;
     if (!radio_initialized && value != WIFI_INDICATOR_FAILED)
         value = WIFI_INDICATOR_DISABLED;
     rt_mutex_release(&state_lock);
@@ -685,17 +759,45 @@ int wifi_manager_saved_options(char *text, size_t capacity)
     return (int)count;
 }
 
+/* 使用与详情页相同的 STA 接口，未获得 DHCP 地址时留空。 */
+static void wifi_current_address(char *ip, size_t capacity)
+{
+    struct rt_wlan_device *sta =
+        (struct rt_wlan_device *)rt_device_find(RT_WLAN_DEVICE_STA_NAME);
+
+    ip[0] = '\0';
+    if (sta && sta->netdev && netdev_is_up(sta->netdev) &&
+        !ip_addr_isany(&sta->netdev->ip_addr))
+        ipaddr_ntoa_r(&sta->netdev->ip_addr, ip, (int)capacity);
+}
+
+void wifi_manager_link_info(char *ssid, size_t ssid_capacity, char *ip, size_t ip_capacity)
+{
+    struct rt_wlan_info info;
+
+    if (!ssid || !ssid_capacity || !ip || !ip_capacity)
+        return;
+    ssid[0] = ip[0] = '\0';
+    if (!rt_wlan_is_connected())
+        return;
+    if (rt_wlan_get_info(&info) == RT_EOK && info.ssid.len <= 32)
+        snprintf(ssid, ssid_capacity, "%.*s", (int)info.ssid.len, (const char *)info.ssid.val);
+    wifi_current_address(ip, ip_capacity);
+}
+
 void wifi_manager_status(char *text, size_t capacity)
 {
-    struct rt_wlan_device *sta;
-    char sta_ip[20] = "未连接";
+    char sta_ip[32] = "未连接";
+    int associated = rt_wlan_is_connected();
     if (!text || !capacity)
         return;
-    sta = (struct rt_wlan_device *)rt_device_find(RT_WLAN_DEVICE_STA_NAME);
-    if (sta && sta->netdev && netdev_is_up(sta->netdev))
-        ipaddr_ntoa_r(&sta->netdev->ip_addr, sta_ip, sizeof(sta_ip));
+    if (associated)
+        wifi_current_address(sta_ip, sizeof(sta_ip));
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
-    snprintf(text, capacity, "WiFi IP %s  %s", sta_ip, state_text);
+    if (associated && sta_ip[0] == '\0')
+        snprintf(text, capacity, "已关联，正在获取 IP  %s", state_text);
+    else
+        snprintf(text, capacity, "WiFi IP %s  %s", sta_ip, state_text);
     rt_mutex_release(&state_lock);
 }
 
@@ -717,4 +819,3 @@ int wifi_manager_get_uid(char *text, size_t capacity)
         rt_snprintf(text + i * 2U, capacity - i * 2U, "%02X", sta->netdev->hwaddr[i]);
     return (int)(length * 2U);
 }
-

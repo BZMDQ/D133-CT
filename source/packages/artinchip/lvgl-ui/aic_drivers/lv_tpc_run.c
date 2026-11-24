@@ -15,57 +15,36 @@
 #include "lv_tpc_run.h"
 #include "lv_port_indev.h"
 #include "aic_osal.h"
+#include <string.h>
 #include "../components/drivers/include/drivers/touch.h"
 
 #define THREAD_PRIORITY   25
 #define THREAD_STACK_SIZE 4096
 #define THREAD_TIMESLICE  5
+#define TPC_MAX_POINTS 16U
+#define CS001_TOUCH_POLL_MS 12U
 
 static rt_thread_t  touch_thread = RT_NULL;
 static rt_sem_t     touch_sem = RT_NULL;
 static rt_device_t  dev = RT_NULL;
-static struct rt_touch_data *read_data;
+/* 固定缓冲覆盖 4 位触点 ID，保留 GT9271 的 10 点能力。 */
+static struct rt_touch_data read_data[TPC_MAX_POINTS];
 static struct rt_touch_info info;
-
-#ifdef AIC_TOUCH_PANEL_GT911
-static void touch_panel_gt911_read_info(void)
-{
-    void *id;
-    id = rt_malloc(sizeof(rt_uint8_t) * 8);
-    rt_device_control(dev, RT_TOUCH_CTRL_GET_ID, id);
-    rt_uint8_t * read_id = (rt_uint8_t *)id;
-    rt_kprintf("id = GT%d%d%d \n", read_id[0] - '0', read_id[1] - '0', read_id[2] - '0');
-
-    /* if possible you can set your x y coordinate */
-    //rt_device_control(dev, RT_TOUCH_CTRL_SET_X_RANGE, &x);
-    //rt_device_control(dev, RT_TOUCH_CTRL_SET_Y_RANGE, &y);
-    rt_device_control(dev, RT_TOUCH_CTRL_GET_INFO, id);
-    rt_kprintf("range_x = %d \n", (*(struct rt_touch_info*)id).range_x);
-    rt_kprintf("range_y = %d \n", (*(struct rt_touch_info*)id).range_y);
-    rt_kprintf("point_num = %d \n", (*(struct rt_touch_info*)id).point_num);
-    rt_free(id);
-}
-#endif
+static rt_uint8_t cs001_poll;
 
 static void touch_entry(void *parameter) /* touch panel control entry */
 {
-#ifdef AIC_USING_RTP /* by default, only one point is supported */
-    info.point_num = 1;
-#else
-    rt_device_control(dev, RT_TOUCH_CTRL_GET_INFO, &info);
-#endif
-
-    read_data = (struct rt_touch_data *)rt_malloc(sizeof(struct rt_touch_data) * info.point_num);
-
     while (1)
     {
 #ifndef AIC_CTP_POLLING_MODE
-        rt_sem_take(touch_sem, RT_WAITING_FOREVER);
+        /* GT9271 仍优先响应中断，未收到边沿时限频读取状态寄存器。 */
+        rt_sem_take(touch_sem, cs001_poll ?
+                    rt_tick_from_millisecond(CS001_TOUCH_POLL_MS) : RT_WAITING_FOREVER);
 #endif
         int num = rt_device_read(dev, 0, read_data, info.point_num);
         if (num > 0)
         {
-            for (rt_uint8_t i = 0; i < num; i++)
+            for (rt_uint8_t i = 0; i < num && i < info.point_num; i++)
             {
                 if (read_data[i].event == RT_TOUCH_EVENT_DOWN
                         || read_data[i].event == RT_TOUCH_EVENT_UP
@@ -106,9 +85,9 @@ static void touch_entry(void *parameter) /* touch panel control entry */
 static rt_err_t rx_callback(rt_device_t dev, rt_size_t size)
 {
 #ifndef AIC_CTP_POLLING_MODE
+    rt_device_control(dev, RT_TOUCH_CTRL_DISABLE_INT, RT_NULL);
     if (touch_sem)
         rt_sem_release(touch_sem);
-    rt_device_control(dev, RT_TOUCH_CTRL_DISABLE_INT, RT_NULL);
 #endif
 #ifdef AIC_PM_DEMO
     extern struct rt_event pm_event;
@@ -119,6 +98,9 @@ static rt_err_t rx_callback(rt_device_t dev, rt_size_t size)
 
 int tpc_run(const char *name, rt_uint16_t x, rt_uint16_t y)
 {
+    if (touch_thread)
+        return -RT_EBUSY;
+    cs001_poll = strcmp(name, "gt9271") == 0;
     dev = rt_device_find(name);
     if (dev == RT_NULL)
     {
@@ -144,15 +126,22 @@ int tpc_run(const char *name, rt_uint16_t x, rt_uint16_t y)
     lv_rtp_calibrate(dev, x, y);
 #endif
 
-#ifdef AIC_TOUCH_PANEL_GT911
-    touch_panel_gt911_read_info();
+    /* GET_INFO 写入完整结构体，不能与 8 字节芯片 ID 缓冲混用。 */
+#ifdef AIC_USING_RTP
+    info.point_num = 1;
+#else
+    if (rt_device_control(dev, RT_TOUCH_CTRL_GET_INFO, &info) != RT_EOK ||
+        !info.point_num || info.point_num > TPC_MAX_POINTS)
+        goto fail;
 #endif
+    rt_kprintf("Touch %s: %ld x %ld, %u points\n", name,
+               (long)info.range_x, (long)info.range_y, (unsigned)info.point_num);
 
     touch_sem = rt_sem_create("touch_sem", 0, RT_IPC_FLAG_FIFO);
     if (touch_sem == RT_NULL)
     {
         rt_kprintf("create touch semaphore failed.\n");
-        return -1;
+        goto fail;
     }
 
 #ifndef AIC_LVGL_USB_OSD_DEMO
@@ -165,10 +154,26 @@ int tpc_run(const char *name, rt_uint16_t x, rt_uint16_t y)
                                      THREAD_PRIORITY,
                                      THREAD_TIMESLICE);
 
-    if (touch_thread != RT_NULL)
-        rt_thread_startup(touch_thread);
+    if (!touch_thread || rt_thread_startup(touch_thread) != RT_EOK)
+        goto fail;
 
     return 0;
+
+fail:
+    /* 打开失败时撤销回调和资源，不向 LVGL 报告触摸已启动。 */
+    rt_device_control(dev, RT_TOUCH_CTRL_DISABLE_INT, RT_NULL);
+    rt_device_set_rx_indicate(dev, RT_NULL);
+    if (touch_thread) {
+        rt_thread_delete(touch_thread);
+        touch_thread = RT_NULL;
+    }
+    if (touch_sem) {
+        rt_sem_delete(touch_sem);
+        touch_sem = RT_NULL;
+    }
+    rt_device_close(dev);
+    dev = RT_NULL;
+    return -RT_ERROR;
 }
 
 #ifdef AIC_USING_TOUCH

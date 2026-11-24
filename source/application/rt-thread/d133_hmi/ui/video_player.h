@@ -24,4 +24,3 @@ int video_player_direct_mode(void);
 int video_player_acquire_frame(const uint8_t **data, unsigned *stride, unsigned *sequence);
 void video_player_release_frame(unsigned sequence);
 #endif
-

@@ -9,14 +9,19 @@ if not GetDepend('HMI_SD_OTA'):
     SrcRemove(src,'ota/ota_sd.c')
 if GetDepend('HMI_NETWORK'):
     src += Glob('network/*.c')
+ui_src=[]
 if GetDepend('HMI_UI'):
-    src += Glob('ui/*.c')
+    ui_src=Glob('ui/*.c')
+    # 排除播放器，兼容 SDK 中仍存在旧源文件的情况。
+    SrcRemove(ui_src,'ui/video_player.c')
 inc=[cwd]+[cwd+'/'+m for m in modules+['network','ui']]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers/lv_mpp_dec'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
-inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/middle_media/player/include'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/include'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/mpp/base/include'))]
 inc += [os.path.normpath(os.path.join(cwd,'../../../packages/artinchip/lvgl-ui/lvgl_v9/lv_drivers'))]
 group=DefineGroup('D133-HMI',src,depend=[''],CPPPATH=inc,INSTALL=[('assets/','rodata/hmi')])
+# UI 按体积优化，网络、USB、签名和 Flash 所在组维持原编译参数。
+if ui_src:
+    group += DefineGroup('D133-HMI-UI',ui_src,depend=[''],CPPPATH=inc,LOCAL_CFLAGS=' -Os')
 Return('group')

@@ -33,4 +33,10 @@ config HMI_SD_OTA
     bool "Enable SD OTA shell entry"
     default n
 
+config HMI_USB_CDC_CONTROL
+    bool "Enable F750 physical USB CDC control"
+    depends on HMI_NETWORK && HMI_UI
+    depends on LPKG_CHERRYUSB_DEVICE_CDC && LPKG_CHERRYUSB_DEVICE_FS
+    default n
+
 
