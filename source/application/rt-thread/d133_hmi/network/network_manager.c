@@ -244,8 +244,23 @@ static unsigned switch_screen(const unsigned char *code, int uploading, int *reb
     return switch_screen_deferred(name, uploading, rebooting, 0);
 }
 
+/* CDC 只接受规范十进制毫秒数，逐位限制范围以免累积溢出。 */
+static int parse_test_interval(const char *text)
+{
+    int interval_ms = 0;
+    if (*text < '1' || *text > '9') return -1;
+    while (*text) {
+        if (*text < '0' || *text > '9') return -1;
+        interval_ms = interval_ms * 10 + (*text++ - '0');
+        if (interval_ms > HMI_TEST_INTERVAL_MAX_MS) return -1;
+    }
+    return interval_ms >= HMI_TEST_INTERVAL_MIN_MS && interval_ms % HMI_TEST_INTERVAL_STEP_MS == 0
+        ? interval_ms : -1;
+}
+
 unsigned network_manager_physical_control(const char *command, int *reboot_required)
 {
+    static const char interval_prefix[] = "TESTINTERVAL ";
     hmi_ota_status_t ota;
     unsigned status;
     int test_action;
@@ -267,7 +282,10 @@ unsigned network_manager_physical_control(const char *command, int *reboot_requi
         test_action = HMI_TEST_NEXT;
     else if (!strcmp(command, "TESTMODE"))
         test_action = HMI_TEST_TOGGLE_MODE;
-    else if (strlen(command) == 5 && !strncmp(command, "TEST", 4) &&
+    else if (!strncmp(command, interval_prefix, sizeof(interval_prefix) - 1U)) {
+        test_action = parse_test_interval(command + sizeof(interval_prefix) - 1U);
+        if (test_action < 0) return 4;
+    } else if (strlen(command) == 5 && !strncmp(command, "TEST", 4) &&
              command[4] >= '0' && command[4] <= '8')
         test_action = command[4] - '0';
     else

@@ -78,7 +78,9 @@ static int fal_sfud_flash_read(const struct fal_flash_dev *dev, long offset, uin
     sfud_flash_t sfud_dev = dev->user_data;
 
     assert(sfud_dev);
-    sfud_read(sfud_dev, dev->addr + offset, size, buf);
+    /* 读失败时返回错误，避免上层将旧缓冲内容当成已回读的数据。 */
+    if (sfud_read(sfud_dev, dev->addr + offset, size, buf) != SFUD_SUCCESS)
+        return -1;
     return size;
 }
 

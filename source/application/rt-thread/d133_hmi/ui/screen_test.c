@@ -11,7 +11,7 @@
 #include <hal_adcim.h>
 
 #define SCREEN_TEST_PAGE_COUNT       9U
-#define SCREEN_TEST_AUTO_INTERVAL_MS 2000U
+#define SCREEN_TEST_AUTO_INTERVAL_MS 1000U
 #define SCREEN_TEST_GRAY_LEVELS      32U
 #define SCREEN_TEST_LINE_POINTS      8U
 #define SCREEN_TEST_LINE_SEGMENTS    128U
@@ -76,6 +76,8 @@ static lv_timer_t *key_dispatch_timer;
 static lv_timer_t *touch_timer;
 static lv_timer_t *auto_page_timer;
 static unsigned auto_mode;
+/* 本次开机期间保存轮播间隔，退出画面测试后仍然有效。 */
+static unsigned auto_interval_ms = SCREEN_TEST_AUTO_INTERVAL_MS;
 static int32_t screen_width;
 static int32_t screen_height;
 static uint8_t current_test_page;
@@ -465,13 +467,29 @@ static void screen_test_toggle_autoplay(void)
         screen_test_stop_autoplay();
         return;
     }
-    auto_page_timer = lv_timer_create(screen_test_autoplay_tick, SCREEN_TEST_AUTO_INTERVAL_MS, NULL);
+    auto_page_timer = lv_timer_create(screen_test_autoplay_tick, screen_test_interval_ms(), NULL);
     __atomic_store_n(&auto_mode, auto_page_timer != NULL, __ATOMIC_RELAXED);
 }
 
 int screen_test_auto_enabled(void)
 {
     return (int)__atomic_load_n(&auto_mode, __ATOMIC_RELAXED);
+}
+
+unsigned screen_test_interval_ms(void)
+{
+    return __atomic_load_n(&auto_interval_ms, __ATOMIC_RELAXED);
+}
+
+void screen_test_set_interval_ms(unsigned interval_ms)
+{
+    if (screen_test_interval_ms() == interval_ms)
+        return;
+    if (auto_page_timer) {
+        lv_timer_set_period(auto_page_timer, interval_ms);
+        lv_timer_reset(auto_page_timer);
+    }
+    __atomic_store_n(&auto_interval_ms, interval_ms, __ATOMIC_RELAXED);
 }
 
 /* 通过 SDK 的 RT-Thread ADC 设备接口读取板载 GPAI2 电阻按键。 */

@@ -16,6 +16,9 @@ void screen_test_keys_start(void (*on_enter)(void));
 int screen_test_is_active(void);
 /* 只允许 LVGL 线程执行页码与 HMI_TEST_* 操作。 */
 void screen_test_remote_select(unsigned target);
-/* USB 状态查询可跨线程读取模式，不访问 LVGL 控件。 */
+/* 仅由 LVGL 线程调整正在运行的轮播定时器。 */
+void screen_test_set_interval_ms(unsigned interval_ms);
+/* USB 状态查询可跨线程读取模式和间隔。 */
 int screen_test_auto_enabled(void);
+unsigned screen_test_interval_ms(void);
 #endif

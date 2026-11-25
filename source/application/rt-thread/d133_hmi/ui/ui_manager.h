@@ -10,7 +10,11 @@ enum {
     HMI_TEST_EXIT = 9,
     HMI_TEST_PREVIOUS,
     HMI_TEST_NEXT,
-    HMI_TEST_TOGGLE_MODE
+    HMI_TEST_TOGGLE_MODE,
+    HMI_TEST_INTERVAL_MIN_MS = 500,
+    HMI_TEST_INTERVAL_MAX_MS = 10000,
+    HMI_TEST_INTERVAL_STEP_MS = 500
 };
+/* 轮播间隔以毫秒提交，与画面测试操作共用一个交接槽。 */
 int hmi_ui_remote_test(int target);
 #endif

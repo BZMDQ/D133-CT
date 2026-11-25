@@ -55,6 +55,9 @@ extern uint32_t aic_dsi_fifo_overflow_count(void);
 #define UI_HEADER_HEIGHT     73
 
 static lv_obj_t *content;
+static lv_obj_t *ui_root, *home_content, *apps_content;
+static lv_obj_t *retired_content, *retired_preview;
+static lv_timer_t *page_cleanup_timer;
 static lv_obj_t *top;
 static lv_obj_t *page_title;
 static lv_obj_t *back_button;
@@ -113,8 +116,8 @@ static uint32_t home_last_refresh;
 static int home_wifi_state = -1;
 static lv_font_t *hmi_clock_font;
 static lv_obj_t *device_name_label;
-static lv_obj_t *device_name_input;
-static lv_obj_t *device_name_status_label;
+static lv_obj_t *device_slot;
+static uint32_t device_last_refresh, diagnostic_last_refresh;
 static unsigned wifi_scan_display_generation = UINT32_MAX;
 static unsigned wifi_saved_display_generation = UINT32_MAX;
 static lv_obj_t *logo_image;
@@ -346,6 +349,56 @@ static lv_obj_t *flow_button(lv_obj_t *row, const char *text, int width,
         obj = button(row, text, 0, 0, 160, callback, data);
     lv_obj_set_width(obj, width);
     return obj;
+}
+
+/* 图标按钮使用 LVGL 的符号字库，保留完整触摸区域。 */
+static void use_symbol_font(lv_obj_t *obj)
+{
+    lv_obj_t *text = lv_obj_get_child(obj, 0);
+    lv_obj_set_style_text_font(text, &lv_font_montserrat_16, 0);
+    lv_obj_set_height(text, lv_font_get_line_height(&lv_font_montserrat_16));
+}
+
+static lv_obj_t *icon_action(lv_obj_t *row, const char *symbol, lv_event_cb_t cb, unsigned action)
+{
+    lv_obj_t *obj = flow_button(row, symbol, 52, cb, action, 0);
+    use_symbol_font(obj);
+    return obj;
+}
+
+/* 标签列保持稳定，值可换行，长屏幕型号和设备名不会压住相邻项目。 */
+static lv_obj_t *info_row(lv_obj_t *card, const char *caption, const char *value)
+{
+    lv_obj_t *row = flow_container(card, LV_FLEX_FLOW_ROW, 10);
+    lv_obj_t *key = flow_text(row, caption, UI_COLOR_MUTED);
+    lv_obj_t *data = flow_text(row, value, UI_COLOR_TEXT);
+
+    lv_obj_set_width(key, 100);
+    lv_obj_set_width(data, 1);
+    lv_obj_set_flex_grow(data, 1);
+    return data;
+}
+
+static void toggle_section(lv_event_t *event)
+{
+    lv_obj_t *section = lv_event_get_user_data(event);
+
+    lv_obj_t *control = lv_event_get_target(event);
+    if (lv_obj_has_flag(section, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_clear_flag(section, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_state(control, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_flag(section, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_state(control, LV_STATE_CHECKED);
+    }
+}
+
+static void section_button(lv_obj_t *parent, const char *caption, lv_obj_t *section)
+{
+    lv_obj_t *obj = button(parent, caption, 0, 0, 160, toggle_section, section);
+    lv_obj_set_width(obj, 116);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_MINT_TINT), LV_STATE_CHECKED);
+    lv_obj_move_to_index(obj, lv_obj_get_index(section));
 }
 
 static void close_dialog(lv_event_t *event)
@@ -712,25 +765,106 @@ static void build_all_apps(void)
                  12 + (int)(i / columns) * 139, width, 127);
 }
 
+/* 首页和全部应用常驻，只保留一个活动的普通应用。 */
+static lv_obj_t *create_page(void)
+{
+    lv_obj_t *obj = lv_obj_create(ui_root);
+
+    if (!obj)
+        return NULL;
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_pos(obj, 16, UI_HEADER_HEIGHT + 3);
+    lv_obj_set_size(obj, lv_obj_get_width(ui_root) - 32,
+                    lv_obj_get_height(ui_root) - UI_HEADER_HEIGHT - 15);
+    lv_obj_set_scroll_dir(obj, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_BORDER), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_70, LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(obj, 4, LV_PART_SCROLLBAR);
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_HIDDEN);
+    return obj;
+}
+
+static void finish_preview_close(void);
+
+static void collect_hidden_views(lv_timer_t *timer_obj)
+{
+    lv_obj_t *old = retired_content;
+
+    if (timer_obj)
+        lv_timer_pause(timer_obj);
+    retired_content = NULL;
+    if (old)
+        lv_obj_delete(old);
+    finish_preview_close();
+}
+
+static void schedule_collection(void)
+{
+    if (!page_cleanup_timer) {
+        collect_hidden_views(NULL);
+        return;
+    }
+    /* 正常在返回画面提交后清理，刷新未触发时由定时器兜底。 */
+    lv_timer_reset(page_cleanup_timer);
+    lv_timer_resume(page_cleanup_timer);
+}
+
+static void collect_after_refresh(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (page_cleanup_timer && (retired_content || retired_preview))
+        lv_timer_ready(page_cleanup_timer);
+}
+
+static void retire_page(lv_obj_t *old)
+{
+    if (!old)
+        return;
+    lv_obj_add_flag(old, LV_OBJ_FLAG_HIDDEN);
+    if (old == home_content || old == apps_content)
+        return;
+
+    /* 最多保留一个等待清理的页面，连续切换时避免堆积。 */
+    if (retired_content)
+        lv_obj_delete(retired_content);
+    retired_content = old;
+    schedule_collection();
+}
+
+/* 先断开预览控件与像素缓冲，再交给原有解码服务释放。 */
+static void finish_preview_close(void)
+{
+    lv_obj_t *overlay = retired_preview;
+    int was_loading;
+
+    if (!overlay)
+        return;
+    retired_preview = NULL;
+    lv_obj_delete(overlay);
+    was_loading = image_preview_status(NULL, 0) == IMAGE_PREVIEW_LOADING;
+    image_preview_cancel();
+    if (!was_loading)
+        lv_image_cache_drop(NULL);
+}
+
 static void close_image_preview(lv_event_t *event)
 {
     lv_obj_t *overlay = image_overlay;
 
-    LV_UNUSED(event);
+    if (!overlay)
+        return;
     if (image_ui_timer) {
         lv_timer_delete(image_ui_timer);
         image_ui_timer = NULL;
     }
-    image_overlay = NULL;
-    image_area = NULL;
-    image_status_label = NULL;
-    image_object = NULL;
-    if (overlay)
-        lv_obj_delete(overlay);
-    /* 解码线程仍在运行时由它完成释放，避免同时清理LVGL缓存。 */
-    int was_loading = image_preview_status(NULL,0)==IMAGE_PREVIEW_LOADING;
-    image_preview_cancel();
-    if(!was_loading)lv_image_cache_drop(NULL);
+    image_overlay = image_area = image_status_label = image_object = NULL;
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    retired_preview = overlay;
+    if (event)
+        schedule_collection();
+    else
+        finish_preview_close();
 }
 
 /* 由 LVGL 线程快速检查解码结果，避免等待主界面 200 ms 状态轮询。 */
@@ -799,13 +933,13 @@ static void show_image_preview(const char *path)
             return;
         }
     }
+    finish_preview_close();
     if (image_preview_request(path)) {
         message("图片正在加载，或预览服务繁忙。");
         return;
     }
 
-    if (keyboard)
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    close_keyboard();
     root = lv_screen_active();
     screen_width = lv_obj_get_width(root);
     screen_height = lv_obj_get_height(root);
@@ -839,8 +973,8 @@ static void show_image_preview(const char *path)
     lv_obj_clear_flag(image_area, LV_OBJ_FLAG_SCROLLABLE);
 
     /* 状态栏覆盖在全屏图片上方，保留完整画面区域。 */
-    image_status_label = label(image_overlay, "正在读取并解码图片……",
-                                148, 22, screen_width - 164);
+    image_status_label = label(image_overlay, "加载中",
+                                82, 22, screen_width - 98);
     lv_label_set_long_mode(image_status_label, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(image_status_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(image_status_label, lv_color_hex(0x111827), LV_PART_MAIN);
@@ -849,9 +983,10 @@ static void show_image_preview(const char *path)
     lv_obj_set_style_pad_ver(image_status_label, 8, LV_PART_MAIN);
 
     /* 返回键始终固定在屏幕左上角，覆盖图片且便于触摸。 */
-    back_button = button(image_overlay, "返回", 16, 16, 112,
+    back_button = button(image_overlay, LV_SYMBOL_LEFT, 16, 16, 52,
                          close_image_preview, NULL);
-    lv_obj_set_height(back_button, 56);
+    lv_obj_set_height(back_button, 52);
+    use_symbol_font(back_button);
     lv_obj_move_foreground(image_overlay);
 
     image_ui_timer = lv_timer_create(image_preview_ui_timer, 20, NULL);
@@ -1102,8 +1237,8 @@ static void ota_action(lv_event_t *event)
 
     lv_msgbox_add_title(box, action == 1 ? "确认安装升级包？" : "确认重启系统？");
     lv_msgbox_add_text(box, action == 1 ?
-        "系统将校验签名并更新非活动系统槽；固定资源分区不会随 OTA 修改。成功后设备会自动重启。\n请保持供电。" :
-        "即将重启设备，请确认当前操作已保存。重启期间请保持供电。");
+        "安装后将自动重启。请保持供电。" :
+        "请保存当前操作。");
     button_obj = lv_msgbox_add_footer_button(box, "确认");
     lv_obj_add_event_cb(button_obj, action == 1 ? confirm_sd : confirm_reboot,
                         LV_EVENT_CLICKED, box);
@@ -1132,8 +1267,7 @@ static void wifi_action(lv_event_t *event)
 {
     uintptr_t action = (uintptr_t)lv_event_get_user_data(event);
     int result = -1;
-    if (keyboard)
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    close_keyboard();
     if (action == WIFI_CONNECT_TYPED && wifi_ssid_input && wifi_password_input) {
         result = wifi_manager_connect(lv_textarea_get_text(wifi_ssid_input),
                                       lv_textarea_get_text(wifi_password_input));
@@ -1142,7 +1276,7 @@ static void wifi_action(lv_event_t *event)
         result = wifi_manager_connect_saved(lv_dropdown_get_selected(wifi_saved_dropdown));
     } else if (action == WIFI_SCAN) {
         if (wifi_scan_dropdown)
-            lv_dropdown_set_options(wifi_scan_dropdown, "正在刷新周围网络…");
+            lv_dropdown_set_options(wifi_scan_dropdown, "扫描中");
         result = wifi_manager_scan();
     } else if (action == WIFI_USE_SCAN && wifi_scan_dropdown && wifi_ssid_input) {
         char ssid[33];
@@ -1151,12 +1285,12 @@ static void wifi_action(lv_event_t *event)
     }
     if (result) {
         if (wifi_status_label)
-            lv_label_set_text(wifi_status_label, "Wi-Fi 操作未提交，请稍后重试");
-        message("WiFi 请求失败：请检查输入、密码长度或稍后重试。");
-    } else if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "操作失败");
+        message("Wi-Fi 操作失败");
+    } else if (wifi_status_label && action != WIFI_USE_SCAN) {
         lv_label_set_text(wifi_status_label, action == WIFI_SCAN ?
-                          "正在刷新周围 Wi-Fi 网络…" :
-                          "Wi-Fi 请求已提交，连接状态正在更新…");
+                          "扫描中" :
+                          "连接中");
     }
 }
 
@@ -1177,22 +1311,6 @@ static void wifi_refresh_saved(void)
     }
 }
 
-static void save_device_name_action(lv_event_t *event)
-{
-    const char *name;
-
-    LV_UNUSED(event);
-    if (!device_name_input)
-        return;
-    name = lv_textarea_get_text(device_name_input);
-    if (system_manager_request_device_name(name, strlen(name)) != 0) {
-        message("设备名称无效或保存任务繁忙，请检查名称长度。 ");
-        return;
-    }
-    if (device_name_status_label)
-        lv_label_set_text(device_name_status_label, "正在保存到冗余 ENV…");
-}
-
 /* 检测退出后恢复首页，测试期间独立屏幕负责遮蔽普通界面。 */
 static void screen_test_return_to_menu(void *context)
 {
@@ -1208,6 +1326,7 @@ static void start_screen_test(lv_event_t *event)
         return;
     if (image_overlay)
         close_image_preview(NULL);
+    finish_preview_close();
     if (screen_test_start(lv_screen_active(), screen_test_return_to_menu, NULL) != 0)
         message("屏幕检测启动失败");
 }
@@ -1233,33 +1352,36 @@ static void flow_field_pair(lv_obj_t *card, lv_obj_t **left, lv_obj_t **right)
 
 static void build_file_page(void)
 {
-    static const struct {
-        const char *text;
-        unsigned action;
-    } actions[] = {
-        {"SD 卡", 103}, {"上一级", 101}, {"刷新", 100}, {"打开", 102},
-        {"新建", ST_MKDIR}, {"复制", ST_COPY}, {"重命名", ST_RENAME}, {"删除", ST_DELETE},
-    };
     lv_obj_t *card = app_card(NULL);
-    lv_obj_t *left, *right, *row;
+    lv_obj_t *row = flow_container(card, LV_FLEX_FLOW_ROW_WRAP, 8);
+    lv_obj_t *tools;
 
-    flow_field_pair(card, &left, &right);
-    pathbox = flow_input(left, "路径", folder);
-    targetbox = flow_input(right, "目标路径", "/sdcard/new_folder");
-    row = flow_container(card, LV_FLEX_FLOW_ROW_WRAP, 8);
-    for (unsigned i = 0; i < sizeof(actions) / sizeof(actions[0]); ++i)
-        flow_button(row, actions[i].text, 92, file_action, actions[i].action, actions[i].action == 102U);
+    icon_action(row, LV_SYMBOL_SD_CARD, file_action, 103);
+    icon_action(row, LV_SYMBOL_UP, file_action, 101);
+    icon_action(row, LV_SYMBOL_REFRESH, file_action, 100);
+    flow_button(row, "打开", 84, file_action, 102, 1);
+    pathbox = input(card, folder, 0, 0, 240, 48);
+    lv_obj_set_width(pathbox, lv_pct(100));
+
+    tools = flow_container(card, LV_FLEX_FLOW_COLUMN, 8);
+    lv_obj_add_flag(tools, LV_OBJ_FLAG_HIDDEN);
+    section_button(card, "文件操作", tools);
+    targetbox = flow_input(tools, "目标路径", "/sdcard/new_folder");
+    row = flow_container(tools, LV_FLEX_FLOW_ROW_WRAP, 8);
+    flow_button(row, "新建", 86, file_action, ST_MKDIR, 0);
+    flow_button(row, "复制", 86, file_action, ST_COPY, 0);
+    flow_button(row, "重命名", 96, file_action, ST_RENAME, 0);
+    flow_button(row, "删除", 86, file_action, ST_DELETE, 0);
 
     card = app_card(NULL);
-    details = flow_text(card, "正在读取目录…", UI_COLOR_MUTED);
+    details = flow_text(card, "", UI_COLOR_MUTED);
+    lv_obj_add_flag(details, LV_OBJ_FLAG_HIDDEN);
     file_grid = lv_obj_create(card);
-    lv_obj_set_size(file_grid, lv_pct(100), LV_CLAMP(170, app_content_height() / 2, 272));
+    lv_obj_set_size(file_grid, lv_pct(100), LV_CLAMP(176, app_content_height() * 3 / 5, 320));
     lv_obj_set_style_bg_opa(file_grid, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(file_grid, 0, 0);
     lv_obj_set_style_radius(file_grid, 0, 0);
     lv_obj_set_style_pad_all(file_grid, 0, 0);
-    /* 使用内部滚动查看文件，列表到边缘后仍可滚动应用页。 */
-    lv_obj_add_flag(file_grid, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_set_scroll_dir(file_grid, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(file_grid, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_bg_color(file_grid, lv_color_hex(UI_COLOR_ACCENT), LV_PART_SCROLLBAR);
@@ -1268,39 +1390,77 @@ static void build_file_page(void)
 
 static void build_upgrade_page(void)
 {
-    lv_obj_t *card = app_card("升级状态");
-    lv_obj_t *row;
+    lv_obj_t *card = app_card(NULL);
+    lv_obj_t *row, *metrics;
 
-    details = flow_text(card, "等待升级", UI_COLOR_TEXT);
+    details = flow_text(card, "待机", UI_COLOR_ACCENT_DARK);
     progress = lv_bar_create(card);
-    lv_obj_set_size(progress, lv_pct(100), 14);
+    lv_obj_set_size(progress, lv_pct(100), 16);
     lv_obj_set_style_bg_color(progress, lv_color_hex(UI_COLOR_SURFACE_ALT), LV_PART_MAIN);
     lv_obj_set_style_bg_color(progress, lv_color_hex(UI_COLOR_ACCENT), LV_PART_INDICATOR);
-    lv_obj_set_style_radius(progress, 7, LV_PART_MAIN);
-    lv_obj_set_style_radius(progress, 7, LV_PART_INDICATOR);
-    ota_metrics = flow_text(card, "", UI_COLOR_MUTED);
-    lv_obj_add_flag(ota_metrics, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_radius(progress, 8, LV_PART_MAIN);
+    lv_obj_set_style_radius(progress, 8, LV_PART_INDICATOR);
+    info_row(card, "固件", HMI_VERSION);
 
     card = app_card(NULL);
     row = flow_container(card, LV_FLEX_FLOW_ROW_WRAP, 10);
     flow_button(row, "从 SD 卡安装", 154, ota_action, 1, 1);
-    flow_button(row, "重启设备", 120, ota_action, 2, 0);
-    flow_text(card, "/sdcard/UPDATE/ota.cpio", UI_COLOR_MUTED);
+    flow_button(row, "重启", 86, ota_action, 2, 0);
+    metrics = flow_container(card, LV_FLEX_FLOW_COLUMN, 8);
+    flow_text(metrics, "/sdcard/UPDATE/ota.cpio", UI_COLOR_MUTED);
+    ota_metrics = flow_text(metrics, "", UI_COLOR_MUTED);
+    lv_obj_add_flag(metrics, LV_OBJ_FLAG_HIDDEN);
+    section_button(card, "详情", metrics);
 }
 
 static void build_device_info(lv_obj_t *card, const char *display_info)
 {
     char name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
-    char line[152];
 
     system_manager_get_device_name(name, sizeof(name));
-    snprintf(line, sizeof(line), "设备名称：%s", name);
-    device_name_label = flow_text(card, line, UI_COLOR_TEXT);
-    snprintf(line, sizeof(line), "产品：%s\n硬件：%s\n固件：%s",
-             HMI_PRODUCT, HMI_HARDWARE, HMI_VERSION);
-    flow_text(card, line, UI_COLOR_TEXT);
-    flow_text(card, display_info, UI_COLOR_TEXT);
-    flow_text(card, "SRAM 1 MiB · PSRAM 8 MiB", UI_COLOR_MUTED);
+    device_name_label = info_row(card, "设备", name);
+    info_row(card, "固件", HMI_VERSION);
+    info_row(card, "屏幕", display_info);
+}
+
+static void build_device_overview(const char *display_info)
+{
+    lv_obj_t *card = app_card(NULL);
+    lv_obj_t *diagnostics;
+
+    lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_MINT_TINT), 0);
+    build_device_info(card, display_info);
+    device_slot = info_row(card, "当前槽", "");
+
+    card = app_card(NULL);
+    diagnostics = flow_container(card, LV_FLEX_FLOW_COLUMN, 6);
+    details = flow_text(diagnostics, "", UI_COLOR_MUTED);
+    lv_obj_add_flag(diagnostics, LV_OBJ_FLAG_HIDDEN);
+    section_button(card, "诊断", diagnostics);
+}
+
+static void build_system_info(const char *display_info)
+{
+    lv_obj_t *card = app_card(NULL);
+
+    build_device_info(card, display_info);
+    info_row(card, "产品", HMI_PRODUCT);
+    info_row(card, "硬件", HMI_HARDWARE);
+
+    card = app_card(NULL);
+    info_row(card, "系统", "RT-Thread / Luban-Lite");
+    info_row(card, "图形", "LVGL 9.1");
+    info_row(card, "内存", "SRAM 1 MiB · PSRAM 8 MiB");
+    info_row(card, "存储", "SPI NOR 16 MiB · DATA");
+}
+
+static void build_log_page(void)
+{
+    lv_obj_t *card = app_card(NULL);
+
+    lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_STATUS), 0);
+    details = flow_text(card, "暂无系统日志", UI_COLOR_WHITE);
+    lv_obj_set_style_text_line_space(details, 8, 0);
 }
 
 static lv_obj_t *flow_dropdown(lv_obj_t *card, const char *initial)
@@ -1320,17 +1480,22 @@ static lv_obj_t *flow_dropdown(lv_obj_t *card, const char *initial)
 
 static void build_network_page(void)
 {
-    lv_obj_t *card = app_card("网络状态");
+    lv_obj_t *card = app_card(NULL);
     lv_obj_t *row, *left, *right;
 
-    details = flow_text(card, "", UI_COLOR_TEXT);
+    details = flow_text(card, "", UI_COLOR_ACCENT_DARK);
     wifi_status_label = flow_text(card, "", UI_COLOR_MUTED);
+    lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_MINT_TINT), 0);
 
-    card = app_card("Wi-Fi 网络");
-    wifi_scan_dropdown = flow_dropdown(card, "正在扫描…");
-    row = flow_container(card, LV_FLEX_FLOW_ROW_WRAP, 8);
-    flow_button(row, "刷新", 92, wifi_action, WIFI_SCAN, 0);
-    flow_button(row, "使用所选", 116, wifi_action, WIFI_USE_SCAN, 0);
+    card = app_card("可用网络");
+    row = flow_container(card, LV_FLEX_FLOW_ROW, 8);
+    wifi_scan_dropdown = flow_dropdown(row, "扫描中");
+    lv_obj_set_width(wifi_scan_dropdown, 1);
+    lv_obj_set_flex_grow(wifi_scan_dropdown, 1);
+    icon_action(row, LV_SYMBOL_REFRESH, wifi_action, WIFI_SCAN);
+    flow_button(card, "选用", 96, wifi_action, WIFI_USE_SCAN, 0);
+
+    card = app_card(NULL);
     flow_field_pair(card, &left, &right);
     wifi_ssid_input = flow_input(left, "网络名称", "");
     lv_textarea_set_max_length(wifi_ssid_input, 32);
@@ -1342,7 +1507,7 @@ static void build_network_page(void)
     card = app_card("已保存网络");
     wifi_saved_dropdown = flow_dropdown(card, "");
     wifi_refresh_saved();
-    wifi_saved_connect_button = flow_button(card, "连接已保存", 136,
+    wifi_saved_connect_button = flow_button(card, "连接", 96,
                                             wifi_action, WIFI_CONNECT_SELECTED, 0);
     if (!wifi_manager_saved_count())
         lv_obj_add_state(wifi_saved_connect_button, LV_STATE_DISABLED);
@@ -1365,8 +1530,11 @@ static void build_screen_support(const display_profile_info_t *active)
         if (display_profile_get_configured(choices[i].slot, &profile) != DISPLAY_PROFILE_OK)
             continue;
         card = app_card(choices[i].code);
-        if (!strcmp(choices[i].code, active->code))
-            flow_text(card, "当前屏幕", UI_COLOR_ACCENT);
+        if (!strcmp(choices[i].code, active->code)) {
+            lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_MINT_TINT), 0);
+            lv_obj_set_style_border_color(card, lv_color_hex(UI_COLOR_ACCENT), 0);
+            flow_text(card, "当前屏幕", UI_COLOR_ACCENT_DARK);
+        }
         snprintf(line, sizeof(line), "%s\n%u × %u · 触摸 %s", profile.panel,
                  (unsigned)profile.width, (unsigned)profile.height,
                  profile.touch_enabled ? profile.touch : "未启用");
@@ -1376,27 +1544,42 @@ static void build_screen_support(const display_profile_info_t *active)
 
 static void screen(unsigned number)
 {
+    lv_obj_t *next, *old;
     display_profile_info_t display_profile = {0};
-    char display_info[96];
-
-    if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK) {
-        snprintf(display_info, sizeof(display_info), "%s  %ux%u  触摸：%s",
-                 display_profile.code, display_profile.width, display_profile.height,
-                 display_profile.touch_enabled ? display_profile.touch : "未启用");
-    } else {
-        snprintf(display_info, sizeof(display_info), "屏幕配置不可用");
-    }
+    char display_info[144];
+    int create;
 
     if (number == PAGE_SCREEN_TEST) {
         start_screen_test(NULL);
         return;
     }
-    if (number == 8)
-        number = 4;
-    if (number >= sizeof(titles) / sizeof(titles[0]))
+    if (number == 8U)
+        number = 4U;
+    if (number >= sizeof(titles) / sizeof(titles[0]) || (content && number == page))
         return;
+
+    next = number == 0U ? home_content : number == PAGE_ALL_APPS ? apps_content : NULL;
+    create = next == NULL;
+    if (create) {
+        next = create_page();
+        if (!next)
+            return;
+    }
+
+    close_keyboard();
+    if (keyboard)
+        lv_keyboard_set_textarea(keyboard, NULL);
+    old = content;
+    content = next;
     page = number;
-    lv_label_set_text(page_title, titles[number]);
+    if (number == 0U)
+        home_content = next;
+    else if (number == PAGE_ALL_APPS)
+        apps_content = next;
+    retire_page(old);
+    lv_obj_clear_flag(content, LV_OBJ_FLAG_HIDDEN);
+
+    set_text_if_changed(page_title, titles[number]);
     if (number == 0U) {
         lv_obj_add_flag(back_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(page_title, LV_OBJ_FLAG_HIDDEN);
@@ -1409,29 +1592,29 @@ static void screen(unsigned number)
         lv_obj_add_flag(wifi_indicator, LV_OBJ_FLAG_HIDDEN);
     }
     lv_obj_add_flag(top, LV_OBJ_FLAG_HIDDEN);
-    close_keyboard();
-    if (keyboard)
-        lv_keyboard_set_textarea(keyboard, NULL);
-    lv_obj_clean(content);
-    lv_obj_set_layout(content, 0);
-    lv_obj_set_style_pad_all(content, 0, 0);
-    lv_obj_set_style_pad_row(content, 0, 0);
-    lv_obj_update_layout(content);
-    lv_obj_scroll_to_y(content, 0, LV_ANIM_OFF);
     details = file_grid = pathbox = targetbox = editor = progress = ota_metrics = NULL;
-    home_clock = home_date = home_ssid = home_ip = home_sd = NULL;
     memset(file_grid_cards, 0, sizeof(file_grid_cards));
     file_selected_index = -1;
     wifi_ssid_input = wifi_password_input = NULL;
-    wifi_saved_dropdown = NULL;
-    wifi_scan_dropdown = NULL;
-    wifi_saved_connect_button = NULL;
-    wifi_scan_display_generation = UINT32_MAX;
-    wifi_saved_display_generation = UINT32_MAX;
+    wifi_saved_dropdown = wifi_scan_dropdown = wifi_saved_connect_button = NULL;
+    wifi_scan_display_generation = wifi_saved_display_generation = UINT32_MAX;
     wifi_status_label = NULL;
-    device_name_label = device_name_input = device_name_status_label = NULL;
-    lv_obj_set_scroll_dir(content, LV_DIR_VER);
-    lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    device_name_label = device_slot = NULL;
+    device_last_refresh = diagnostic_last_refresh = lv_tick_get() - 1000U;
+
+    if (!create)
+        return;
+
+    /* 只有首次建页需要布局；从应用返回时直接使用已建好的宫格。 */
+    lv_obj_update_layout(content);
+    if (number == 3U || number == 6U || number == 9U) {
+        if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK)
+            snprintf(display_info, sizeof(display_info), "%s\n%u × %u · %s",
+                     display_profile.code, display_profile.width, display_profile.height,
+                     display_profile.touch_enabled ? display_profile.touch : "未启用");
+        else
+            strcpy(display_info, "屏幕配置不可用");
+    }
 
     if (number == 0U) {
         build_home();
@@ -1447,20 +1630,16 @@ static void screen(unsigned number)
             build_upgrade_page();
             break;
         case 3:
-            build_device_info(app_card("设备信息"), display_info);
-            flow_text(app_card("运行环境"),
-                      "RT-Thread / Luban-Lite\nLVGL 9.1\n16 MiB SPI NOR · DATA 单分区",
-                      UI_COLOR_MUTED);
+            build_system_info(display_info);
             break;
         case 4:
             build_network_page();
             break;
         case 5:
-            details = flow_text(app_card(NULL), "暂无系统日志", UI_COLOR_TEXT);
+            build_log_page();
             break;
         case 6:
-            details = flow_text(app_card("系统状态"), "", UI_COLOR_TEXT);
-            build_device_info(app_card("设备信息"), display_info);
+            build_device_overview(display_info);
             break;
         case 9:
             build_screen_support(&display_profile);
@@ -1477,9 +1656,9 @@ static const char *ota_state_text(hmi_ota_state_t state)
     case OTA_CONFIRM: return "等待确认";
     case OTA_CHECK:   return "正在校验";
     case OTA_WRITE:   return "正在写入";
-    case OTA_READY:   return "升级完成，准备重启";
+    case OTA_READY:   return "待重启";
     case OTA_FAILED:  return "升级失败";
-    case OTA_RECEIVE: return "正在接收并写入非活动槽";
+    case OTA_RECEIVE: return "接收中";
     case OTA_IDLE:
     default:          return "空闲";
     }
@@ -1489,7 +1668,10 @@ static const char *ota_state_text(hmi_ota_state_t state)
 static volatile int remote_test_target = -1;
 int hmi_ui_remote_test(int target)
 {
-    if (target < 0 || target > HMI_TEST_TOGGLE_MODE || !app_manager_ready()) return -1;
+    if (target < 0 || !app_manager_ready()) return -1;
+    if (target > HMI_TEST_TOGGLE_MODE &&
+        (target < HMI_TEST_INTERVAL_MIN_MS || target > HMI_TEST_INTERVAL_MAX_MS ||
+         target % HMI_TEST_INTERVAL_STEP_MS != 0)) return -1;
     return __sync_bool_compare_and_swap(&remote_test_target, -1, target) ? 0 : -2;
 }
 static void timer(lv_timer_t *timer_obj)
@@ -1499,7 +1681,7 @@ static void timer(lv_timer_t *timer_obj)
     static unsigned ready_ticks;
     static unsigned ota_failure_pending;
     char text[2048];
-    char network[160], wifi_network[160];
+    char network[160];
     rt_size_t heap_total = 0, heap_used = 0, heap_peak = 0;
     boot_status_t boot;
     hmi_ota_status_t ota;
@@ -1510,9 +1692,14 @@ static void timer(lv_timer_t *timer_obj)
     ota_manager_get(&ota);
     int remote_target = __sync_lock_test_and_set(&remote_test_target, -1);
     if (remote_target >= 0 && (ota.state == OTA_IDLE || ota.state == OTA_FAILED)) {
-        if (image_overlay) close_image_preview(NULL);
-        if (remote_target != HMI_TEST_EXIT && !screen_test_is_active()) start_screen_test(NULL);
-        screen_test_remote_select((unsigned)remote_target);
+        if (remote_target >= HMI_TEST_INTERVAL_MIN_MS) {
+            /* 调整间隔只更新定时器，不打开测试或关闭图片预览。 */
+            screen_test_set_interval_ms((unsigned)remote_target);
+        } else {
+            if (image_overlay) close_image_preview(NULL);
+            if (remote_target != HMI_TEST_EXIT && !screen_test_is_active()) start_screen_test(NULL);
+            screen_test_remote_select((unsigned)remote_target);
+        }
     }
     /* 远程接收一开始就在界面线程进入升级页。 */
     if (ota.remote && ota.state == OTA_RECEIVE &&
@@ -1536,13 +1723,21 @@ static void timer(lv_timer_t *timer_obj)
             lv_obj_add_flag(top, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    if (!testing && (page == 4 || page == 6))
-        network_manager_status(network, sizeof(network));
-
-    if (!testing && page == 4) {
-        wifi_manager_status(wifi_network, sizeof(wifi_network));
-        if (wifi_status_label)
-            set_text_if_changed(wifi_status_label, wifi_network);
+    if (!testing && page == 4U) {
+        char ssid[33], ip[32], wifi_info[160];
+        wifi_manager_indicator_t state = wifi_manager_indicator_state();
+        const char *status = state == WIFI_INDICATOR_CONNECTED ? "已连接" :
+                             state == WIFI_INDICATOR_CONNECTING ? "连接中" :
+                             state == WIFI_INDICATOR_FAILED ? "连接失败" :
+                             state == WIFI_INDICATOR_IDLE ? "未连接" : "Wi-Fi 未开启";
+        wifi_manager_link_info(ssid, sizeof(ssid), ip, sizeof(ip));
+        set_text_if_changed(details, ssid[0] ? ssid : status);
+        if (state == WIFI_INDICATOR_FAILED) {
+            wifi_manager_status(wifi_info, sizeof(wifi_info));
+            set_text_if_changed(wifi_status_label, wifi_info);
+        } else {
+            set_text_if_changed(wifi_status_label, ip[0] ? ip : ssid[0] ? status : "");
+        }
         if (wifi_saved_dropdown && wifi_manager_saved_generation() != wifi_saved_display_generation)
             wifi_refresh_saved();
         if (wifi_scan_dropdown && wifi_scan_display_generation != wifi_manager_scan_generation()) {
@@ -1552,29 +1747,17 @@ static void timer(lv_timer_t *timer_obj)
                 lv_dropdown_set_options(wifi_scan_dropdown, options);
         }
     }
-    if (!testing && page == 6) {
-        char current_name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
-        const char *save_text;
-        int save_state = system_manager_device_name_save_state();
-        system_manager_get_device_name(current_name, sizeof(current_name));
-        if (device_name_label) {
-            snprintf(text, sizeof(text), "设备名称：%s", current_name);
-            if (strcmp(lv_label_get_text(device_name_label), text))
-                lv_label_set_text(device_name_label, text);
+    if (!testing && (page == 3U || page == 6U) && device_name_label &&
+        lv_tick_elaps(device_last_refresh) >= 1000U) {
+        char name[HMI_DEVICE_NAME_MAX_BYTES + 1U];
+        system_manager_get_device_name(name, sizeof(name));
+        set_text_if_changed(device_name_label, name);
+        if (device_slot) {
+            snprintf(text, sizeof(text), "%c · %s", boot.current,
+                     boot.confirmed ? "已确认" : "健康检查中");
+            set_text_if_changed(device_slot, text);
         }
-        if (device_name_input && !lv_obj_has_state(device_name_input, LV_STATE_FOCUSED) &&
-            strcmp(lv_textarea_get_text(device_name_input), current_name))
-            lv_textarea_set_text(device_name_input, current_name);
-        if (save_state == HMI_DEVICE_NAME_SAVE_PENDING)
-            save_text = "正在保存到冗余 ENV…";
-        else if (save_state == HMI_DEVICE_NAME_SAVE_OK)
-            save_text = "设备名称已保存并同步到工具箱。";
-        else if (save_state == HMI_DEVICE_NAME_SAVE_ERROR)
-            save_text = "保存失败，请检查 ENV 或名称长度。";
-        else
-            save_text = "名称会同步到 TCP 5000 工具箱信息。";
-        if (device_name_status_label && strcmp(lv_label_get_text(device_name_status_label), save_text))
-            lv_label_set_text(device_name_status_label, save_text);
+        device_last_refresh = lv_tick_get();
     }
     if (!testing && page == 0U && home_clock && lv_tick_elaps(home_last_refresh) >= 1000U)
         update_home_status();
@@ -1603,7 +1786,7 @@ static void timer(lv_timer_t *timer_obj)
         remote_dialog = lv_msgbox_create(NULL);
         lv_msgbox_add_title(remote_dialog, "远程升级确认");
         lv_msgbox_add_text(remote_dialog,
-            "电脑工具箱请求安装系统固件。固定资源分区不会随 OTA 修改。\n是否继续？");
+            "工具箱请求安装固件。请保持供电。");
         button_obj = lv_msgbox_add_footer_button(remote_dialog, "允许升级");
         lv_obj_add_event_cb(button_obj, remote_answer, LV_EVENT_CLICKED,
                             (void *)(uintptr_t)1);
@@ -1625,10 +1808,11 @@ static void timer(lv_timer_t *timer_obj)
         if (page == 1 && result.op == ST_LIST) {
             files = result.list;
             file_grid_render();
-            if (details) {
-                snprintf(text, sizeof(text), "共 %u 项%s",
-                         files.count, files.truncated ? "（列表已截断）" : "");
-                lv_label_set_text(details, text);
+            if (details && files.truncated) {
+                set_text_if_changed(details, "列表已截断");
+                lv_obj_clear_flag(details, LV_OBJ_FLAG_HIDDEN);
+            } else if (details) {
+                lv_obj_add_flag(details, LV_OBJ_FLAG_HIDDEN);
             }
         } else if (page == 1 && result.op == ST_READ && editor) {
             lv_textarea_set_text(editor, result.data);
@@ -1643,8 +1827,11 @@ static void timer(lv_timer_t *timer_obj)
     }
 
     if (!testing && details && !image_overlay) {
-        if (page == 6) {
+        if (page == 6 && !lv_obj_has_flag(lv_obj_get_parent(details), LV_OBJ_FLAG_HIDDEN) &&
+            lv_tick_elaps(diagnostic_last_refresh) >= 1000U) {
             unsigned long dsi_overflow = 0;
+            diagnostic_last_refresh = lv_tick_get();
+            network_manager_status(network, sizeof(network));
 #ifdef AIC_DISP_MIPI_DSI_DRV
             dsi_overflow = (unsigned long)aic_dsi_fifo_overflow_count();
 #endif
@@ -1664,13 +1851,14 @@ static void timer(lv_timer_t *timer_obj)
                      get_ge2d_device() ? "硬件已启用" : "软件绘制",
                      (unsigned long)lv_draw_ge2d_completed(),
                      (unsigned long)aic_de_underflow_count(), dsi_overflow);
-            lv_label_set_text(details, text);
+            set_text_if_changed(details, text);
         } else if (page == 2) {
             snprintf(text, sizeof(text), "%s  %u%%\n目标槽：%c",
                      ota_state_text(ota.state), ota.percent, ui_update_target(&boot));
             set_text_if_changed(details, text);
             lv_bar_set_value(progress, ota.percent, LV_ANIM_OFF);
-            if (ota.state != OTA_IDLE) {
+            if (ota.state != OTA_IDLE &&
+                !lv_obj_has_flag(lv_obj_get_parent(ota_metrics), LV_OBJ_FLAG_HIDDEN)) {
                 snprintf(text, sizeof(text),
                          "版本：%s    错误码：%d    速度：%lu KiB/s\n"
                          "签名 %lu ms · 确认 %lu ms · 写入 %lu ms\n"
@@ -1685,11 +1873,11 @@ static void timer(lv_timer_t *timer_obj)
             } else {
                 lv_obj_add_flag(ota_metrics, LV_OBJ_FLAG_HIDDEN);
             }
-        } else if (page == 4) {
-            set_text_if_changed(details, network);
-        } else if (page == 5) {
+        } else if (page == 5 && lv_tick_elaps(diagnostic_last_refresh) >= 1000U) {
+            diagnostic_last_refresh = lv_tick_get();
             system_manager_logs(text, sizeof(text));
-            set_text_if_changed(details, text);
+            if (text[0])
+                set_text_if_changed(details, text);
         }
     }
 }
@@ -1751,7 +1939,7 @@ void hmi_ui_init(void)
     lv_obj_clear_flag(logo_image, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
     /* 左侧只放品牌 Logo，页面标题仅在子页显示。 */
-    page_title = label(root, "", 123, 24, lv_obj_get_width(root) - 142);
+    page_title = label(root, "", 86, 24, lv_obj_get_width(root) - 104);
     lv_obj_set_height(page_title, lv_font_get_line_height(body_font()));
     lv_label_set_long_mode(page_title, LV_LABEL_LONG_DOT);
     top = label(root, "", 123, 19, lv_obj_get_width(root) - 220);
@@ -1767,18 +1955,13 @@ void hmi_ui_init(void)
     lv_obj_set_style_border_width(wifi_indicator, 0, 0);
     lv_obj_set_style_text_font(lv_obj_get_child(wifi_indicator, 0), &lv_font_montserrat_16, 0);
     lv_obj_set_height(lv_obj_get_child(wifi_indicator, 0), lv_font_get_line_height(&lv_font_montserrat_16));
-    back_button = button(root, "返回", 17, 12, 88, back_navigation, NULL);
+    back_button = button(root, LV_SYMBOL_LEFT, 17, 12, 52, back_navigation, NULL);
+    use_symbol_font(back_button);
 
-    content = lv_obj_create(root);
-    lv_obj_set_pos(content, 16, UI_HEADER_HEIGHT + 3);
-    lv_obj_set_size(content, lv_obj_get_width(root) - 32, lv_obj_get_height(root) - UI_HEADER_HEIGHT - 15);
-    lv_obj_set_style_bg_color(content, lv_color_hex(UI_COLOR_WHITE), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(content, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(content, 0, LV_PART_MAIN);
-    lv_obj_set_scroll_dir(content, LV_DIR_VER);
-    lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    ui_root = root;
+    page_cleanup_timer = lv_timer_create(collect_hidden_views, 110, NULL);
+    if (page_cleanup_timer)
+        lv_timer_pause(page_cleanup_timer);
     screen(0);
     screen_test_keys_start(start_screen_test_from_key);
     lv_timer_create(timer, 200, NULL);
@@ -1787,6 +1970,8 @@ void hmi_ui_init(void)
                                 LV_EVENT_RENDER_READY, NULL);
         lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,
                                 LV_EVENT_FLUSH_FINISH, NULL);
+        lv_display_add_event_cb(lv_display_get_default(), collect_after_refresh,
+                                LV_EVENT_REFR_READY, NULL);
     }
     hmi_serial_log("[boot_time] hmi_widgets_ready=%u ms\n",app_manager_boot_elapsed_ms());
 }

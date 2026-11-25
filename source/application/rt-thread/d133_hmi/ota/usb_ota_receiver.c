@@ -217,7 +217,40 @@ void usb_ota_receiver_poll(unsigned epoch)
         usb_ota_abort(-14);usb_ota.have=0;usb_ota.blocked=1;
     }
 }
+int32_t usb_ota_receiver_wait_ms(void)
+{
+    if (!usb_ota.have && !usb_ota.active)
+        return -1;
+    uint32_t elapsed = rt_tick_get_millisecond() - usb_ota.last_ms;
+    return elapsed < USB_OTA_IDLE_MS ? (int32_t)(USB_OTA_IDLE_MS - elapsed) : 0;
+}
 int usb_ota_receiver_owned(void){return usb_ota.locked;}
+unsigned usb_ota_receiver_payload_remaining(void)
+{
+    return !usb_ota.blocked && usb_ota.have >= USB_OTA_HEADER
+           ? usb_ota.want - usb_ota.have : 0;
+}
+static int usb_ota_complete_frame(unsigned epoch)
+{
+    usb_ota_execute(epoch);
+    usb_ota.have = 0;
+    usb_ota.want = USB_OTA_HEADER;
+    return 2;
+}
+int usb_ota_receiver_push_payload(const uint8_t *data, unsigned length, unsigned epoch)
+{
+    usb_ota_receiver_poll(epoch);
+    if (!usb_ota_live((void *)(uintptr_t)epoch) ||
+        length > usb_ota_receiver_payload_remaining())
+        return 2;
+
+    memcpy(usb_ota.frame + usb_ota.have, data, length);
+    usb_ota.have += length;
+    usb_ota.last_ms = rt_tick_get_millisecond();
+    if (usb_ota.have == usb_ota.want)
+        return usb_ota_complete_frame(epoch);
+    return 1;
+}
 int usb_ota_receiver_input(uint8_t value,unsigned epoch)
 {
     /* poll与取环形缓冲之间仍可能发生USB reset，逐字节再核对所属epoch。 */
@@ -241,9 +274,7 @@ int usb_ota_receiver_input(uint8_t value,unsigned epoch)
         }
         usb_ota.want=USB_OTA_HEADER+length;
     }
-    if(usb_ota.have==usb_ota.want){
-        usb_ota_execute(epoch);usb_ota.have=0;usb_ota.want=20;return 2;
-    }
+    if(usb_ota.have==usb_ota.want)return usb_ota_complete_frame(epoch);
     return 1;
 }
 #endif

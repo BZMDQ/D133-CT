@@ -46,7 +46,13 @@ static int validate_bytes(const unsigned char *data,unsigned length)
             data+=n;length-=n;stream.checked+=n;stream.padding-=n;
             if(!stream.padding){stream.phase=0;stream.have=0;stream.need=110;}continue;}
         if(stream.phase==1){unsigned n=length<stream.remaining?length:stream.remaining;
-            for(unsigned i=0;i<n;i++)stream.sum+=data[i];
+            /* 保留独立的 CPIO 字节和校验；局部累加避免每字节写回会话结构。 */
+            uint32_t sum=stream.sum;
+            unsigned i=0;
+            for(;n-i>=4U;i+=4U)
+                sum+=(uint32_t)data[i]+data[i+1U]+data[i+2U]+data[i+3U];
+            for(;i<n;i++)sum+=data[i];
+            stream.sum=sum;
             if(stream.member==1)memcpy(stream.meta+stream.size-stream.remaining,data,n);
             data+=n;length-=n;stream.checked+=n;stream.remaining-=n;
             if(stream.remaining)continue;
@@ -154,6 +160,8 @@ int ota_stream_feed(const unsigned char *data,unsigned length)
     if((!stream.checked&&length<636)||validate_bytes(data,length)||!stream.metadata_ok)return -31;
     /* 保持官方解析器已验证的 4 KiB 写入边界，去掉固定让步延时。 */
     for(unsigned offset=0;offset<length;){unsigned n=length-offset;if(n>4096U)n=4096U;
+        /* 长帧写入期间若USB掉线或TCP会话失效，停止后续分段。 */
+        if(!stream_alive())return -14;
         if(ota_shard_download_fun((char*)data+offset,(int)n)<0)return -32;
         offset+=n;
     }return 0;

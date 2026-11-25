@@ -30,6 +30,8 @@
 #define CDC_LINE_SIZE   32U
 #define CDC_REPLY_SIZE  1020U
 #define CDC_TX_TIMEOUT  1000U
+#define CDC_EVENT_RX    (1U << 0)
+#define CDC_EVENT_TX    (1U << 1)
 
 /* 环形缓冲空出一个槽区分满和空，仍须容纳完整DOTA帧。 */
 #if CDC_RX_CAPACITY <= USB_OTA_HEADER + USB_OTA_MAX_DATA
@@ -68,6 +70,7 @@ static unsigned usb_line_used;
 static int usb_line_discard;
 static int usb_line_cr;
 static struct usbd_interface usb_cdc_control_intf, usb_cdc_data_intf;
+static struct rt_event usb_cdc_events;
 /* 虚拟串口参数只用于CDC控制请求回显，不修改任何物理UART配置。 */
 static const struct cdc_line_coding usb_default_line_coding = {115200, 0, 0, 8};
 static struct cdc_line_coding usb_line_coding = {115200, 0, 0, 8};
@@ -100,13 +103,19 @@ static void usb_cdc_bulk_in(uint8_t busid, uint8_t ep, uint32_t nbytes)
     } else {
         usb_tx_busy = 0;
     }
+    /* 普通IN和末尾ZLP都完成后才能释放DMA缓冲并唤醒等待应答的线程。 */
+    if (!usb_tx_busy)
+        rt_event_send(&usb_cdc_events, CDC_EVENT_TX);
 }
 
 static void usb_cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes)
 {
     unsigned i;
+    rt_uint32_t events = 0;
 
     if (usb_configured && usb_dtr) {
+        if (nbytes && usb_rx_head == usb_rx_tail)
+            events = CDC_EVENT_RX;
         if (nbytes > sizeof(usb_rx_packet)) {
             usb_rx_head = usb_rx_tail = 0;
             usb_rx_discard = usb_rx_overflow = usb_rx_reset_line = 1;
@@ -128,6 +137,7 @@ static void usb_cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes)
                 usb_rx_overflow = usb_rx_reset_line = 1;
                 usb_tx_fault = 1;
                 usb_epoch++;
+                events |= CDC_EVENT_RX | CDC_EVENT_TX;
                 continue;
             }
             usb_rx_ring[usb_rx_head] = value;
@@ -137,6 +147,9 @@ static void usb_cdc_bulk_out(uint8_t busid, uint8_t ep, uint32_t nbytes)
     /* 每次仅接收一个FS包，回调不解析业务或等待互斥。 */
     if (usb_configured)
         usbd_ep_start_read(0, CDC_OUT_EP, usb_rx_packet, sizeof(usb_rx_packet));
+    /* 软件环从空变为可读时唤醒线程，连续满包共用一次通知。 */
+    if (events)
+        rt_event_send(&usb_cdc_events, events);
 }
 
 static struct usbd_endpoint usb_cdc_out_ep = { CDC_OUT_EP, usb_cdc_bulk_out };
@@ -153,6 +166,7 @@ static void usb_cdc_event(uint8_t busid, uint8_t event)
         usb_tx_busy = usb_tx_zlp = 0;
         usb_tx_fault = 1;
         usb_cdc_reset_rx();
+        rt_event_send(&usb_cdc_events, CDC_EVENT_RX | CDC_EVENT_TX);
         break;
     case USBD_EVENT_CONFIGURED:
         usb_cdc_reset_rx();
@@ -160,6 +174,7 @@ static void usb_cdc_event(uint8_t busid, uint8_t event)
         usb_dtr = 0;
         usb_tx_busy = usb_tx_zlp = usb_tx_fault = 0;
         usbd_ep_start_read(0, CDC_OUT_EP, usb_rx_packet, sizeof(usb_rx_packet));
+        rt_event_send(&usb_cdc_events, CDC_EVENT_RX | CDC_EVENT_TX);
         break;
     default:
         break;
@@ -173,8 +188,9 @@ void usbd_cdc_acm_set_dtr(uint8_t busid, uint8_t intf, bool dtr)
         usb_cdc_reset_rx();
         /* DTR变化不能释放仍被DMA读取的TX缓冲，须等待真实完成或总线reset。 */
         usb_tx_fault = usb_tx_busy ? 1 : 0;
+        usb_dtr = dtr && usb_configured;
+        rt_event_send(&usb_cdc_events, CDC_EVENT_RX | CDC_EVENT_TX);
     }
-    usb_dtr = dtr && usb_configured;
 }
 
 void usbd_cdc_acm_set_line_coding(uint8_t busid, uint8_t intf,
@@ -198,10 +214,16 @@ void usbd_cdc_acm_get_line_coding(uint8_t busid, uint8_t intf,
     rt_hw_interrupt_enable(level);
 }
 
+static int usb_cdc_alive(unsigned epoch)
+{
+    return usb_epoch==epoch&&usb_configured&&usb_dtr&&!usb_tx_fault;
+}
+
 /* 仅应用线程调用；超时后保留busy，防止晚到DMA完成前重写TX内存。 */
 static int usb_cdc_send_bytes(const void *data,unsigned length,unsigned epoch)
 {
     rt_uint32_t started;
+    int sent;
     rt_base_t level = rt_hw_interrupt_disable();
 
     if (!length || length > sizeof(usb_tx_packet) || !usb_configured || !usb_dtr ||
@@ -218,22 +240,25 @@ static int usb_cdc_send_bytes(const void *data,unsigned length,unsigned epoch)
     }
     rt_hw_interrupt_enable(level);
     started = rt_tick_get_millisecond();
-    while (usb_tx_busy && usb_epoch == epoch && usb_configured && usb_dtr &&
-           rt_tick_get_millisecond() - started < CDC_TX_TIMEOUT)
-        rt_thread_mdelay(2);
-    if (usb_tx_busy) usb_tx_fault = 1;
-    return !usb_tx_busy && !usb_tx_fault && usb_epoch == epoch &&
-           usb_configured && usb_dtr;
+    while (usb_tx_busy && usb_cdc_alive(epoch)) {
+        rt_uint32_t elapsed = rt_tick_get_millisecond() - started;
+        if (elapsed >= CDC_TX_TIMEOUT)
+            break;
+        /* 通知可能早于等待或来自上一会话，以状态和总超时为准。 */
+        rt_event_recv(&usb_cdc_events, CDC_EVENT_TX, RT_EVENT_FLAG_OR | RT_EVENT_FLAG_CLEAR,
+                      rt_tick_from_millisecond(CDC_TX_TIMEOUT - elapsed), RT_NULL);
+    }
+    level = rt_hw_interrupt_disable();
+    if (usb_tx_busy && usb_cdc_alive(epoch))
+        usb_tx_fault = 1;
+    sent = !usb_tx_busy && usb_cdc_alive(epoch);
+    rt_hw_interrupt_enable(level);
+    return sent;
 }
 static int usb_cdc_send(const char *text,unsigned epoch)
 {
     return usb_cdc_send_bytes(text,(unsigned)strlen(text),epoch);
 }
-static int usb_cdc_alive(unsigned epoch)
-{
-    return usb_epoch==epoch&&usb_configured&&usb_dtr&&!usb_tx_fault;
-}
-
 static void usb_cdc_execute(const char *command, unsigned epoch)
 {
     char response[CDC_REPLY_SIZE];
@@ -274,12 +299,12 @@ static void usb_cdc_execute(const char *command, unsigned epoch)
         /* 旧 USB 控制 App 的内置按钮仍可从自定义型号切回原生屏。 */
         if (display_profile_custom_code(active.code))
             slot = active.code;
-        /* 保留旧版 STATUS 前缀；新增字段全部为 ASCII，串口接收缓冲为 160 字节。 */
+        /* 保留旧版 STATUS 字段及顺序，TINT 返回 LVGL 已应用的间隔（毫秒）。 */
         rt_snprintf(response, sizeof(response),
-                    "STATUS,OK,%s,FW=%s,RES=%ux%u,PANEL=%s,TOUCH=%s,SLOT=%s,LIST=%s,TMODE=%s,SCAP=2\r\n",
+                    "STATUS,OK,%s,FW=%s,RES=%ux%u,PANEL=%s,TOUCH=%s,SLOT=%s,LIST=%s,TMODE=%s,SCAP=2,TINT=%u\r\n",
                     active.code, HMI_VERSION, (unsigned)active.width, (unsigned)active.height,
                     active.panel, active.touch, slot, screens,
-                    screen_test_auto_enabled() ? "AUTO" : "MANUAL");
+                    screen_test_auto_enabled() ? "AUTO" : "MANUAL", screen_test_interval_ms());
     } else {
         status = network_manager_physical_control(command, &reboot_required);
         if (!status)
@@ -305,6 +330,7 @@ static void usb_cdc_execute(const char *command, unsigned epoch)
 /* 每次最多处理一条命令；同一USB会话严格顺序收发，便于界定ACK。 */
 static int usb_cdc_process(void)
 {
+    uint8_t payload[CDC_PACKET_SIZE];
     unsigned epoch;
     /* 不能持中断锁调用OTA清理/状态mutex；reset回调只递增epoch。 */
     usb_ota_receiver_poll(usb_epoch);
@@ -330,10 +356,28 @@ static int usb_cdc_process(void)
     rt_hw_interrupt_enable(level);
     for (;;) {
         uint8_t value;
+        unsigned remaining = usb_ota_receiver_payload_remaining();
         level = rt_hw_interrupt_disable();
         if (usb_epoch != epoch || usb_rx_reset_line || usb_rx_tail == usb_rx_head) {
             rt_hw_interrupt_enable(level);
             return 0;
+        }
+        if (remaining) {
+            /* 每次最多复制一个FS包，且不读过帧尾；同一段只核对一次会话。 */
+            unsigned end = usb_rx_head > usb_rx_tail ? usb_rx_head : CDC_RX_CAPACITY;
+            unsigned length = end - usb_rx_tail;
+            if (length > sizeof(payload))
+                length = sizeof(payload);
+            if (length > remaining)
+                length = remaining;
+            memcpy(payload, usb_rx_ring + usb_rx_tail, length);
+            usb_rx_tail += length;
+            if (usb_rx_tail == CDC_RX_CAPACITY)
+                usb_rx_tail = 0;
+            rt_hw_interrupt_enable(level);
+            if (usb_ota_receiver_push_payload(payload, length, epoch) == 2)
+                return 1;
+            continue;
         }
         value = usb_rx_ring[usb_rx_tail];
         usb_rx_tail = usb_cdc_next_rx_index(usb_rx_tail);
@@ -380,13 +424,18 @@ static void usb_cdc_worker(void *parameter)
 {
     (void)parameter;
     while (1) {
-        if (!usb_cdc_process()) rt_thread_mdelay(2);
+        if (!usb_cdc_process()) {
+            /* 无传输时休眠，半帧或升级会话仍按原空闲期限清理。 */
+            rt_event_recv(&usb_cdc_events, CDC_EVENT_RX, RT_EVENT_FLAG_OR | RT_EVENT_FLAG_CLEAR,
+                          rt_tick_from_millisecond(usb_ota_receiver_wait_ms()), RT_NULL);
+        }
     }
 }
 
 int usb_cdc_control_init(void)
 {
     rt_thread_t thread;
+    rt_event_init(&usb_cdc_events, "usb_ctl", RT_IPC_FLAG_FIFO);
     usb_ota_receiver_init(usb_cdc_send_bytes,usb_cdc_alive);
 #ifdef RT_USING_PM
     /* 常驻控制口须保留PHY；IDLE仍允许WFI，禁止LIGHT/DEEP拆除USB。 */
@@ -399,6 +448,7 @@ int usb_cdc_control_init(void)
     usbd_add_endpoint(0, &usb_cdc_in_ep);
     if (usbd_initialize(0, USB_DEV_BASE, usb_cdc_event) != 0) {
         usbd_deinitialize(0);
+        rt_event_detach(&usb_cdc_events);
 #ifdef RT_USING_PM
         rt_pm_release(PM_SLEEP_MODE_IDLE);
 #endif
@@ -409,6 +459,7 @@ int usb_cdc_control_init(void)
     thread = rt_thread_create("usb_ctl", usb_cdc_worker, RT_NULL, 12U * 1024U, 22, 10);
     if (!thread) {
         usbd_deinitialize(0);
+        rt_event_detach(&usb_cdc_events);
 #ifdef RT_USING_PM
         rt_pm_release(PM_SLEEP_MODE_IDLE);
 #endif
@@ -417,6 +468,7 @@ int usb_cdc_control_init(void)
     if (rt_thread_startup(thread) != RT_EOK) {
         rt_thread_delete(thread);
         usbd_deinitialize(0);
+        rt_event_detach(&usb_cdc_events);
 #ifdef RT_USING_PM
         rt_pm_release(PM_SLEEP_MODE_IDLE);
 #endif
