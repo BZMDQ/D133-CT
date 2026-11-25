@@ -11,7 +11,7 @@ int screen_test_start(lv_obj_t *parent,
 /* 由 LVGL 线程调用，尽快处理图片工作线程的状态变化。 */
 void screen_test_image_ready(void);
 /* 启动全局按键采样；回调在 LVGL 线程执行。 */
-void screen_test_keys_start(void (*on_enter)(void));
+void screen_test_keys_start(void (*on_enter)(void), void (*on_back)(void));
 
 int screen_test_is_active(void);
 /* 只允许 LVGL 线程执行页码与 HMI_TEST_* 操作。 */

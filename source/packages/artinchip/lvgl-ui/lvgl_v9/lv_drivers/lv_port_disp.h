@@ -42,6 +42,7 @@ typedef struct {
     int fps;
 #ifdef HMI_APP
     bool sync_next_refresh;
+    void *hmi_back_buffer;
 #endif
 } aic_disp_t;
 

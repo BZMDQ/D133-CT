@@ -91,6 +91,7 @@ static volatile uint8_t pending_key;
 static screen_test_exit_cb_t exit_callback;
 static void *exit_context;
 static void (*enter_callback)(void);
+static void (*back_callback)(void);
 
 static void screen_test_exit(void);
 static uint8_t screen_test_gray_value(uint32_t index);
@@ -574,11 +575,13 @@ static void screen_test_dispatch_key(lv_timer_t *timer)
     if (!key)
         return;
     pending_key = SCREEN_TEST_KEY_NONE;
-    if (key == SCREEN_TEST_KEY_LEFT && !test_overlay) {
-        if (enter_callback) enter_callback();
+    if (!test_overlay) {
+        if (key == SCREEN_TEST_KEY_LEFT && enter_callback)
+            enter_callback();
+        else if (key == SCREEN_TEST_KEY_RIGHT && back_callback)
+            back_callback();
         return;
     }
-    if (!test_overlay) return;
     if (key == SCREEN_TEST_KEY_RIGHT) {
         screen_test_exit();
         return;
@@ -608,9 +611,10 @@ static void screen_test_start_key_worker(void)
     }
 }
 
-void screen_test_keys_start(void (*on_enter)(void))
+void screen_test_keys_start(void (*on_enter)(void), void (*on_back)(void))
 {
     enter_callback = on_enter;
+    back_callback = on_back;
     key_worker_enabled = 1;
     screen_test_start_key_worker();
     if (!key_dispatch_timer)

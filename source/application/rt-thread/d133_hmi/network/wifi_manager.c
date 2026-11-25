@@ -61,6 +61,7 @@ typedef struct {
 static rt_mq_t jobs;
 static struct rt_mutex state_lock;
 static char state_text[160] = "Wi-Fi 初始化中";
+static char current_ssid[33];
 static char saved_names[5][33];
 static unsigned saved_count, saved_generation;
 static wifi_manager_indicator_t indicator_state = WIFI_INDICATOR_DISABLED;
@@ -289,7 +290,7 @@ static void refresh_saved_names(void)
 static void update_status(const char *message)
 {
     struct rt_wlan_info info;
-    char connected_ssid[33] = "未连接";
+    char connected_ssid[33] = {0};
     int connected = rt_wlan_is_connected();
     if (connected && rt_wlan_get_info(&info) == RT_EOK && info.ssid.len <= 32) {
         memcpy(connected_ssid, info.ssid.val, info.ssid.len);
@@ -297,7 +298,8 @@ static void update_status(const char *message)
     }
     rt_mutex_take(&state_lock, RT_WAITING_FOREVER);
     snprintf(state_text, sizeof(state_text), "当前网络：%s | %s",
-             connected_ssid, message ? message : "就绪");
+             connected_ssid[0] ? connected_ssid : "未连接", message ? message : "就绪");
+    memcpy(current_ssid, connected_ssid, sizeof(current_ssid));
     if (connected)
         indicator_state = WIFI_INDICATOR_CONNECTED;
     else if (!radio_initialized)
@@ -773,15 +775,17 @@ static void wifi_current_address(char *ip, size_t capacity)
 
 void wifi_manager_link_info(char *ssid, size_t ssid_capacity, char *ip, size_t ip_capacity)
 {
-    struct rt_wlan_info info;
-
     if (!ssid || !ssid_capacity || !ip || !ip_capacity)
         return;
     ssid[0] = ip[0] = '\0';
-    if (!rt_wlan_is_connected())
+    if (!jobs || !rt_wlan_is_connected())
         return;
-    if (rt_wlan_get_info(&info) == RT_EOK && info.ssid.len <= 32)
-        snprintf(ssid, ssid_capacity, "%.*s", (int)info.ssid.len, (const char *)info.ssid.val);
+
+    /* rt_wlan_get_info() 会查询 RSSI，扫描期间需要等待 WLAN 管理锁。 */
+    if (rt_mutex_take(&state_lock, 0) == RT_EOK) {
+        snprintf(ssid, ssid_capacity, "%s", current_ssid);
+        rt_mutex_release(&state_lock);
+    }
     wifi_current_address(ip, ip_capacity);
 }
 

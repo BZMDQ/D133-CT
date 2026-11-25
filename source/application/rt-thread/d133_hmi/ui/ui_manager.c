@@ -4,6 +4,8 @@
 #include "app_manager.h"
 #include "lvgl.h"
 #include "lv_draw_ge2d.h"
+#include "lv_port_disp.h"
+#include "time_sync.h"
 #include <rtthread.h>
 #include "storage_manager.h"
 #include "sd_manager.h"
@@ -55,7 +57,7 @@ extern uint32_t aic_dsi_fifo_overflow_count(void);
 #define UI_HEADER_HEIGHT     73
 
 static lv_obj_t *content;
-static lv_obj_t *ui_root, *home_content, *apps_content;
+static lv_obj_t *ui_root, *ui_header, *home_content, *apps_content;
 static lv_obj_t *retired_content, *retired_preview;
 static lv_timer_t *page_cleanup_timer;
 static lv_obj_t *top;
@@ -107,6 +109,7 @@ static lv_obj_t *wifi_saved_dropdown;
 static lv_obj_t *wifi_scan_dropdown;
 static lv_obj_t *wifi_saved_connect_button;
 static lv_obj_t *wifi_indicator;
+static int wifi_auto_scan_pending;
 static lv_obj_t *home_clock;
 static lv_obj_t *home_date;
 static lv_obj_t *home_ssid;
@@ -629,14 +632,13 @@ static void update_home_status(void)
     char ssid[33], ip[32], date[48], clock[12];
     const char *network;
     struct tm local;
-    time_t now = time(NULL);
     uint32_t color = wifi == WIFI_INDICATOR_CONNECTED ? UI_COLOR_ACCENT : UI_COLOR_MUTED;
 
     if (wifi != home_wifi_state) {
         lv_obj_set_style_text_color(lv_obj_get_child(wifi_indicator, 0), lv_color_hex(color), 0);
         home_wifi_state = wifi;
     }
-    if (localtime_r(&now, &local) && local.tm_year >= 120) {
+    if (time_sync_local_time(&local) == 0) {
         snprintf(clock, sizeof(clock), "%02u:%02u",
                  (unsigned)local.tm_hour, (unsigned)local.tm_min);
         snprintf(date, sizeof(date), "%u 月 %u 日 周%s",
@@ -765,6 +767,28 @@ static void build_all_apps(void)
                  12 + (int)(i / columns) * 139, width, 127);
 }
 
+/* 旧的单缓冲配置只在真正滚动时对齐垂直消隐。 */
+static void scroll_refresh(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    lv_port_disp_sync_next_refresh();
+}
+
+/* 下拉列表由 LVGL 挂在根屏幕上，打开后把固定返回栏抬到最前。 */
+static void keep_header_above_list(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    lv_obj_move_foreground(ui_header);
+}
+
+static void close_network_lists(void)
+{
+    if (wifi_scan_dropdown && lv_dropdown_is_open(wifi_scan_dropdown))
+        lv_dropdown_close(wifi_scan_dropdown);
+    if (wifi_saved_dropdown && lv_dropdown_is_open(wifi_saved_dropdown))
+        lv_dropdown_close(wifi_saved_dropdown);
+}
+
 /* 首页和全部应用常驻，只保留一个活动的普通应用。 */
 static lv_obj_t *create_page(void)
 {
@@ -782,6 +806,7 @@ static lv_obj_t *create_page(void)
     lv_obj_set_style_bg_opa(obj, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_width(obj, 4, LV_PART_SCROLLBAR);
     lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(obj, scroll_refresh, LV_EVENT_SCROLL, NULL);
     return obj;
 }
 
@@ -1336,6 +1361,17 @@ static void start_screen_test_from_key(void)
     start_screen_test(NULL);
 }
 
+static void app_back_from_key(void)
+{
+    if (lv_obj_get_child_count(lv_layer_top()))
+        return;
+    if (image_overlay) {
+        close_image_preview(NULL);
+    } else if (page != 0U) {
+        back_navigation(NULL);
+    }
+}
+
 /* 窄屏表单纵向排列；宽屏并排时也给字段边界留出间距。 */
 static void flow_field_pair(lv_obj_t *card, lv_obj_t **left, lv_obj_t **right)
 {
@@ -1383,6 +1419,7 @@ static void build_file_page(void)
     lv_obj_set_style_radius(file_grid, 0, 0);
     lv_obj_set_style_pad_all(file_grid, 0, 0);
     lv_obj_set_scroll_dir(file_grid, LV_DIR_VER);
+    lv_obj_add_event_cb(file_grid, scroll_refresh, LV_EVENT_SCROLL, NULL);
     lv_obj_set_scrollbar_mode(file_grid, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_bg_color(file_grid, lv_color_hex(UI_COLOR_ACCENT), LV_PART_SCROLLBAR);
     list_folder();
@@ -1450,8 +1487,8 @@ static void build_system_info(const char *display_info)
     card = app_card(NULL);
     info_row(card, "系统", "RT-Thread / Luban-Lite");
     info_row(card, "图形", "LVGL 9.1");
-    info_row(card, "内存", "SRAM 1 MiB · PSRAM 8 MiB");
-    info_row(card, "存储", "SPI NOR 16 MiB · DATA");
+    info_row(card, "内存", "SRAM 1 MiB  |  PSRAM 8 MiB");
+    info_row(card, "存储", "SPI NOR 16 MiB  |  DATA");
 }
 
 static void build_log_page(void)
@@ -1470,6 +1507,8 @@ static lv_obj_t *flow_dropdown(lv_obj_t *card, const char *initial)
     lv_obj_set_size(obj, lv_pct(100), 48);
     lv_obj_set_style_text_font(obj, small_font(), 0);
     lv_obj_set_style_text_font(lv_dropdown_get_list(obj), small_font(), 0);
+    lv_obj_add_event_cb(obj, keep_header_above_list, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(lv_dropdown_get_list(obj), scroll_refresh, LV_EVENT_SCROLL, NULL);
     lv_obj_set_style_radius(obj, 10, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER), 0);
     lv_obj_set_style_text_font(obj, &lv_font_montserrat_16, LV_PART_INDICATOR);
@@ -1511,7 +1550,8 @@ static void build_network_page(void)
                                             wifi_action, WIFI_CONNECT_SELECTED, 0);
     if (!wifi_manager_saved_count())
         lv_obj_add_state(wifi_saved_connect_button, LV_STATE_DISABLED);
-    wifi_manager_scan();
+    /* 页面先返回到事件循环，之后才提交扫描任务。 */
+    wifi_auto_scan_pending = 1;
 }
 
 static void build_screen_support(const display_profile_info_t *active)
@@ -1535,7 +1575,7 @@ static void build_screen_support(const display_profile_info_t *active)
             lv_obj_set_style_border_color(card, lv_color_hex(UI_COLOR_ACCENT), 0);
             flow_text(card, "当前屏幕", UI_COLOR_ACCENT_DARK);
         }
-        snprintf(line, sizeof(line), "%s\n%u × %u · 触摸 %s", profile.panel,
+        snprintf(line, sizeof(line), "%s\n%u × %u  |  触摸 %s", profile.panel,
                  (unsigned)profile.width, (unsigned)profile.height,
                  profile.touch_enabled ? profile.touch : "未启用");
         flow_text(card, line, UI_COLOR_MUTED);
@@ -1569,6 +1609,7 @@ static void screen(unsigned number)
     close_keyboard();
     if (keyboard)
         lv_keyboard_set_textarea(keyboard, NULL);
+    close_network_lists();
     old = content;
     content = next;
     page = number;
@@ -1578,6 +1619,7 @@ static void screen(unsigned number)
         apps_content = next;
     retire_page(old);
     lv_obj_clear_flag(content, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(ui_header);
 
     set_text_if_changed(page_title, titles[number]);
     if (number == 0U) {
@@ -1598,6 +1640,7 @@ static void screen(unsigned number)
     wifi_ssid_input = wifi_password_input = NULL;
     wifi_saved_dropdown = wifi_scan_dropdown = wifi_saved_connect_button = NULL;
     wifi_scan_display_generation = wifi_saved_display_generation = UINT32_MAX;
+    wifi_auto_scan_pending = 0;
     wifi_status_label = NULL;
     device_name_label = device_slot = NULL;
     device_last_refresh = diagnostic_last_refresh = lv_tick_get() - 1000U;
@@ -1609,7 +1652,7 @@ static void screen(unsigned number)
     lv_obj_update_layout(content);
     if (number == 3U || number == 6U || number == 9U) {
         if (display_profile_get_active(&display_profile) == DISPLAY_PROFILE_OK)
-            snprintf(display_info, sizeof(display_info), "%s\n%u × %u · %s",
+            snprintf(display_info, sizeof(display_info), "%s\n%u × %u  |  %s",
                      display_profile.code, display_profile.width, display_profile.height,
                      display_profile.touch_enabled ? display_profile.touch : "未启用");
         else
@@ -1738,9 +1781,16 @@ static void timer(lv_timer_t *timer_obj)
         } else {
             set_text_if_changed(wifi_status_label, ip[0] ? ip : ssid[0] ? status : "");
         }
-        if (wifi_saved_dropdown && wifi_manager_saved_generation() != wifi_saved_display_generation)
+        if (wifi_auto_scan_pending) {
+            wifi_auto_scan_pending = 0;
+            wifi_manager_scan();
+        }
+        if (wifi_saved_dropdown && !lv_dropdown_is_open(wifi_saved_dropdown) &&
+            wifi_manager_saved_generation() != wifi_saved_display_generation)
             wifi_refresh_saved();
-        if (wifi_scan_dropdown && wifi_scan_display_generation != wifi_manager_scan_generation()) {
+        if (wifi_scan_dropdown && !lv_dropdown_is_open(wifi_scan_dropdown) &&
+            !wifi_manager_scan_in_progress() &&
+            wifi_scan_display_generation != wifi_manager_scan_generation()) {
             char options[1024];
             wifi_scan_display_generation = wifi_manager_scan_generation();
             if (wifi_manager_scan_options(options, sizeof(options)) >= 0)
@@ -1753,7 +1803,7 @@ static void timer(lv_timer_t *timer_obj)
         system_manager_get_device_name(name, sizeof(name));
         set_text_if_changed(device_name_label, name);
         if (device_slot) {
-            snprintf(text, sizeof(text), "%c · %s", boot.current,
+            snprintf(text, sizeof(text), "%c  |  %s", boot.current,
                      boot.confirmed ? "已确认" : "健康检查中");
             set_text_if_changed(device_slot, text);
         }
@@ -1861,8 +1911,8 @@ static void timer(lv_timer_t *timer_obj)
                 !lv_obj_has_flag(lv_obj_get_parent(ota_metrics), LV_OBJ_FLAG_HIDDEN)) {
                 snprintf(text, sizeof(text),
                          "版本：%s    错误码：%d    速度：%lu KiB/s\n"
-                         "签名 %lu ms · 确认 %lu ms · 写入 %lu ms\n"
-                         "校验 %lu ms · 提交 %lu ms · 总计 %lu ms",
+                         "签名 %lu ms  |  确认 %lu ms  |  写入 %lu ms\n"
+                         "校验 %lu ms  |  提交 %lu ms  |  总计 %lu ms",
                          ota.version, ota.error,
                          (unsigned long)(ota.state == OTA_RECEIVE ? ota.bytes_per_second / 1024U : 0U),
                          (unsigned long)ota.phase_ms[1], (unsigned long)ota.phase_ms[2],
@@ -1915,14 +1965,16 @@ void hmi_ui_init(void)
     lv_obj_set_style_bg_color(root, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
     header_band = lv_obj_create(root);
+    ui_header = header_band;
     lv_obj_set_pos(header_band, 0, 0);
     lv_obj_set_size(header_band, lv_obj_get_width(root), UI_HEADER_HEIGHT);
     lv_obj_set_style_bg_color(header_band, lv_color_hex(UI_COLOR_HEADER), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(header_band, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(header_band, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(header_band, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(header_band, 0, LV_PART_MAIN);
     lv_obj_clear_flag(header_band, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    header_accent = lv_obj_create(root);
+    header_accent = lv_obj_create(ui_header);
     lv_obj_set_pos(header_accent, 0, UI_HEADER_HEIGHT - 1);
     lv_obj_set_size(header_accent, lv_obj_get_width(root), 1);
     lv_obj_set_style_bg_color(header_accent, lv_color_hex(UI_COLOR_BORDER), LV_PART_MAIN);
@@ -1931,7 +1983,7 @@ void hmi_ui_init(void)
     lv_obj_set_style_radius(header_accent, 0, LV_PART_MAIN);
     lv_obj_clear_flag(header_accent, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
-    logo_image = lv_image_create(root);
+    logo_image = lv_image_create(ui_header);
     lv_image_set_src(logo_image, &hmi_logo_image);
     lv_image_set_pivot(logo_image, 0, 0);
     lv_image_set_scale(logo_image, 158);
@@ -1939,10 +1991,10 @@ void hmi_ui_init(void)
     lv_obj_clear_flag(logo_image, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
     /* 左侧只放品牌 Logo，页面标题仅在子页显示。 */
-    page_title = label(root, "", 86, 24, lv_obj_get_width(root) - 104);
+    page_title = label(ui_header, "", 86, 24, lv_obj_get_width(root) - 104);
     lv_obj_set_height(page_title, lv_font_get_line_height(body_font()));
     lv_label_set_long_mode(page_title, LV_LABEL_LONG_DOT);
-    top = label(root, "", 123, 19, lv_obj_get_width(root) - 220);
+    top = label(ui_header, "", 123, 19, lv_obj_get_width(root) - 220);
     lv_obj_set_height(top, 39);
     lv_label_set_long_mode(top, LV_LABEL_LONG_DOT);
     lv_obj_set_style_pad_hor(top, 10, 0);
@@ -1950,20 +2002,21 @@ void hmi_ui_init(void)
     lv_obj_set_style_radius(top, 10, 0);
     lv_obj_set_style_bg_opa(top, LV_OPA_COVER, 0);
 
-    wifi_indicator = button(root, LV_SYMBOL_WIFI, lv_obj_get_width(root) - 76, 12,
+    wifi_indicator = button(ui_header, LV_SYMBOL_WIFI, lv_obj_get_width(root) - 76, 12,
                             50, navigation, (void *)(uintptr_t)4);
     lv_obj_set_style_border_width(wifi_indicator, 0, 0);
     lv_obj_set_style_text_font(lv_obj_get_child(wifi_indicator, 0), &lv_font_montserrat_16, 0);
     lv_obj_set_height(lv_obj_get_child(wifi_indicator, 0), lv_font_get_line_height(&lv_font_montserrat_16));
-    back_button = button(root, LV_SYMBOL_LEFT, 17, 12, 52, back_navigation, NULL);
+    back_button = button(ui_header, LV_SYMBOL_LEFT, 12, 12, 64, back_navigation, NULL);
     use_symbol_font(back_button);
+    lv_obj_set_ext_click_area(back_button, 5);
 
     ui_root = root;
     page_cleanup_timer = lv_timer_create(collect_hidden_views, 110, NULL);
     if (page_cleanup_timer)
         lv_timer_pause(page_cleanup_timer);
     screen(0);
-    screen_test_keys_start(start_screen_test_from_key);
+    screen_test_keys_start(start_screen_test_from_key, app_back_from_key);
     lv_timer_create(timer, 200, NULL);
     if (lv_display_get_default()) {
         lv_display_add_event_cb(lv_display_get_default(), boot_display_timing,

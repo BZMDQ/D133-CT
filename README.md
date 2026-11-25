@@ -1,6 +1,7 @@
 # D133 1.0.172 支持 USB 64 KiB 数据块
 
-当前固件 **1.0.188** 优化各应用界面和返回路径。请查看[版本说明](docs/D133-F750-UI-v1.0.188.md)和 [GitHub 下载](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.188)。
+当前固件 **1.0.189** 修复滑动刷新、网络返回与时间显示。请查看[版本说明](docs/D133-F750-UI-v1.0.189.md)和 [GitHub 下载](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.189)。
+
 
 
 

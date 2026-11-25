@@ -216,7 +216,7 @@ static void disp_sync_before_render(lv_event_t *event)
 {
     lv_display_t *display = lv_event_get_current_target(event);
     aic_disp_t *aic_disp = lv_display_get_user_data(display);
-    if (aic_disp && aic_disp->sync_next_refresh) {
+    if (aic_disp && !aic_disp->hmi_back_buffer && aic_disp->sync_next_refresh) {
         aic_disp->sync_next_refresh = false;
         /* 单缓冲先等垂直消隐再开始绘制，超时仍保留 SDK 的正常刷新路径。 */
         mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
@@ -229,11 +229,30 @@ void lv_port_disp_sync_next_refresh(void)
 #if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
     lv_display_t *display = lv_display_get_default();
     aic_disp_t *aic_disp = display ? lv_display_get_user_data(display) : NULL;
-    if (aic_disp)
+    if (aic_disp && !aic_disp->hmi_back_buffer)
         aic_disp->sync_next_refresh = true;
 #endif
 }
 
+#endif
+
+#if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+static void disp_hmi_present(aic_disp_t *aic_disp, const lv_draw_buf_t *buf)
+{
+    struct aicfb_layer_data layer = {0};
+
+    layer.layer_id = AICFB_LAYER_TYPE_UI;
+    layer.rect_id = 0;
+    if (mpp_fb_ioctl(aic_disp->fb, AICFB_GET_LAYER_CONFIG, &layer) < 0)
+        return;
+    layer.buf.phy_addr[0] = (uintptr_t)buf->data;
+    layer.enable = 1;
+    if (mpp_fb_ioctl(aic_disp->fb, AICFB_UPDATE_LAYER_CONFIG, &layer) < 0)
+        return;
+    display_power_on(aic_disp);
+    /* 沿用 SDK 的换页时序，下一次绘制前等待 DE 接管当前页。 */
+    mpp_fb_ioctl(aic_disp->fb, AICFB_WAIT_FOR_VSYNC, 0);
+}
 #endif
 
 static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
@@ -244,6 +263,16 @@ static void disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
     (void)px_map;
 
     if (lv_disp_flush_is_last(disp)) {
+#if defined(HMI_APP) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+        if (aic_disp->hmi_back_buffer) {
+            aicos_dcache_clean_invalid_range((ulong *)disp_buf->data,
+                                            (ulong)ALIGN_UP(aic_disp->fb_size, CACHE_LINE_SIZE));
+            disp_hmi_present(aic_disp, disp_buf);
+            display_cal_frame_rate(aic_disp);
+            lv_display_flush_ready(disp);
+            return;
+        }
+#endif
 #if LV_DISP_FB_DUMP
         // dump frame buffer
         lv_disp_buf_dump(disp);
@@ -395,6 +424,26 @@ static int lv_de_display_init()
     }
 
     cf = lv_display_fmt(aic_disp->info.format);
+#if defined(HMI_APP) && defined(AIC_PSRAM_SW_EN) && !defined(AIC_PAN_DISPLAY) && !defined(LV_DISPLAY_ROTATE_EN)
+    /*
+     * 保留原 CMA 分配给显示和图片解码。普通 LVDS 的备用页放在 PSRAM 软件堆，
+     * 同时给一张 RGB565 测试图和分配器预留空间。大屏或内存不足仍使用单缓冲。
+     */
+    if (cf == LV_COLOR_FORMAT_RGB565 && fb_size > 0 &&
+        (size_t)fb_size * 2U + 16U * 1024U <= AIC_PSRAM_SW_SIZE &&
+        (uint32_t)stride == lv_draw_buf_width_to_stride(width, cf)) {
+        struct aicfb_layer_data layer = {0};
+
+        layer.layer_id = AICFB_LAYER_TYPE_UI;
+        layer.rect_id = 0;
+        if (mpp_fb_ioctl(aic_disp->fb, AICFB_GET_LAYER_CONFIG, &layer) == 0)
+            aic_disp->hmi_back_buffer = aicos_malloc_align(MEM_PSRAM_SW, fb_size, CACHE_LINE_SIZE);
+        if (aic_disp->hmi_back_buffer) {
+            buf2 = buf1;
+            buf1 = aic_disp->hmi_back_buffer;
+        }
+    }
+#endif
 #if defined(LV_DISPLAY_ROTATE_EN)
     if (!create_draw_buf(aic_disp, width, height, cf)) {
         LV_LOG_ERROR("create draw buffer failed");
