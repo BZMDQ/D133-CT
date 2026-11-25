@@ -6,6 +6,7 @@
 #include "lv_draw_ge2d.h"
 #include "lv_port_disp.h"
 #include "time_sync.h"
+#include "buzzer_manager.h"
 #include <rtthread.h>
 #include "storage_manager.h"
 #include "sd_manager.h"
@@ -52,8 +53,10 @@ extern uint32_t aic_dsi_fifo_overflow_count(void);
 #define UI_COLOR_VIOLET      0x6E56CFU
 #define UI_COLOR_TEXT        0x102E2EU
 #define UI_COLOR_MUTED       0x4E6A69U
+#define PAGE_SYSTEM_INFO     3U
 #define PAGE_SCREEN_TEST     7U
 #define PAGE_ALL_APPS        10U
+#define PAGE_SETTINGS        11U
 #define UI_HEADER_HEIGHT     73
 
 static lv_obj_t *content;
@@ -131,6 +134,10 @@ static int first_render_logged;
 static int first_flush_logged;
 static unsigned page;
 static unsigned back_page;
+static unsigned settings_origin, settings_interval_shown;
+static lv_obj_t *settings_buzzer_switch, *settings_volume_slider;
+static lv_obj_t *settings_volume_value, *settings_preview_button, *settings_save_error;
+static lv_obj_t *settings_interval_value, *settings_interval_down, *settings_interval_up;
 static char folder[256] = "/sdcard";
 static fm_list_t files;
 static storage_request_t pending;
@@ -148,7 +155,7 @@ static char ui_update_target(const boot_status_t *boot)
 }
 static const char *titles[] = {
     "首页", "文件管理", "固件升级", "系统信息", "网络设置", "系统日志",
-    "设备总览", "屏幕检测", "", "应用支持", "全部应用"
+    "设备总览", "屏幕检测", "", "应用支持", "全部应用", "系统设置"
 };
 
 static const lv_font_t *body_font(void)
@@ -536,7 +543,12 @@ static void navigation(lv_event_t *event)
 {
     unsigned target = (unsigned)(uintptr_t)lv_event_get_user_data(event);
 
-    if (page == PAGE_ALL_APPS && target != PAGE_SCREEN_TEST)
+    if (target == PAGE_SETTINGS) {
+        settings_origin = page == PAGE_ALL_APPS ? PAGE_ALL_APPS : 0U;
+        back_page = settings_origin;
+    } else if (page == PAGE_SETTINGS && target == PAGE_SYSTEM_INFO) {
+        back_page = PAGE_SETTINGS;
+    } else if (page == PAGE_ALL_APPS && target != PAGE_SCREEN_TEST)
         back_page = PAGE_ALL_APPS;
     else if (page == 0U || target == PAGE_ALL_APPS)
         back_page = 0;
@@ -548,7 +560,7 @@ static void back_navigation(lv_event_t *event)
     unsigned target = back_page;
 
     LV_UNUSED(event);
-    back_page = 0;
+    back_page = target == PAGE_SETTINGS ? settings_origin : 0U;
     screen(target);
 }
 
@@ -563,8 +575,9 @@ static const home_app_t home_apps[] = {
     {"屏幕检测", LV_SYMBOL_IMAGE, PAGE_SCREEN_TEST, 0},
     {"固件升级", LV_SYMBOL_UPLOAD, 2, 0},
     {"网络设置", LV_SYMBOL_WIFI, 4, 1},
-    {"设备总览", LV_SYMBOL_SETTINGS, 6, 0},
+    {"设备总览", LV_SYMBOL_HOME, 6, 0},
     {"文件管理", LV_SYMBOL_DIRECTORY, 1, 1},
+    {"系统设置", LV_SYMBOL_SETTINGS, PAGE_SETTINGS, 0},
     {"应用支持", LV_SYMBOL_LIST, 9, 0},
     {"系统信息", LV_SYMBOL_HOME, 3, 0},
     {"系统日志", LV_SYMBOL_LIST, 5, 1},
@@ -1582,6 +1595,162 @@ static void build_screen_support(const display_profile_info_t *active)
     }
 }
 
+/* 设置卡只显示控件和实际值，拖动时更新读数，松手后提交一次。 */
+static void settings_show_volume(unsigned value)
+{
+    char text[16];
+
+    snprintf(text, sizeof(text), "%u%%", value);
+    set_text_if_changed(settings_volume_value, text);
+}
+
+static void settings_set_sound_controls(unsigned enabled, unsigned volume)
+{
+    if (enabled) {
+        lv_obj_add_state(settings_buzzer_switch, LV_STATE_CHECKED);
+        lv_obj_remove_state(settings_volume_slider, LV_STATE_DISABLED);
+    } else {
+        lv_obj_remove_state(settings_buzzer_switch, LV_STATE_CHECKED);
+        lv_obj_add_state(settings_volume_slider, LV_STATE_DISABLED);
+    }
+    if (enabled && volume)
+        lv_obj_remove_state(settings_preview_button, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(settings_preview_button, LV_STATE_DISABLED);
+    if ((unsigned)lv_slider_get_value(settings_volume_slider) != volume)
+        lv_slider_set_value(settings_volume_slider, (int32_t)volume, LV_ANIM_OFF);
+    settings_show_volume(volume);
+}
+
+static void settings_commit_sound(void)
+{
+    unsigned enabled = lv_obj_has_state(settings_buzzer_switch, LV_STATE_CHECKED) ? 1U : 0U;
+    unsigned volume = (unsigned)lv_slider_get_value(settings_volume_slider);
+
+    if (buzzer_manager_set_settings(enabled, volume) != BUZZER_MANAGER_OK) {
+        buzzer_manager_get_settings(&enabled, &volume);
+        message("声音设置失败");
+    }
+    settings_set_sound_controls(enabled, volume);
+}
+
+static void settings_sound_event(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *target = lv_event_get_target(event);
+
+    if (target == settings_buzzer_switch) {
+        settings_commit_sound();
+    } else if (code == LV_EVENT_VALUE_CHANGED) {
+        settings_show_volume((unsigned)lv_slider_get_value(settings_volume_slider));
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        settings_commit_sound();
+    }
+}
+
+static void settings_preview_sound(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (buzzer_manager_beep(160U) != BUZZER_MANAGER_OK)
+        message("试音失败");
+}
+
+static void settings_refresh_interval(void)
+{
+    char value[20];
+    unsigned interval = screen_test_interval_ms();
+
+    if (!settings_interval_value || interval == settings_interval_shown)
+        return;
+    settings_interval_shown = interval;
+    snprintf(value, sizeof(value), "%u.%u s", interval / 1000U,
+             (interval % 1000U) / 100U);
+    set_text_if_changed(settings_interval_value, value);
+    if (interval > HMI_TEST_INTERVAL_MIN_MS)
+        lv_obj_remove_state(settings_interval_down, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(settings_interval_down, LV_STATE_DISABLED);
+    if (interval < HMI_TEST_INTERVAL_MAX_MS)
+        lv_obj_remove_state(settings_interval_up, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(settings_interval_up, LV_STATE_DISABLED);
+}
+
+static void settings_change_interval(lv_event_t *event)
+{
+    int32_t step = (uintptr_t)lv_event_get_user_data(event) ?
+                   HMI_TEST_INTERVAL_STEP_MS : -HMI_TEST_INTERVAL_STEP_MS;
+    int32_t next = (int32_t)screen_test_interval_ms() + step;
+
+    screen_test_set_interval_ms((unsigned)LV_CLAMP(HMI_TEST_INTERVAL_MIN_MS, next,
+                                                 HMI_TEST_INTERVAL_MAX_MS));
+    settings_refresh_interval();
+}
+
+static lv_obj_t *settings_row(lv_obj_t *card)
+{
+    lv_obj_t *row = flow_container(card, LV_FLEX_FLOW_ROW, 8);
+
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
+                         LV_FLEX_ALIGN_CENTER);
+    return row;
+}
+
+static lv_obj_t *settings_row_text(lv_obj_t *row, const char *text, uint32_t color)
+{
+    lv_obj_t *item = flow_text(row, text, color);
+
+    lv_obj_set_width(item, LV_SIZE_CONTENT);
+    return item;
+}
+
+static void build_settings_page(void)
+{
+    lv_obj_t *card = app_card("声音");
+    lv_obj_t *row = settings_row(card);
+    unsigned enabled, volume;
+
+    settings_row_text(row, "蜂鸣器", UI_COLOR_TEXT);
+    settings_buzzer_switch = lv_switch_create(row);
+    lv_obj_set_size(settings_buzzer_switch, 56, 30);
+    lv_obj_set_ext_click_area(settings_buzzer_switch, 7);
+    lv_obj_set_style_bg_color(settings_buzzer_switch, lv_color_hex(UI_COLOR_ACCENT),
+                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(settings_buzzer_switch, settings_sound_event, LV_EVENT_VALUE_CHANGED, NULL);
+
+    row = settings_row(card);
+    settings_row_text(row, "音量", UI_COLOR_TEXT);
+    settings_volume_value = settings_row_text(row, "", UI_COLOR_ACCENT_DARK);
+    settings_volume_slider = lv_slider_create(card);
+    lv_obj_set_size(settings_volume_slider, lv_pct(100), 16);
+    lv_obj_set_ext_click_area(settings_volume_slider, 14);
+    lv_slider_set_range(settings_volume_slider, 0, 100);
+    lv_obj_set_style_bg_color(settings_volume_slider, lv_color_hex(UI_COLOR_MINT_TINT), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(settings_volume_slider, lv_color_hex(UI_COLOR_ACCENT), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(settings_volume_slider, lv_color_hex(UI_COLOR_ACCENT_DARK), LV_PART_KNOB);
+    lv_obj_add_event_cb(settings_volume_slider, settings_sound_event, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(settings_volume_slider, settings_sound_event, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(settings_volume_slider, settings_sound_event, LV_EVENT_PRESS_LOST, NULL);
+    row = settings_row(card);
+    settings_preview_button = flow_button(row, "试音", 94, settings_preview_sound, 0, 0);
+    settings_save_error = settings_row_text(row, "保存失败", 0xB42318U);
+    lv_obj_add_flag(settings_save_error, LV_OBJ_FLAG_HIDDEN);
+    buzzer_manager_get_settings(&enabled, &volume);
+    settings_set_sound_controls(enabled, volume);
+
+    card = app_card("屏幕检测");
+    row = settings_row(card);
+    settings_row_text(row, "轮播间隔", UI_COLOR_TEXT);
+    settings_interval_value = settings_row_text(row, "", UI_COLOR_ACCENT_DARK);
+    row = flow_container(card, LV_FLEX_FLOW_ROW_WRAP, 8);
+    settings_interval_down = flow_button(row, "-", 52, settings_change_interval, 0, 0);
+    settings_interval_up = flow_button(row, "+", 52, settings_change_interval, 1, 0);
+    settings_refresh_interval();
+
+    card = app_card(NULL);
+    flow_button(card, "系统信息", 136, navigation, PAGE_SYSTEM_INFO, 0);
+}
+
 static void screen(unsigned number)
 {
     lv_obj_t *next, *old;
@@ -1643,6 +1812,8 @@ static void screen(unsigned number)
     wifi_auto_scan_pending = 0;
     wifi_status_label = NULL;
     device_name_label = device_slot = NULL;
+    settings_save_error = settings_interval_value = NULL;
+    settings_interval_shown = 0;
     device_last_refresh = diagnostic_last_refresh = lv_tick_get() - 1000U;
 
     if (!create)
@@ -1686,6 +1857,9 @@ static void screen(unsigned number)
             break;
         case 9:
             build_screen_support(&display_profile);
+            break;
+        case PAGE_SETTINGS:
+            build_settings_page();
             break;
         default:
             break;
@@ -1808,6 +1982,14 @@ static void timer(lv_timer_t *timer_obj)
             set_text_if_changed(device_slot, text);
         }
         device_last_refresh = lv_tick_get();
+    }
+    if (!testing && page == PAGE_SETTINGS && settings_save_error) {
+        int failed = buzzer_manager_settings_save_state() == BUZZER_MANAGER_SAVE_ERROR;
+        if (failed)
+            lv_obj_clear_flag(settings_save_error, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(settings_save_error, LV_OBJ_FLAG_HIDDEN);
+        settings_refresh_interval();
     }
     if (!testing && page == 0U && home_clock && lv_tick_elaps(home_last_refresh) >= 1000U)
         update_home_status();

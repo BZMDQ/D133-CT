@@ -33,16 +33,19 @@ void device_event_manager_notify(device_event_type_t event)
 {
     const char *name;
     const char *message;
+    const char *buzzer_message;
+    char event_message[sizeof(last_event_message)];
+    int buzzer_result;
 
     switch (event)
     {
     case DEVICE_EVENT_TOOLBOX_TCP_CONNECTED:
         name = "toolbox_tcp_connected";
-        message = "工具箱 TCP 连接已建立，D133 OTA 服务就绪；已请求蜂鸣器鸣响 1 秒";
+        message = "工具箱 TCP 连接已建立，D133 OTA 服务就绪";
         break;
     case DEVICE_EVENT_TOOLBOX_OTA_STARTED:
         name = "toolbox_ota_started";
-        message = "工具箱 OTA 升级已开始，设备正在接收 ota.cpio；已请求蜂鸣器鸣响 1 秒";
+        message = "工具箱 OTA 升级已开始，设备正在接收 ota.cpio";
         break;
     default:
         return;
@@ -51,18 +54,25 @@ void device_event_manager_notify(device_event_type_t event)
     if (!event_ready)
         return;
 
+    /* 对外事件仍按原顺序发布，蜂鸣器状态与本次提交结果一致。 */
+    buzzer_result = buzzer_manager_beep(1000);
+    if (buzzer_result == BUZZER_MANAGER_OK)
+        buzzer_message = "已请求蜂鸣器鸣响 1 秒";
+    else if (buzzer_result == BUZZER_MANAGER_MUTED)
+        buzzer_message = "蜂鸣器已静音";
+    else
+        buzzer_message = "蜂鸣器提示音请求未能排队";
+    rt_snprintf(event_message, sizeof(event_message), "%s；%s", message, buzzer_message);
+
     rt_mutex_take(&event_lock, RT_WAITING_FOREVER);
     rt_strncpy(last_event_name, name, sizeof(last_event_name) - 1);
     last_event_name[sizeof(last_event_name) - 1] = '\0';
-    rt_strncpy(last_event_message, message, sizeof(last_event_message) - 1);
+    rt_strncpy(last_event_message, event_message, sizeof(last_event_message) - 1);
     last_event_message[sizeof(last_event_message) - 1] = '\0';
     event_sequence++;
     rt_mutex_release(&event_lock);
 
-    /* 日志可在设备“系统日志”页查看；PWM 操作由蜂鸣工作线程执行。 */
-    system_manager_log(message);
-    if (buzzer_manager_beep(1000) != BUZZER_MANAGER_OK)
-        system_manager_log("蜂鸣器提示音请求未能排队");
+    system_manager_log(event_message);
 }
 
 void device_event_manager_snapshot(char *event_name, rt_size_t event_name_size,
