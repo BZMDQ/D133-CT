@@ -201,7 +201,27 @@ static uint8_t screen_test_gray_value(uint32_t index)
                      (SCREEN_TEST_GRAY_LEVELS - 1U));
 }
 
-/* 绘制白屏触摸测试专用的两像素蓝线。 */
+/* 线段池循环复用，跳过仍在接收触摸点的线段。 */
+static screen_test_segment_t *screen_test_take_segment(void)
+{
+    uint32_t checked;
+
+    for (checked = 0; checked < SCREEN_TEST_LINE_SEGMENTS; ++checked) {
+        screen_test_segment_t *segment = &segments[next_segment];
+        uint32_t finger;
+
+        next_segment = (next_segment + 1U) % SCREEN_TEST_LINE_SEGMENTS;
+        for (finger = 0; finger < AIC_LV_TOUCH_MAX_POINTS; ++finger) {
+            if (active_segments[finger] == segment)
+                break;
+        }
+        if (finger == AIC_LV_TOUCH_MAX_POINTS)
+            return segment;
+    }
+    return NULL;
+}
+
+/* 绘制白屏触摸测试专用的两像素彩色线条。 */
 static void screen_test_add_touch_point(uint8_t finger_id, int32_t x, int32_t y)
 {
     int32_t min_x, min_y, max_x, max_y;
@@ -224,29 +244,26 @@ static void screen_test_add_touch_point(uint8_t finger_id, int32_t x, int32_t y)
     if (carry)
         previous = active_segment->absolute[active_segment->count - 1U];
     if (!active_segment || carry) {
-        /* 线段池用满时保留全部旧笔迹，切页后再复用。 */
-        if (next_segment >= SCREEN_TEST_LINE_SEGMENTS)
+        active_segment = screen_test_take_segment();
+        if (!active_segment)
             return;
-        active_segment = &segments[next_segment++];
-        for (i = 0; i < AIC_LV_TOUCH_MAX_POINTS; i++) {
-            if (active_segments[i] == active_segment)
-                active_segments[i] = NULL;
+
+        if (active_segment->object) {
+            /* 相对坐标会覆盖，先标记旧笔迹的区域需要擦除。 */
+            lv_obj_invalidate(active_segment->object);
+        } else {
+            active_segment->object = lv_line_create(test_overlay);
+            if (!active_segment->object)
+                return;
+            lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
+            lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
+            lv_obj_clear_flag(active_segment->object,
+                              LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
         }
-        if (active_segment->object)
-            lv_obj_delete(active_segment->object);
-        memset(active_segment, 0, sizeof(*active_segment));
-        active_segment->object = lv_line_create(test_overlay);
-        if (!active_segment->object) {
-            active_segment = NULL;
-            active_segments[finger_id] = NULL;
-            return;
-        }
-        lv_obj_set_style_line_width(active_segment->object, 2, LV_PART_MAIN);
         lv_obj_set_style_line_color(active_segment->object,
                                     lv_color_hex(screen_test_touch_colors[finger_id]),
                                     LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(active_segment->object, true, LV_PART_MAIN);
-        lv_obj_clear_flag(active_segment->object, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        active_segment->count = 0;
         active_segments[finger_id] = active_segment;
         if (carry)
             active_segment->absolute[active_segment->count++] = previous;
