@@ -32,5 +32,13 @@ void buzzer_manager_get_settings(unsigned *enabled, unsigned *volume);
 int buzzer_manager_set_settings(unsigned enabled, unsigned volume);
 int buzzer_manager_settings_save_state(void);
 
+/* 拖动时更新临时音量并续期，松手时结束试音。临时音量不写入 ENV。 */
+int buzzer_manager_set_drag_preview(unsigned volume);
+void buzzer_manager_stop_drag_preview(void);
+
+/* 全屏测屏期间屏蔽普通鸣响，仅允许进入应用及实体按键的提示音。 */
+void buzzer_manager_set_screen_test_active(unsigned active);
+int buzzer_manager_beep_screen_test_feedback(rt_uint32_t duration_ms);
+
 #endif
 

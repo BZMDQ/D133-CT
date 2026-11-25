@@ -1,4 +1,5 @@
 #include "screen_test.h"
+#include "buzzer_manager.h"
 #include "ui_manager.h"
 #include "media_orientation.h"
 #include "image_preview.h"
@@ -11,6 +12,7 @@
 #include <hal_adcim.h>
 
 #define SCREEN_TEST_PAGE_COUNT       9U
+#define SCREEN_TEST_FEEDBACK_MS     80U
 #define SCREEN_TEST_AUTO_INTERVAL_MS 1000U
 #define SCREEN_TEST_GRAY_LEVELS      32U
 #define SCREEN_TEST_LINE_POINTS      8U
@@ -586,10 +588,10 @@ static void screen_test_dispatch_key(lv_timer_t *timer)
         screen_test_exit();
         return;
     }
-    if (key == SCREEN_TEST_KEY_UP)
-        screen_test_step(-1);
-    else if (key == SCREEN_TEST_KEY_DOWN)
-        screen_test_step(1);
+    if (key == SCREEN_TEST_KEY_UP || key == SCREEN_TEST_KEY_DOWN) {
+        screen_test_step(key == SCREEN_TEST_KEY_UP ? -1 : 1);
+        buzzer_manager_beep_screen_test_feedback(SCREEN_TEST_FEEDBACK_MS);
+    }
 }
 
 /* 单一线程持续采样，以便从首页响应 LEFT。 */
@@ -723,17 +725,24 @@ int screen_test_start(lv_obj_t *parent,
 
 void screen_test_remote_select(unsigned target)
 {
-    if (!test_overlay) return;
-    if (target == HMI_TEST_EXIT)
+    int changed = 0;
+
+    if (!test_overlay)
+        return;
+    if (target == HMI_TEST_EXIT) {
         screen_test_exit();
-    else if (target == HMI_TEST_PREVIOUS)
-        screen_test_step(-1);
-    else if (target == HMI_TEST_NEXT)
-        screen_test_step(1);
-    else if (target == HMI_TEST_TOGGLE_MODE)
+    } else if (target == HMI_TEST_PREVIOUS || target == HMI_TEST_NEXT) {
+        screen_test_step(target == HMI_TEST_PREVIOUS ? -1 : 1);
+        changed = 1;
+    } else if (target == HMI_TEST_TOGGLE_MODE) {
         screen_test_toggle_autoplay();
-    else if (target < SCREEN_TEST_PAGE_COUNT)
+    } else if (target < SCREEN_TEST_PAGE_COUNT) {
+        changed = target != current_test_page;
         screen_test_show_page((uint8_t)target);
+    }
+    /* 远程手动换图与板载 UP/DOWN 使用同一提示音。 */
+    if (changed)
+        buzzer_manager_beep_screen_test_feedback(SCREEN_TEST_FEEDBACK_MS);
 }
 
 int screen_test_is_active(void)

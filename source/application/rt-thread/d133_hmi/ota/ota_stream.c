@@ -1,5 +1,7 @@
 #include "ota_stream.h"
 #include "ota_manager.h"
+#include "buzzer_manager.h"
+#include "device_event_manager.h"
 #include "ota_signature.h"
 #include "ota_package.h"
 #include "boot_manager.h"
@@ -131,6 +133,11 @@ static int ota_stream_begin_for_source(uint32_t total,const unsigned char hash[3
     os_status=rodatafs_status=datafs_status=0;
     if(ota_init()){ota_stream_abort(-25);return -25;}
     stream.initialized=1;ota_manager_phase(3);ota_manager_stream_state(OTA_RECEIVE,0,0);
+    /* 签名、确认和写入引擎完成准备后，USB、TCP 各在接收开始时提示一次。 */
+    if (source == OTA_STREAM_TCP)
+        device_event_manager_notify(DEVICE_EVENT_TOOLBOX_OTA_STARTED);
+    else
+        buzzer_manager_beep(1000U);
     return 0;
 }
 int ota_stream_begin_session(uint32_t total,const unsigned char hash[32],

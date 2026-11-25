@@ -1,6 +1,7 @@
 # D133 1.0.172 支持 USB 64 KiB 数据块
 
-当前固件 **1.0.190** 增加系统设置并接入局域网校时。请查看[版本说明](docs/D133-F750-UI-v1.0.190.md)和 [GitHub 下载](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.190)。
+当前固件 **1.0.191** 精简系统设置并加入滑动音量反馈。请查看[版本说明](docs/D133-F750-UI-v1.0.191.md)和 [GitHub 下载](https://github.com/BZMDQ/D133-CT/releases/tag/v1.0.191)。
+
 
 
 

@@ -13,6 +13,7 @@
 #define BUZZER_MAX_DUTY_NS      (BUZZER_PERIOD_NS / 2U)
 #define BUZZER_QUEUE_DEPTH      4
 #define BUZZER_MAX_DURATION_MS  5000U
+#define BUZZER_PREVIEW_LIMIT_MS 350U
 #define BUZZER_MAX_VOLUME       100U
 #define BUZZER_SETTINGS_ENV     "hmi_buzzer"
 
@@ -20,6 +21,7 @@ typedef struct
 {
     rt_uint32_t duration_ms;
     rt_uint32_t generation;
+    rt_bool_t test_feedback;
 } buzzer_request_t;
 
 static struct rt_device_pwm *pwm_device;
@@ -27,18 +29,56 @@ static rt_mq_t buzzer_queue;
 static rt_mutex_t buzzer_lock;
 static rt_sem_t settings_signal;
 static rt_bool_t buzzer_ready;
-static rt_bool_t pwm_active;
+static rt_bool_t screen_test_active;
+static unsigned pwm_volume;
+static rt_bool_t tone_active;
+static rt_tick_t tone_deadline;
+static rt_bool_t preview_active;
+static rt_tick_t preview_deadline;
+static unsigned preview_volume;
 static rt_uint32_t tone_generation;
 static unsigned buzzer_enabled = 1U;
 static unsigned buzzer_volume = BUZZER_MAX_VOLUME;
 static int settings_save_state = BUZZER_MANAGER_SAVE_IDLE;
 
-static rt_err_t buzzer_set_duty(unsigned volume)
+static rt_err_t buzzer_apply_volume(unsigned volume)
 {
     /* 原有声响在 50% 占空比下工作，作为音量 100 的上限。 */
     rt_uint32_t pulse_ns = BUZZER_MAX_DUTY_NS * volume / BUZZER_MAX_VOLUME;
+    rt_err_t result;
 
-    return rt_pwm_set(pwm_device, BUZZER_PWM_CHANNEL, BUZZER_PERIOD_NS, pulse_ns);
+    if (volume == pwm_volume)
+        return RT_EOK;
+    if (volume == 0)
+        result = rt_pwm_disable(pwm_device, BUZZER_PWM_CHANNEL);
+    else
+    {
+        result = rt_pwm_set(pwm_device, BUZZER_PWM_CHANNEL, BUZZER_PERIOD_NS, pulse_ns);
+        if (result == RT_EOK && pwm_volume == 0)
+            result = rt_pwm_enable(pwm_device, BUZZER_PWM_CHANNEL);
+    }
+    if (result == RT_EOK)
+        pwm_volume = volume;
+    return result;
+}
+
+static void buzzer_expire_tones(rt_tick_t now)
+{
+    /* 按无符号差值比较，即使系统节拍溢出也能按时停止。 */
+    if (tone_active && (rt_tick_t)(now - tone_deadline) < RT_TICK_MAX / 2U)
+        tone_active = RT_FALSE;
+    if (preview_active && (rt_tick_t)(now - preview_deadline) < RT_TICK_MAX / 2U)
+        preview_active = RT_FALSE;
+}
+
+static unsigned buzzer_output_volume(void)
+{
+    if (!buzzer_enabled)
+        return 0;
+    /* 拖到 0% 时优先静音，设备事件的原有时长仍独立计时。 */
+    if (!screen_test_active && preview_active)
+        return preview_volume;
+    return tone_active ? buzzer_volume : 0U;
 }
 
 /* 蜂鸣线程单独负责开始和计时，保存设置期间仍可按时停止。 */
@@ -52,38 +92,34 @@ static void buzzer_worker(void *parameter)
     while (1)
     {
         rt_err_t received = rt_mq_recv(buzzer_queue, &request, sizeof(request), wait_ticks);
-        const char *error = RT_NULL;
+        rt_err_t result;
+        rt_tick_t now;
 
         rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
-        wait_ticks = RT_WAITING_FOREVER;
-        if (received != RT_EOK)
+        now = rt_tick_get();
+        buzzer_expire_tones(now);
+        if (received == RT_EOK && request.duration_ms &&
+            request.generation == tone_generation && request.test_feedback == screen_test_active &&
+            buzzer_enabled && buzzer_volume)
         {
-            if (pwm_active)
-            {
-                if (rt_pwm_disable(pwm_device, BUZZER_PWM_CHANNEL) == RT_EOK)
-                    pwm_active = RT_FALSE;
-                else
-                    error = "蜂鸣器 PWM1 停止失败";
-            }
-        }
-        else if (request.generation == tone_generation && buzzer_enabled && buzzer_volume)
-        {
-            if (!pwm_active)
-            {
-                if (buzzer_set_duty(buzzer_volume) == RT_EOK &&
-                    rt_pwm_enable(pwm_device, BUZZER_PWM_CHANNEL) == RT_EOK)
-                    pwm_active = RT_TRUE;
-                else
-                    error = "蜂鸣器 PWM1 参数设置或启动失败";
-            }
             /* 有效的新请求从到达时重新计时，保持设备事件提示音行为。 */
-            if (pwm_active)
-                wait_ticks = rt_tick_from_millisecond((rt_int32_t)request.duration_ms);
+            tone_active = RT_TRUE;
+            tone_deadline = now + rt_tick_from_millisecond((rt_int32_t)request.duration_ms);
         }
+        result = buzzer_apply_volume(buzzer_output_volume());
+        if (result != RT_EOK && !preview_active)
+            buzzer_apply_volume(0U);
+
+        wait_ticks = RT_WAITING_FOREVER;
+        if (tone_active)
+            wait_ticks = (rt_int32_t)(tone_deadline - now);
+        if (preview_active &&
+            (wait_ticks == RT_WAITING_FOREVER || preview_deadline - now < (rt_tick_t)wait_ticks))
+            wait_ticks = (rt_int32_t)(preview_deadline - now);
         rt_mutex_release(buzzer_lock);
 
-        if (error)
-            system_manager_log(error);
+        if (result != RT_EOK)
+            system_manager_log("蜂鸣器 PWM1 输出更新失败");
     }
 }
 
@@ -189,10 +225,10 @@ failed:
     return BUZZER_MANAGER_ERR_NOT_READY;
 }
 
-int buzzer_manager_beep(rt_uint32_t duration_ms)
+static int buzzer_request_tone(rt_uint32_t duration_ms, rt_bool_t test_feedback)
 {
     int result = BUZZER_MANAGER_OK;
-    buzzer_request_t request;
+    buzzer_request_t request = {duration_ms, 0U, test_feedback};
 
     if (!buzzer_ready)
         return BUZZER_MANAGER_ERR_NOT_READY;
@@ -200,14 +236,23 @@ int buzzer_manager_beep(rt_uint32_t duration_ms)
         return BUZZER_MANAGER_ERR_BAD_DURATION;
 
     rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
-    request.duration_ms = duration_ms;
     request.generation = tone_generation;
-    if (!buzzer_enabled || !buzzer_volume)
+    if (test_feedback != screen_test_active || !buzzer_enabled || !buzzer_volume)
         result = BUZZER_MANAGER_MUTED;
     else if (rt_mq_send(buzzer_queue, &request, sizeof(request)) != RT_EOK)
         result = BUZZER_MANAGER_ERR_QUEUE_FULL;
     rt_mutex_release(buzzer_lock);
     return result;
+}
+
+int buzzer_manager_beep(rt_uint32_t duration_ms)
+{
+    return buzzer_request_tone(duration_ms, RT_FALSE);
+}
+
+int buzzer_manager_beep_screen_test_feedback(rt_uint32_t duration_ms)
+{
+    return buzzer_request_tone(duration_ms, RT_TRUE);
 }
 
 void buzzer_manager_get_settings(unsigned *enabled, unsigned *volume)
@@ -232,7 +277,7 @@ void buzzer_manager_get_settings(unsigned *enabled, unsigned *volume)
 int buzzer_manager_set_settings(unsigned enabled, unsigned volume)
 {
     rt_bool_t muted = !enabled || !volume;
-    rt_err_t result = RT_EOK;
+    rt_err_t result;
 
     if (!buzzer_ready)
         return BUZZER_MANAGER_ERR_NOT_READY;
@@ -240,26 +285,29 @@ int buzzer_manager_set_settings(unsigned enabled, unsigned volume)
         return BUZZER_MANAGER_ERR_BAD_SETTINGS;
 
     rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
-    if (pwm_active)
-    {
-        if (muted)
-            result = rt_pwm_disable(pwm_device, BUZZER_PWM_CHANNEL);
-        else if (volume != buzzer_volume)
-            result = buzzer_set_duty(volume);
-    }
-
+    buzzer_expire_tones(rt_tick_get());
+    if (muted)
+        result = buzzer_apply_volume(0U);
+    else if (preview_active)
+        result = buzzer_apply_volume(preview_volume);
+    else
+        result = buzzer_apply_volume(tone_active ? volume : 0U);
     if (result != RT_EOK)
     {
         rt_mutex_release(buzzer_lock);
         return BUZZER_MANAGER_ERR_PWM;
     }
 
-    if (muted && buzzer_enabled && buzzer_volume)
+    if (muted)
     {
-        /* 清除未处理的旧事件，防止重新开启时补响。 */
-        pwm_active = RT_FALSE;
-        tone_generation++;
-        rt_mq_control(buzzer_queue, RT_IPC_CMD_RESET, RT_NULL);
+        tone_active = RT_FALSE;
+        preview_active = RT_FALSE;
+        if (buzzer_enabled && buzzer_volume)
+        {
+            /* 清除未处理的旧事件，防止重新开启时补响。 */
+            tone_generation++;
+            rt_mq_control(buzzer_queue, RT_IPC_CMD_RESET, RT_NULL);
+        }
     }
 
     if (enabled != buzzer_enabled || volume != buzzer_volume ||
@@ -289,4 +337,79 @@ int buzzer_manager_settings_save_state(void)
     result = settings_save_state;
     rt_mutex_release(buzzer_lock);
     return result;
+}
+
+int buzzer_manager_set_drag_preview(unsigned volume)
+{
+    buzzer_request_t wakeup = {0};
+    int result = BUZZER_MANAGER_OK;
+
+    if (!buzzer_ready)
+        return BUZZER_MANAGER_ERR_NOT_READY;
+    if (volume > BUZZER_MAX_VOLUME)
+        return BUZZER_MANAGER_ERR_BAD_SETTINGS;
+
+    rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
+    buzzer_expire_tones(rt_tick_get());
+    if (screen_test_active || !buzzer_enabled)
+        result = BUZZER_MANAGER_MUTED;
+    else if (buzzer_apply_volume(volume) != RT_EOK)
+        result = BUZZER_MANAGER_ERR_PWM;
+    else
+    {
+        preview_volume = volume;
+        preview_deadline = rt_tick_get() + rt_tick_from_millisecond(BUZZER_PREVIEW_LIMIT_MS);
+        if (!preview_active)
+        {
+            preview_active = RT_TRUE;
+            /* 唤醒工作线程开始计时。队列已满时，正常事件也会唤醒它。 */
+            rt_mq_send(buzzer_queue, &wakeup, sizeof(wakeup));
+        }
+    }
+    rt_mutex_release(buzzer_lock);
+    return result;
+}
+
+void buzzer_manager_stop_drag_preview(void)
+{
+    rt_err_t result;
+
+    if (!buzzer_ready)
+        return;
+
+    rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
+    buzzer_expire_tones(rt_tick_get());
+    preview_active = RT_FALSE;
+    result = buzzer_apply_volume(buzzer_output_volume());
+    if (result != RT_EOK)
+        buzzer_apply_volume(0U);
+    rt_mutex_release(buzzer_lock);
+
+    if (result != RT_EOK)
+        system_manager_log("蜂鸣器 PWM1 结束试音失败");
+}
+
+void buzzer_manager_set_screen_test_active(unsigned active)
+{
+    rt_bool_t next = active != 0U;
+    rt_err_t result = RT_EOK;
+
+    if (!buzzer_ready)
+        return;
+
+    rt_mutex_take(buzzer_lock, RT_WAITING_FOREVER);
+    if (screen_test_active != next)
+    {
+        /* 切换模式时清理队列及已出队请求，普通和测屏提示音不会跨模式补响。 */
+        screen_test_active = next;
+        tone_active = RT_FALSE;
+        preview_active = RT_FALSE;
+        tone_generation++;
+        result = buzzer_apply_volume(0U);
+        rt_mq_control(buzzer_queue, RT_IPC_CMD_RESET, RT_NULL);
+    }
+    rt_mutex_release(buzzer_lock);
+
+    if (result != RT_EOK)
+        system_manager_log("蜂鸣器 PWM1 测屏静音失败");
 }
